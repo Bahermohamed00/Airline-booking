@@ -37,6 +37,37 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 | NFR-01 Rate limiting | — | — | Global guard | `ThrottlerGuard` | — | — |
 | NFR-09 Auditability | — | — | Audited endpoints | `AuditService` | `AuditLog` immutable for ordinary admins | — |
 
+## Phase 2 (UI) — Customer portal & admin dashboard (mock-data UI)
+
+| Requirement | UI Screen | Route | Service / Guard | Test |
+|-------------|-----------|-------|-----------------|------|
+| FR-C04/05/06 Search & results | SearchPage, ResultsPage | `/search`, `/results` | `FlightService.searchFlights`, `applyFilters`/`applySort` | pricing/status specs |
+| FR-C07 Flight details | FlightDetailsPage | `/flights/:id` | `FlightService.getFlight` | — |
+| FR-C08 Passenger data | PassengersPage | `/booking/passengers` | `BookingDraftService`, reactive form validators | — |
+| FR-C09 / BR-13 Seat selection & hold | SeatsPage | `/booking/seats` | `SeatService.stateOf`, `BookingDraftService` hold expiry | `seat-hold.spec.ts` |
+| FR-C10/11 Baggage & extras | ExtrasPage | `/booking/extras` | `ExtrasService`, `PricingService` | `pricing.service.spec.ts` |
+| FR-C12 Fare calculation | ReviewPage breakdown | `/booking/review` | `PricingService.computeBreakdown` | `pricing.service.spec.ts` |
+| FR-C13 / NFR-01 Payment (tokenized, no raw card) | ReviewPage payment | `/booking/review` | `PaymentService` mock provider + idempotency | — |
+| FR-C14 Confirmation | ConfirmationPage | `/booking/confirmation` | `BookingService.confirmFromDraft` | — |
+| FR-C15/16 My bookings / manage | MyBookingsPage, ManageBookingPage, ManageLookupPage | `/bookings`, `/bookings/:id`, `/manage` | `BookingService`, cancel with refund estimate | — |
+| FR-C17/18 Check-in & boarding pass | CheckInPage, BoardingPassPage | `/checkin`, `/checkin/:id/pass` | `CheckInService.eligibility` (BR-07) | — |
+| FR-C19 Flight status | FlightStatusPage | `/status` | `FlightService.flightStatusBy*` | — |
+| FR-C20 Baggage tracking | BaggagePage | `/baggage` | `BaggageService.track` | — |
+| FR-C21 Notifications | ProfilePage notifications section | `/profile/notifications` | `NotificationService` | — |
+| FR-C22 Loyalty | LoyaltyPage | `/loyalty` | `LoyaltyService` | — |
+| FR-C01/02/24 Registration, login, recovery, MFA | LoginPage, RegisterPage, ProfilePage security | `/login`, `/register`, `/profile/security` | `AuthService` (mock, API-switchable) | `permission.spec.ts` |
+| SRS 5.1 Overview dashboard | DashboardPage | `/admin/dashboard` | `AdminService.dashboardKpis`, `naHasPermission` financial gating | `permission.spec.ts` |
+| SRS 5.2–5.5 Flights/airports/aircraft/routes | FlightsPage, AirportsPage, AircraftPage, RoutesPage | `/admin/flights|airports|aircraft|routes` | mock catalog services | — |
+| SRS 5.6 Booking mgmt incl. BR-14 exception | AdminBookingsPage | `/admin/bookings` | `BookingService.adminConfirmException` (reason required, audit copy) | — |
+| SRS 5.7–5.8 Users, staff, roles | AdminUsersPage, AdminStaffPage, AdminRolesPage | `/admin/users|staff|roles` | `naHasPermission`, role matrix | `permission.spec.ts` |
+| SRS 5.9 Payments & refunds | AdminPaymentsPage, AdminRefundsPage | `/admin/payments|refunds` | tokenization notice, CSV export | — |
+| SRS 5.10–5.11 Baggage & check-in ops | AdminBaggagePage, AdminCheckInPage | `/admin/baggage|checkin` | `BaggageService`, `CheckInService` | — |
+| SRS 5.12–5.13 Loyalty & notifications | AdminLoyaltyPage, AdminNotificationsPage | `/admin/loyalty|notifications` | `LoyaltyService`, notification queue | — |
+| SRS 5.14 Reports | AdminReportsPage | `/admin/reports` | aggregates from mock data, CSV export | — |
+| SRS 5.15 Audit log | AdminAuditPage | `/admin/audit` | immutable notice, metadata view | — |
+| SRS 5.16 System settings | AdminSettingsPage | `/admin/settings` | gated `settings:manage` | `permission.spec.ts` |
+| BR-08/09 Backend-enforced RBAC (UI mirrors) | role-aware shells, `RoleGuard`, `naHasPermission` | `/admin/*` | `AuthService.hasPermission`, `staffGuard` | `permission.spec.ts` |
+
 ## Known Gaps (to be addressed in later phases)
 
 - Angular screens for customer registration, login, password reset, MFA setup are scaffolded but not yet implemented.

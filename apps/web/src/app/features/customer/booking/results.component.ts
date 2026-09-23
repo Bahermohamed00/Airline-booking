@@ -1,0 +1,460 @@
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FlightService, applyFilters, applySort, flightDurationLabel } from '../../../core/services/flight.service';
+import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { formatMoney } from '../../../core/services/pricing.service';
+import type { Fare, Flight, CabinClass } from '../../../core/models/domain.model';
+import type { ResultFilters, ResultSort, SearchCriteria, TripType } from '../../../core/models/booking-flow.model';
+import { NaButton } from '../../../shared/ui/button.component';
+import { NaBadge } from '../../../shared/ui/badge.component';
+import { NaAlert } from '../../../shared/ui/alert.component';
+import { NaSkeleton } from '../../../shared/ui/skeleton.component';
+import { NaEmptyState } from '../../../shared/ui/empty-state.component';
+import { NaSegmented, SegmentOption } from '../../../shared/ui/segmented.component';
+
+interface AdjacentDay {
+  date: string;
+  minPrice: number | null;
+}
+
+function cabinLabel(c: CabinClass): string {
+  return c
+    .split('_')
+    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+@Component({
+  selector: 'na-results-page',
+  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, NaButton, NaBadge, NaAlert, NaSkeleton, NaEmptyState, NaSegmented],
+  template: `
+    <div class="na-container page">
+      @if (criteria(); as c) {
+        <div class="na-card summary">
+          <div class="summary__route">
+            <strong>{{ c.originCode }} → {{ c.destinationCode }}</strong>
+            <span class="na-text-muted na-text-small">
+              {{ prettyDate(c.departureDate) }}
+              @if (c.returnDate) { – {{ prettyDate(c.returnDate) }} }
+              · {{ passengerLabel(c) }} · {{ cabinName(c.cabinClass) }}
+            </span>
+          </div>
+          <a routerLink="/search" class="summary__edit">Modify search</a>
+        </div>
+
+        <div class="dates" role="group" aria-label="Nearby dates">
+          @for (d of adjacent(); track d.date) {
+            <button
+              type="button"
+              class="dates__day"
+              [class.dates__day--active]="d.date === c.departureDate"
+              [attr.aria-pressed]="d.date === c.departureDate"
+              [disabled]="d.minPrice === null && d.date !== c.departureDate"
+              (click)="pickDate(d.date)"
+            >
+              <span class="dates__dow">{{ weekday(d.date) }}</span>
+              <span class="dates__date">{{ shortDate(d.date) }}</span>
+              <span class="dates__price">{{ d.minPrice === null ? '—' : money(d.minPrice) }}</span>
+            </button>
+          }
+        </div>
+
+        <div class="layout">
+          <aside class="na-card filters" aria-label="Filters">
+            <h2 class="filters__title">Filters</h2>
+            <div class="na-field">
+              <label class="na-label" for="maxPrice">Max price (EUR)</label>
+              <input
+                id="maxPrice"
+                class="na-input"
+                type="number"
+                min="0"
+                placeholder="No limit"
+                [value]="filters().maxPrice ?? ''"
+                (input)="setMaxPrice($any($event.target).value)"
+              />
+            </div>
+            <div class="na-field">
+              <span class="na-label" id="window-label">Departure window</span>
+              <na-segmented
+                ariaLabel="Departure window"
+                [options]="windowOptions"
+                [value]="filters().departureWindow ?? 'any'"
+                (valueChange)="setWindow($event)"
+              />
+            </div>
+            <div class="filters__check">
+              <input
+                id="refundable"
+                type="checkbox"
+                [checked]="filters().refundableOnly"
+                (change)="setRefundable($any($event.target).checked)"
+              />
+              <label for="refundable">Refundable fares only</label>
+            </div>
+          </aside>
+
+          <section class="results" aria-label="Flight results" aria-live="polite">
+            <div class="results__bar">
+              <p class="na-text-muted na-text-small">
+                @if (flights() !== null) {
+                  {{ visibleFlights().length }} of {{ flights()!.length }} flights
+                }
+              </p>
+              <div class="na-field results__sort">
+                <label class="na-label" for="sort">Sort by</label>
+                <select id="sort" class="na-select" [value]="sort()" (change)="sort.set($any($event.target).value)">
+                  <option value="recommended">Recommended</option>
+                  <option value="price">Lowest price</option>
+                  <option value="duration">Shortest duration</option>
+                  <option value="departure">Earliest departure</option>
+                </select>
+              </div>
+            </div>
+
+            @if (error()) {
+              <na-alert tone="danger" icon="⚠" title="We couldn't load flights" [retryable]="true" (retry)="runSearch()">
+                {{ error() }}
+              </na-alert>
+            } @else if (flights() === null) {
+              <na-skeleton [rows]="[1, 2, 3]" height="120px" />
+            } @else if (visibleFlights().length === 0) {
+              <na-empty-state
+                icon="✈"
+                title="No flights found"
+                message="No flights match this search on the selected date. Try a nearby date or change your criteria."
+                actionLabel="Modify search"
+                (action)="goSearch()"
+              />
+            } @else {
+              <ol class="cards" role="list">
+                @for (f of visibleFlights(); track f.id) {
+                  <li class="na-card card">
+                    <div class="card__main">
+                      <div class="card__times">
+                        <div class="card__point">
+                          <span class="card__time">{{ time(f.departureTime) }}</span>
+                          <span class="card__code">{{ f.route.origin.iataCode }}</span>
+                        </div>
+                        <div class="card__path" aria-hidden="true">
+                          <span class="card__duration">{{ duration(f) }}</span>
+                          <span class="card__line"></span>
+                          <span class="card__stops">{{ f.segments.length > 1 ? f.segments.length - 1 + ' stop' : 'Non-stop' }}</span>
+                        </div>
+                        <div class="card__point">
+                          <span class="card__time">{{ time(f.arrivalTime) }}</span>
+                          <span class="card__code">{{ f.route.destination.iataCode }}</span>
+                        </div>
+                      </div>
+                      <div class="card__meta na-text-small na-text-muted">
+                        {{ f.flightNumber }} · {{ f.aircraft.model }}
+                      </div>
+                      @if (fareOf(f, c); as fare) {
+                        @if (fare.availableCount < 5) {
+                          <na-badge tone="warning">Only {{ fare.availableCount }} seats left at this fare</na-badge>
+                        }
+                      }
+                    </div>
+                    <div class="card__side">
+                      @if (fareOf(f, c); as fare) {
+                        <p class="card__price">{{ fareTotal(fare) }}</p>
+                        <p class="na-text-muted na-text-small">per adult</p>
+                      }
+                      <div class="card__actions">
+                        <button
+                          type="button"
+                          class="card__toggle"
+                          [attr.aria-expanded]="expanded().has(f.id)"
+                          [attr.aria-controls]="'fares-' + f.id"
+                          (click)="toggleExpand(f.id)"
+                        >
+                          {{ expanded().has(f.id) ? 'Hide fares' : 'Compare fares' }}
+                        </button>
+                        @if (fareOf(f, c); as fare) {
+                          <na-button variant="cta" (clicked)="select(f, fare)">Select</na-button>
+                        }
+                      </div>
+                    </div>
+                    @if (expanded().has(f.id)) {
+                      <div class="card__fares" [id]="'fares-' + f.id">
+                        <h3 class="na-text-small">Fare options</h3>
+                        @for (fare of f.fares; track fare.id) {
+                          <div class="fare-row">
+                            <div>
+                              <strong>{{ cabinName(fare.cabinClass) }}</strong>
+                              <na-badge [tone]="fare.rules.refundable ? 'success' : 'neutral'">
+                                {{ fare.rules.refundable ? 'Refundable' : 'Non-refundable' }}
+                              </na-badge>
+                              <p class="na-text-small na-text-muted">{{ fare.rules.description }}</p>
+                              <p class="na-text-small na-text-muted">
+                                {{ fare.rules.checkedBaggagePieces }}× checked bag ({{ fare.rules.checkedBaggageWeightKg }} kg)
+                              </p>
+                            </div>
+                            <div class="fare-row__buy">
+                              <span class="fare-row__price">{{ fareTotal(fare) }}</span>
+                              <na-button
+                                variant="secondary"
+                                size="sm"
+                                [disabled]="fare.availableCount === 0"
+                                (clicked)="select(f, fare)"
+                              >{{ fare.availableCount === 0 ? 'Sold out' : 'Select' }}</na-button>
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </li>
+                }
+              </ol>
+            }
+          </section>
+        </div>
+      } @else {
+        <na-empty-state
+          icon="🔎"
+          title="Nothing to show yet"
+          message="Start a flight search to see results here."
+          actionLabel="Search flights"
+          (action)="goSearch()"
+        />
+      }
+    </div>
+  `,
+  styles: `
+    .page { padding-top: var(--na-space-6); padding-bottom: var(--na-space-12); }
+    .summary {
+      display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4);
+      padding: var(--na-space-4) var(--na-space-5); margin-bottom: var(--na-space-4); flex-wrap: wrap;
+    }
+    .summary__route { display: flex; flex-direction: column; }
+    .summary__edit { font-weight: var(--na-font-semibold); min-height: 44px; display: inline-flex; align-items: center; }
+    .dates { display: flex; gap: var(--na-space-2); overflow-x: auto; padding-bottom: var(--na-space-2); margin-bottom: var(--na-space-5); }
+    .dates__day {
+      flex: 1; min-width: 96px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      padding: var(--na-space-2) var(--na-space-3); min-height: 56px;
+      background: var(--na-surface-raised); border: 1px solid var(--na-border); border-radius: var(--na-radius-md);
+    }
+    .dates__day:hover:not(:disabled) { border-color: var(--na-navy-400); }
+    .dates__day--active { border-color: var(--na-blue-600); background: var(--na-blue-100); }
+    .dates__day:disabled { opacity: 0.55; }
+    .dates__dow, .dates__date { font-size: var(--na-text-xs); color: var(--na-ink-500); }
+    .dates__price { font-weight: var(--na-font-semibold); font-size: var(--na-text-sm); }
+    .layout { display: grid; grid-template-columns: 260px 1fr; gap: var(--na-space-5); align-items: start; }
+    .filters { padding: var(--na-space-5); position: sticky; top: var(--na-space-4); }
+    .filters__title { font-size: var(--na-text-lg); margin-bottom: var(--na-space-4); }
+    .filters__check { display: flex; align-items: center; gap: var(--na-space-2); min-height: 44px; }
+    .filters__check input { width: 20px; height: 20px; }
+    .results__bar { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4); margin-bottom: var(--na-space-4); flex-wrap: wrap; }
+    .results__sort { flex-direction: row; align-items: center; gap: var(--na-space-2); margin-bottom: 0; }
+    .results__sort .na-select { width: auto; min-height: 40px; }
+    .cards { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--na-space-4); }
+    .card { display: grid; grid-template-columns: 1fr auto; gap: var(--na-space-4); padding: var(--na-space-5); }
+    .card__times { display: flex; align-items: center; gap: var(--na-space-4); }
+    .card__point { display: flex; flex-direction: column; }
+    .card__time { font-size: var(--na-text-xl); font-weight: var(--na-font-bold); color: var(--na-navy-700); }
+    .card__code { font-size: var(--na-text-sm); color: var(--na-ink-500); font-weight: var(--na-font-semibold); }
+    .card__path { flex: 1; min-width: 140px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .card__duration { font-size: var(--na-text-xs); color: var(--na-ink-500); }
+    .card__line { width: 100%; height: 2px; background: var(--na-border-strong); position: relative; }
+    .card__line::after {
+      content: '✈'; position: absolute; right: -4px; top: -11px; font-size: 0.8rem; color: var(--na-blue-600);
+    }
+    .card__stops { font-size: var(--na-text-xs); color: var(--na-ink-500); }
+    .card__meta { margin-top: var(--na-space-2); }
+    .card__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--na-space-1); }
+    .card__price { font-size: var(--na-text-xl); font-weight: var(--na-font-bold); color: var(--na-navy-700); }
+    .card__actions { display: flex; gap: var(--na-space-2); margin-top: var(--na-space-2); align-items: center; }
+    .card__toggle {
+      background: none; border: none; color: var(--na-blue-600); font-weight: var(--na-font-semibold);
+      min-height: 44px; padding: 0 var(--na-space-2);
+    }
+    .card__toggle:hover { text-decoration: underline; }
+    .card__fares { grid-column: 1 / -1; border-top: 1px solid var(--na-border); padding-top: var(--na-space-4); display: grid; gap: var(--na-space-3); }
+    .fare-row {
+      display: flex; justify-content: space-between; gap: var(--na-space-4); align-items: center;
+      padding: var(--na-space-3); border: 1px solid var(--na-border); border-radius: var(--na-radius-md);
+    }
+    .fare-row__buy { display: flex; flex-direction: column; align-items: flex-end; gap: var(--na-space-2); }
+    .fare-row__price { font-weight: var(--na-font-bold); }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .filters { position: static; }
+    }
+    @media (max-width: 639px) {
+      .card { grid-template-columns: 1fr; }
+      .card__side { align-items: flex-start; }
+      .card__times { flex-wrap: wrap; }
+    }
+  `,
+})
+export class ResultsPage {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly flightsApi = inject(FlightService);
+  private readonly draft = inject(BookingDraftService);
+
+  protected readonly criteria = signal<SearchCriteria | null>(null);
+  protected readonly flights = signal<Flight[] | null>(null);
+  protected readonly adjacent = signal<AdjacentDay[]>([]);
+  protected readonly error = signal<string | null>(null);
+  protected readonly expanded = signal<Set<string>>(new Set());
+  protected readonly filters = signal<ResultFilters>({ refundableOnly: false, departureWindow: null, maxPrice: null });
+  protected readonly sort = signal<ResultSort>('recommended');
+
+  protected readonly windowOptions: SegmentOption[] = [
+    { value: 'any', label: 'Any time' },
+    { value: 'morning', label: 'Morning' },
+    { value: 'afternoon', label: 'Afternoon' },
+    { value: 'evening', label: 'Evening' },
+  ];
+
+  protected readonly visibleFlights = computed(() => {
+    const list = this.flights();
+    const c = this.criteria();
+    if (!list || !c) return [];
+    const filtered = applyFilters(list, this.filters(), c.cabinClass);
+    return applySort(filtered, this.sort(), c.cabinClass);
+  });
+
+  constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const origin = params.get('origin');
+      const destination = params.get('destination');
+      const depart = params.get('depart');
+      if (!origin || !destination || !depart) {
+        this.criteria.set(null);
+        return;
+      }
+      const criteria: SearchCriteria = {
+        tripType: (params.get('tripType') as TripType) ?? 'ONE_WAY',
+        originCode: origin,
+        destinationCode: destination,
+        departureDate: depart,
+        returnDate: params.get('return'),
+        passengers: {
+          adults: Math.max(1, Number(params.get('adults')) || 1),
+          children: Math.max(0, Number(params.get('children')) || 0),
+          infants: Math.max(0, Number(params.get('infants')) || 0),
+        },
+        cabinClass: (params.get('cabin') as CabinClass) ?? 'ECONOMY',
+        promoCode: params.get('promo'),
+      };
+      this.criteria.set(criteria);
+      this.runSearch();
+      this.loadAdjacent();
+    });
+  }
+
+  protected runSearch(): void {
+    const c = this.criteria();
+    if (!c) return;
+    this.flights.set(null);
+    this.error.set(null);
+    this.flightsApi.searchFlights(c).subscribe({
+      next: (flights) => this.flights.set(flights),
+      error: () => {
+        this.flights.set([]);
+        this.error.set('The flight search service is unavailable right now.');
+      },
+    });
+  }
+
+  protected pickDate(date: string): void {
+    const c = this.criteria();
+    if (!c || date === c.departureDate) return;
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { depart: date },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  protected setMaxPrice(value: string): void {
+    const n = Number(value);
+    this.filters.update((f) => ({ ...f, maxPrice: value === '' || Number.isNaN(n) ? null : n }));
+  }
+
+  protected setWindow(value: string): void {
+    this.filters.update((f) => ({
+      ...f,
+      departureWindow: value === 'any' ? null : (value as 'morning' | 'afternoon' | 'evening'),
+    }));
+  }
+
+  protected setRefundable(checked: boolean): void {
+    this.filters.update((f) => ({ ...f, refundableOnly: checked }));
+  }
+
+  protected toggleExpand(id: string): void {
+    this.expanded.update((set) => {
+      const next = new Set(set);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  protected select(flight: Flight, fare: Fare): void {
+    const c = this.criteria();
+    if (!c) return;
+    this.draft.start(c, flight, fare);
+    this.router.navigate(['/flights', flight.id]);
+  }
+
+  protected fareOf(f: Flight, c: SearchCriteria): Fare | undefined {
+    return f.fares.find((x) => x.cabinClass === c.cabinClass) ?? f.fares[0];
+  }
+
+  protected fareTotal(fare: Fare): string {
+    return formatMoney(fare.basePrice + fare.taxAmount + fare.feeAmount, fare.currency);
+  }
+
+  protected duration(f: Flight): string {
+    return flightDurationLabel(f);
+  }
+
+  protected time(iso: string): string {
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  }
+
+  protected prettyDate(iso: string): string {
+    return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
+  }
+
+  protected weekday(iso: string): string {
+    return new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(new Date(iso));
+  }
+
+  protected shortDate(iso: string): string {
+    return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(iso));
+  }
+
+  protected money(amount: number): string {
+    return formatMoney(amount, 'EUR');
+  }
+
+  protected passengerLabel(c: SearchCriteria): string {
+    const p = c.passengers;
+    const parts = [`${p.adults} adult${p.adults > 1 ? 's' : ''}`];
+    if (p.children) parts.push(`${p.children} child${p.children > 1 ? 'ren' : ''}`);
+    if (p.infants) parts.push(`${p.infants} infant${p.infants > 1 ? 's' : ''}`);
+    return parts.join(', ');
+  }
+
+  protected cabinName(c: CabinClass): string {
+    return cabinLabel(c);
+  }
+
+  protected goSearch(): void {
+    this.router.navigate(['/search']);
+  }
+
+  private loadAdjacent(): void {
+    const c = this.criteria();
+    if (!c) return;
+    this.flightsApi.adjacentDateAvailability(c).subscribe((days) => this.adjacent.set(days));
+  }
+}

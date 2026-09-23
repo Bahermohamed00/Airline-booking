@@ -1,1 +1,114 @@
-/* You can add global styles to this file, and also import other style files */
+@use 'styles/tokens';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--na-font-family);
+  font-size: 16px;
+  line-height: var(--na-leading-base);
+  color: var(--na-ink-900);
+  background: var(--na-surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  line-height: var(--na-leading-tight);
+  font-weight: var(--na-font-semibold);
+  color: var(--na-ink-900);
+}
+
+h1 { font-size: var(--na-text-3xl); }
+h2 { font-size: var(--na-text-2xl); }
+h3 { font-size: var(--na-text-xl); }
+h4 { font-size: var(--na-text-lg); }
+
+p { margin: 0; }
+
+a {
+  color: var(--na-blue-600);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+button:disabled { cursor: not-allowed; }
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--na-focus-ring);
+  border-radius: var(--na-radius-sm);
+}
+
+// Screen-reader-only utility
+.na-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+// Shared layout primitives
+.na-container {
+  max-width: var(--na-shell-max);
+  margin: 0 auto;
+  padding: 0 var(--na-space-4);
+}
+
+.na-card {
+  background: var(--na-surface-raised);
+  border: 1px solid var(--na-border);
+  border-radius: var(--na-radius-lg);
+  box-shadow: var(--na-shadow-sm);
+}
+
+.na-text-muted { color: var(--na-ink-500); }
+.na-text-small { font-size: var(--na-text-sm); }
+.na-text-mono { font-family: var(--na-font-mono); font-size: var(--na-text-sm); }
+
+// Form primitives shared across screens
+.na-field { display: flex; flex-direction: column; gap: var(--na-space-1); margin-bottom: var(--na-space-4); }
+.na-label { font-size: var(--na-text-sm); font-weight: var(--na-font-medium); color: var(--na-ink-700); }
+.na-input, .na-select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--na-border-strong);
+  border-radius: var(--na-radius-md);
+  background: var(--na-surface-raised);
+  min-height: 44px;
+}
+.na-input:hover, .na-select:hover { border-color: var(--na-navy-300); }
+.na-input[aria-invalid='true'], .na-select[aria-invalid='true'] { border-color: var(--na-danger); }
+.na-input:disabled, .na-select:disabled { background: var(--na-surface-sunken); color: var(--na-ink-500); }
+.na-hint { font-size: var(--na-text-xs); color: var(--na-ink-500); }
+.na-error { font-size: var(--na-text-xs); color: var(--na-danger); font-weight: var(--na-font-medium); }
+
+@media (max-width: 639px) {
+  .na-container { padding: 0 var(--na-space-3); }
+  h1 { font-size: var(--na-text-2xl); }
+  h2 { font-size: var(--na-text-xl); }
+}

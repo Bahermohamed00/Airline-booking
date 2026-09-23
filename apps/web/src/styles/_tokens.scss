@@ -1,0 +1,109 @@
+// NovaAir design tokens — original aviation-inspired visual system.
+// Color, type, spacing, radius, elevation, motion. No Lufthansa assets.
+
+:root {
+  // ---- Foundation palette ----
+  --na-navy-900: #081120;
+  --na-navy-800: #0a1428;
+  --na-navy-700: #0f1e38;
+  --na-navy-600: #16294a;
+  --na-navy-500: #20355c;
+  --na-navy-400: #33476e;
+  --na-navy-300: #55688c;
+
+  --na-ink-900: #101825;
+  --na-ink-700: #2a3648;
+  --na-ink-500: #55637a;
+  --na-ink-300: #8b98ad;
+  --na-ink-100: #d5dce7;
+
+  --na-surface: #f7f6f2;        // warm off-white
+  --na-surface-raised: #ffffff;
+  --na-surface-sunken: #efeee8;
+  --na-border: #dfe3ea;
+  --na-border-strong: #c3cbd8;
+
+  // ---- Brand accents ----
+  --na-blue-600: #1c5d99;       // restrained aviation blue
+  --na-blue-500: #2a72b4;
+  --na-blue-100: #dbeaf6;
+  --na-cta: #e8762c;            // single bright action color (amber-orange)
+  --na-cta-hover: #d0641d;
+  --na-cta-contrast: #fffaf4;
+
+  // ---- Semantic status colors ----
+  --na-success: #1f7a4d;
+  --na-success-bg: #e2f3e9;
+  --na-warning: #a05f04;
+  --na-warning-bg: #fdf0da;
+  --na-danger: #b3261e;
+  --na-danger-bg: #fbe4e2;
+  --na-info: #1c5d99;
+  --na-info-bg: #e1edf7;
+
+  // ---- Typography ----
+  --na-font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --na-font-mono: 'Cascadia Code', 'SF Mono', Consolas, monospace;
+  --na-text-xs: 0.75rem;
+  --na-text-sm: 0.875rem;
+  --na-text-base: 1rem;
+  --na-text-lg: 1.125rem;
+  --na-text-xl: 1.375rem;
+  --na-text-2xl: 1.75rem;
+  --na-text-3xl: 2.25rem;
+  --na-font-regular: 400;
+  --na-font-medium: 500;
+  --na-font-semibold: 600;
+  --na-font-bold: 700;
+  --na-leading-tight: 1.2;
+  --na-leading-base: 1.5;
+
+  // ---- Spacing scale (4px base) ----
+  --na-space-1: 0.25rem;
+  --na-space-2: 0.5rem;
+  --na-space-3: 0.75rem;
+  --na-space-4: 1rem;
+  --na-space-5: 1.25rem;
+  --na-space-6: 1.5rem;
+  --na-space-8: 2rem;
+  --na-space-10: 2.5rem;
+  --na-space-12: 3rem;
+  --na-space-16: 4rem;
+
+  // ---- Radius ----
+  --na-radius-sm: 4px;
+  --na-radius-md: 8px;
+  --na-radius-lg: 12px;
+  --na-radius-xl: 16px;
+  --na-radius-full: 999px;
+
+  // ---- Elevation (restrained) ----
+  --na-shadow-sm: 0 1px 2px rgba(10, 20, 40, 0.08);
+  --na-shadow-md: 0 4px 12px rgba(10, 20, 40, 0.10);
+  --na-shadow-lg: 0 12px 32px rgba(10, 20, 40, 0.14);
+
+  // ---- Motion ----
+  --na-motion-fast: 120ms;
+  --na-motion-base: 200ms;
+  --na-ease: cubic-bezier(0.2, 0.6, 0.3, 1);
+
+  // ---- Focus ----
+  --na-focus-ring: 0 0 0 3px rgba(28, 93, 153, 0.35);
+
+  // ---- Layout ----
+  --na-shell-max: 1200px;
+  --na-admin-max: 1440px;
+  --na-topbar-h: 64px;
+  --na-sidebar-w: 264px;
+  --na-sidebar-w-collapsed: 72px;
+
+  // ---- Breakpoints (reference; media queries below) ----
+  // mobile < 640px, tablet 640–1023px, desktop >= 1024px
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --na-motion-fast: 0ms;
+    --na-motion-base: 0ms;
+  }
+}
