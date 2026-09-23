@@ -1,0 +1,729 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & RBAC ----------
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique @db.VarChar(255)
+  passwordHash   String    @map("password_hash") @db.VarChar(255)
+  firstName      String    @map("first_name") @db.VarChar(100)
+  lastName       String    @map("last_name") @db.VarChar(100)
+  phone          String?   @db.VarChar(50)
+  emailVerified  Boolean   @default(false) @map("email_verified")
+  mfaSecret      String?   @map("mfa_secret") @db.VarChar(255)
+  mfaEnabled     Boolean   @default(false) @map("mfa_enabled")
+  mfaBackupCodes String?   @map("mfa_backup_codes") @db.Text
+  resetToken     String?   @map("reset_token") @db.VarChar(255)
+  resetTokenExpiresAt DateTime? @map("reset_token_expires_at") @db.Timestamptz(6)
+  status         UserStatus @default(ACTIVE)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles      UserRole[]
+  bookings       Booking[]
+  passengers     Passenger[]
+  loyaltyAccount LoyaltyAccount?
+  notifications  Notification[]
+  auditLogs      AuditLog[]
+  seatHolds      SeatHold[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  PENDING_VERIFICATION
+
+  @@map("user_status")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  isSuperAdmin Boolean @default(false) @map("is_super_admin")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles        UserRole[]
+  rolePermissions  RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  resource    String   @db.VarChar(100)
+  action      String   @db.VarChar(100)
+  description String?  @db.Text
+
+  rolePermissions RolePermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model UserRole {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String @id @default(uuid()) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ---------- Passengers ----------
+
+model Passenger {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  firstName      String    @map("first_name") @db.VarChar(100)
+  lastName       String    @map("last_name") @db.VarChar(100)
+  dateOfBirth    DateTime? @map("date_of_birth") @db.Date
+  passportNumber String?   @map("passport_number") @db.VarChar(50)
+  nationality    String?   @db.VarChar(100)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user              User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  bookingPassengers BookingPassenger[]
+
+  @@map("passengers")
+}
+
+// ---------- Flight catalog ----------
+
+model Airport {
+  id        String   @id @default(uuid()) @db.Uuid
+  iataCode  String   @unique @map("iata_code") @db.VarChar(3)
+  icaoCode  String?  @map("icao_code") @db.VarChar(4)
+  name      String   @db.VarChar(200)
+  city      String   @db.VarChar(100)
+  country   String   @db.VarChar(100)
+  timezone  String   @db.VarChar(100)
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
+  status    AirportStatus @default(ACTIVE)
+
+  routesOrigin      Route[]         @relation("RouteOrigin")
+  routesDestination Route[]         @relation("RouteDestination")
+  flightSegmentsOrigin      FlightSegment[] @relation("FlightSegmentOrigin")
+  flightSegmentsDestination FlightSegment[] @relation("FlightSegmentDestination")
+
+  @@map("airports")
+}
+
+enum AirportStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("airport_status")
+}
+
+model Route {
+  id                   String @id @default(uuid()) @db.Uuid
+  originAirportId      String @map("origin_airport_id") @db.Uuid
+  destinationAirportId String @map("destination_airport_id") @db.Uuid
+  distanceKm           Int?   @map("distance_km")
+  durationMinutes      Int?   @map("duration_minutes")
+  status               RouteStatus @default(ACTIVE)
+
+  originAirport      Airport   @relation("RouteOrigin", fields: [originAirportId], references: [id], onDelete: Restrict)
+  destinationAirport Airport   @relation("RouteDestination", fields: [destinationAirportId], references: [id], onDelete: Restrict)
+  flights            Flight[]
+
+  @@unique([originAirportId, destinationAirportId])
+  @@map("routes")
+}
+
+enum RouteStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("route_status")
+}
+
+model Aircraft {
+  id         String   @id @default(uuid()) @db.Uuid
+  registration String @unique @db.VarChar(50)
+  model      String   @db.VarChar(100)
+  capacity   Int
+  status     AircraftStatus @default(ACTIVE)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  seats   Seat[]
+  flights Flight[]
+
+  @@map("aircraft")
+}
+
+enum AircraftStatus {
+  ACTIVE
+  MAINTENANCE
+  RETIRED
+
+  @@map("aircraft_status")
+}
+
+model Seat {
+  id          String     @id @default(uuid()) @db.Uuid
+  aircraftId  String     @map("aircraft_id") @db.Uuid
+  seatNumber  String     @map("seat_number") @db.VarChar(10)
+  cabinClass  CabinClass @map("cabin_class")
+  seatRow     Int?       @map("seat_row")
+  seatColumn  String?    @map("seat_column") @db.VarChar(5)
+  features    Json?      @db.JsonB
+  isExitRow   Boolean    @default(false) @map("is_exit_row")
+
+  aircraft    Aircraft    @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  seatHolds   SeatHold[]
+  bookingSeats BookingSeat[]
+
+  @@unique([aircraftId, seatNumber])
+  @@map("seats")
+}
+
+enum CabinClass {
+  ECONOMY
+  PREMIUM_ECONOMY
+  BUSINESS
+  FIRST
+
+  @@map("cabin_class")
+}
+
+model SeatHold {
+  id        String      @id @default(uuid()) @db.Uuid
+  flightId  String      @map("flight_id") @db.Uuid
+  seatId    String      @map("seat_id") @db.Uuid
+  userId    String?     @map("user_id") @db.Uuid
+  sessionId String?     @map("session_id") @db.VarChar(255)
+  status    SeatHoldStatus @default(ACTIVE)
+  expiresAt DateTime    @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  flight Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  seat   Seat   @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, expiresAt])
+  @@index([flightId, seatId])
+  @@map("seat_holds")
+}
+
+enum SeatHoldStatus {
+  ACTIVE
+  EXPIRED
+  CONVERTED
+  RELEASED
+
+  @@map("seat_hold_status")
+}
+
+model Flight {
+  id             String      @id @default(uuid()) @db.Uuid
+  flightNumber   String      @map("flight_number") @db.VarChar(20)
+  routeId        String      @map("route_id") @db.Uuid
+  aircraftId     String      @map("aircraft_id") @db.Uuid
+  departureTime  DateTime    @map("departure_time") @db.Timestamptz(6)
+  arrivalTime    DateTime    @map("arrival_time") @db.Timestamptz(6)
+  status         FlightStatus @default(SCHEDULED)
+  scheduleStatus FlightScheduleStatus @default(ONTIME) @map("schedule_status")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  route        Route          @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  aircraft     Aircraft       @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  segments     FlightSegment[]
+  fares        Fare[]
+  seatHolds    SeatHold[]
+
+  @@index([departureTime])
+  @@index([status])
+  @@map("flights")
+}
+
+enum FlightStatus {
+  SCHEDULED
+  ACTIVE
+  DELAYED
+  CANCELLED
+  COMPLETED
+
+  @@map("flight_status")
+}
+
+enum FlightScheduleStatus {
+  ONTIME
+  DELAYED
+  CANCELLED
+
+  @@map("flight_schedule_status")
+}
+
+model FlightSegment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  flightId             String   @map("flight_id") @db.Uuid
+  segmentNumber        Int      @map("segment_number")
+  originAirportId      String   @map("origin_airport_id") @db.Uuid
+  destinationAirportId String   @map("destination_airport_id") @db.Uuid
+  departureTime        DateTime @map("departure_time") @db.Timestamptz(6)
+  arrivalTime          DateTime @map("arrival_time") @db.Timestamptz(6)
+
+  flight                Flight          @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  originAirport         Airport         @relation("FlightSegmentOrigin", fields: [originAirportId], references: [id], onDelete: Restrict)
+  destinationAirport    Airport         @relation("FlightSegmentDestination", fields: [destinationAirportId], references: [id], onDelete: Restrict)
+  bookingSeats          BookingSeat[]
+  checkIns              CheckIn[]
+
+  @@unique([flightId, segmentNumber])
+  @@map("flight_segments")
+}
+
+model Fare {
+  id             String     @id @default(uuid()) @db.Uuid
+  flightId       String     @map("flight_id") @db.Uuid
+  cabinClass     CabinClass @map("cabin_class")
+  basePrice      Decimal    @map("base_price") @db.Decimal(12, 2)
+  taxAmount      Decimal    @default(0) @map("tax_amount") @db.Decimal(12, 2)
+  feeAmount      Decimal    @default(0) @map("fee_amount") @db.Decimal(12, 2)
+  currency       String     @db.VarChar(3)
+  availableCount Int        @map("available_count")
+  fareRules      Json?      @map("fare_rules") @db.JsonB
+
+  flight Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
+
+  @@unique([flightId, cabinClass])
+  @@map("fares")
+}
+
+// ---------- Bookings ----------
+
+model Booking {
+  id              String        @id @default(uuid()) @db.Uuid
+  bookingReference String       @unique @map("booking_reference") @db.VarChar(10)
+  userId          String        @map("user_id") @db.Uuid
+  status          BookingStatus @default(PENDING)
+  totalAmount     Decimal       @map("total_amount") @db.Decimal(12, 2)
+  currency        String        @db.VarChar(3)
+  bookedAt        DateTime      @default(now()) @map("booked_at") @db.Timestamptz(6)
+  contactEmail    String        @map("contact_email") @db.VarChar(255)
+  contactPhone    String?       @map("contact_phone") @db.VarChar(50)
+  fareRulesSnapshot Json?       @map("fare_rules_snapshot") @db.JsonB
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  bookingPassengers BookingPassenger[]
+  bookingExtras    BookingExtra[]
+  payments         Payment[]
+  refunds          Refund[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+
+  @@index([userId, bookedAt])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  CHECKED_IN
+  BOARDED
+  NO_SHOW
+
+  @@map("booking_status")
+}
+
+model BookingPassenger {
+  id            String @id @default(uuid()) @db.Uuid
+  bookingId     String @map("booking_id") @db.Uuid
+  passengerId   String @map("passenger_id") @db.Uuid
+  passengerType PassengerType @default(ADULT) @map("passenger_type")
+
+  booking   Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger Passenger  @relation(fields: [passengerId], references: [id], onDelete: Restrict)
+  seats     BookingSeat[]
+  baggage   Baggage[]
+  checkIns  CheckIn[]
+
+  @@unique([bookingId, passengerId])
+  @@map("booking_passengers")
+}
+
+enum PassengerType {
+  ADULT
+  CHILD
+  INFANT
+
+  @@map("passenger_type")
+}
+
+model BookingSeat {
+  id                 String @id @default(uuid()) @db.Uuid
+  bookingPassengerId String @map("booking_passenger_id") @db.Uuid
+  flightSegmentId    String @map("flight_segment_id") @db.Uuid
+  seatId             String @map("seat_id") @db.Uuid
+  seatNumber         String @map("seat_number") @db.VarChar(10)
+
+  bookingPassenger BookingPassenger @relation(fields: [bookingPassengerId], references: [id], onDelete: Cascade)
+  flightSegment    FlightSegment    @relation(fields: [flightSegmentId], references: [id], onDelete: Restrict)
+  seat             Seat             @relation(fields: [seatId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingPassengerId, flightSegmentId])
+  @@unique([flightSegmentId, seatId])
+  @@map("booking_seats")
+}
+
+// ---------- Payments & Refunds ----------
+
+model Payment {
+  id               String        @id @default(uuid()) @db.Uuid
+  bookingId        String        @map("booking_id") @db.Uuid
+  amount           Decimal       @db.Decimal(12, 2)
+  currency         String        @db.VarChar(3)
+  status           PaymentStatus @default(PENDING)
+  provider         String        @db.VarChar(50)
+  providerReference String?      @unique @map("provider_reference") @db.VarChar(255)
+  token            String?       @db.VarChar(255)
+  idempotencyKey   String?       @map("idempotency_key") @db.VarChar(255)
+  paidAt           DateTime?     @map("paid_at") @db.Timestamptz(6)
+  failedAt         DateTime?     @map("failed_at") @db.Timestamptz(6)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking  Booking   @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  refunds  Refund[]
+
+  @@index([bookingId, status])
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  SUCCESS
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@map("payment_status")
+}
+
+model Refund {
+  id          String       @id @default(uuid()) @db.Uuid
+  paymentId   String       @map("payment_id") @db.Uuid
+  bookingId   String       @map("booking_id") @db.Uuid
+  amount      Decimal      @db.Decimal(12, 2)
+  currency    String       @db.VarChar(3)
+  status      RefundStatus @default(PENDING)
+  reason      String?      @db.Text
+  processedAt DateTime?    @map("processed_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@index([bookingId])
+  @@map("refunds")
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+
+  @@map("refund_status")
+}
+
+// ---------- Baggage ----------
+
+model Baggage {
+  id                 String @id @default(uuid()) @db.Uuid
+  bookingPassengerId String @map("booking_passenger_id") @db.Uuid
+  type               BaggageType @default(CHECKED)
+  weightKg           Int?   @map("weight_kg")
+  pieces             Int    @default(1)
+  tagNumber          String? @unique @map("tag_number") @db.VarChar(50)
+  status             BaggageStatus @default(CHECKED_IN)
+
+  bookingPassenger BookingPassenger @relation(fields: [bookingPassengerId], references: [id], onDelete: Cascade)
+  events           BaggageEvent[]
+
+  @@map("baggage")
+}
+
+enum BaggageType {
+  CARRY_ON
+  CHECKED
+  SPECIAL
+
+  @@map("baggage_type")
+}
+
+enum BaggageStatus {
+  CHECKED_IN
+  LOADED
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
+  LOST
+  DELAYED
+
+  @@map("baggage_status")
+}
+
+model BaggageEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  baggageId String   @map("baggage_id") @db.Uuid
+  eventType String   @map("event_type") @db.VarChar(50)
+  location  String?  @db.VarChar(100)
+  metadata  Json?    @db.JsonB
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  baggage Baggage @relation(fields: [baggageId], references: [id], onDelete: Cascade)
+
+  @@index([baggageId, occurredAt])
+  @@map("baggage_events")
+}
+
+// ---------- Check-in & Boarding ----------
+
+model CheckIn {
+  id                 String @id @default(uuid()) @db.Uuid
+  bookingPassengerId String @map("booking_passenger_id") @db.Uuid
+  flightSegmentId    String @map("flight_segment_id") @db.Uuid
+  checkInTime        DateTime @default(now()) @map("check_in_time") @db.Timestamptz(6)
+  status             CheckInStatus @default(COMPLETED)
+
+  bookingPassenger BookingPassenger @relation(fields: [bookingPassengerId], references: [id], onDelete: Cascade)
+  flightSegment    FlightSegment    @relation(fields: [flightSegmentId], references: [id], onDelete: Restrict)
+  boardingPass     BoardingPass?
+
+  @@unique([bookingPassengerId, flightSegmentId])
+  @@map("check_ins")
+}
+
+enum CheckInStatus {
+  COMPLETED
+  CANCELLED
+
+  @@map("check_in_status")
+}
+
+model BoardingPass {
+  id           String   @id @default(uuid()) @db.Uuid
+  checkInId    String   @unique @map("check_in_id") @db.Uuid
+  boardingGroup String  @map("boarding_group") @db.VarChar(10)
+  seatNumber   String   @map("seat_number") @db.VarChar(10)
+  gate         String?  @db.VarChar(20)
+  qrCode       String?  @map("qr_code") @db.Text
+  issuedAt     DateTime @default(now()) @map("issued_at") @db.Timestamptz(6)
+
+  checkIn CheckIn @relation(fields: [checkInId], references: [id], onDelete: Cascade)
+
+  @@map("boarding_passes")
+}
+
+// ---------- Extras ----------
+
+model ExtraService {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique @db.VarChar(50)
+  name        String  @db.VarChar(100)
+  description String? @db.Text
+  price       Decimal @db.Decimal(12, 2)
+  currency    String  @db.VarChar(3)
+  status      ExtraServiceStatus @default(ACTIVE)
+
+  bookingExtras BookingExtra[]
+
+  @@map("extra_services")
+}
+
+enum ExtraServiceStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("extra_service_status")
+}
+
+model BookingExtra {
+  id              String @id @default(uuid()) @db.Uuid
+  bookingId       String @map("booking_id") @db.Uuid
+  extraServiceId  String @map("extra_service_id") @db.Uuid
+  quantity        Int    @default(1)
+  price           Decimal @db.Decimal(12, 2)
+
+  booking       Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  extraService  ExtraService @relation(fields: [extraServiceId], references: [id], onDelete: Restrict)
+
+  @@map("booking_extras")
+}
+
+// ---------- Notifications ----------
+
+model NotificationTemplate {
+  id      String  @id @default(uuid()) @db.Uuid
+  code    String  @unique @db.VarChar(50)
+  subject String? @db.VarChar(255)
+  body    String  @db.Text
+  channel NotificationChannel @default(EMAIL)
+
+  notifications Notification[]
+
+  @@map("notification_templates")
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  IN_APP
+
+  @@map("notification_channel")
+}
+
+model Notification {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  bookingId  String?  @map("booking_id") @db.Uuid
+  templateId String?  @map("template_id") @db.Uuid
+  channel    NotificationChannel
+  status     NotificationStatus @default(PENDING)
+  content    String   @db.Text
+  error      String?  @db.Text
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  booking  Booking?             @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([bookingId])
+  @@map("notifications")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  RETRYING
+
+  @@map("notification_status")
+}
+
+// ---------- Loyalty ----------
+
+model LoyaltyAccount {
+  id           String @id @default(uuid()) @db.Uuid
+  userId       String @unique @map("user_id") @db.Uuid
+  memberNumber String @unique @map("member_number") @db.VarChar(50)
+  tier         LoyaltyTier @default(MEMBER)
+  balance      Int    @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions LoyaltyTransaction[]
+
+  @@map("loyalty_accounts")
+}
+
+enum LoyaltyTier {
+  MEMBER
+  SILVER
+  GOLD
+  HON_CIRCLE
+
+  @@map("loyalty_tier")
+}
+
+model LoyaltyTransaction {
+  id               String @id @default(uuid()) @db.Uuid
+  loyaltyAccountId String @map("loyalty_account_id") @db.Uuid
+  bookingId        String? @map("booking_id") @db.Uuid
+  amount           Int
+  type             LoyaltyTransactionType
+  description      String? @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  loyaltyAccount LoyaltyAccount @relation(fields: [loyaltyAccountId], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_transactions")
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  BURN
+  ADJUSTMENT
+  EXPIRY
+
+  @@map("loyalty_transaction_type")
+}
+
+// ---------- Audit & Settings ----------
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorType  String   @map("actor_type") @db.VarChar(50)
+  action     String   @db.VarChar(100)
+  targetType String   @map("target_type") @db.VarChar(100)
+  targetId   String?  @map("target_id") @db.VarChar(255)
+  metadata   Json?    @db.JsonB
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  bookingId String? @map("booking_id") @db.Uuid
+
+  @@index([actorType, action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id          String  @id @default(uuid()) @db.Uuid
+  key         String  @unique @db.VarChar(100)
+  value       String  @db.Text
+  category    String  @db.VarChar(50)
+  isPublic    Boolean @default(false) @map("is_public")
+  description String? @db.Text
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("system_settings")
+}

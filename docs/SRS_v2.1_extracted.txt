@@ -1,0 +1,509 @@
+Software Requirements Specification (SRS)
+Lufthansa-Inspired Airline Management & Booking System
+Version 2.1 — Full Customer Platform + Full Admin Dashboard (Reviewed & Corrected)
+Academic / Software Engineering Project
+1. Introduction
+1.1 Purpose
+This Software Requirements Specification defines the functional and non-functional requirements for a Lufthansa-inspired airline booking and management platform. The system combines a customer-facing travel platform with a full administrative dashboard through which authorized administrators can manage the major business operations of the platform.
+1.2 Project Scope
+The system shall support flight discovery and booking, passenger management, payments, seats, baggage, online check-in, flight status, notifications, loyalty services, and booking management. The administrative dashboard shall provide centralized management of flights, routes, airports, aircraft, users, bookings, payments, baggage, loyalty, notifications, reports, settings, staff, roles, permissions, and audit logs.
+1.3 Important Project Boundary
+This is a Lufthansa-inspired educational system. It is not an official Lufthansa system and shall not use private Lufthansa operational systems or claim to provide real airline inventory. Live operational data may be mocked or integrated through authorized external services.
+2. System Objectives
+Provide a complete and user-friendly airline booking experience.
+Provide administrators with centralized control over the system.
+Maintain consistent flight, booking, passenger, payment, and seat data.
+Support secure authentication and role-based authorization.
+Provide analytics and reports for operational decision-making.
+Record important administrative and business actions through audit logs.
+Provide an architecture that can scale as users, flights, and bookings increase.
+3. Stakeholders and Actors
+Actor
+Responsibility
+Guest
+Searches flights and accesses public information without an account.
+Customer
+Registers, searches, books, pays, manages bookings, checks in, and manages profile/services.
+Support Staff
+Handles customer and booking support according to assigned permissions.
+Flight Manager
+Manages flights, schedules, routes, aircraft assignments, and operational status.
+Booking Manager
+Manages reservations, modifications, cancellations, and rebooking.
+Finance Staff
+Views transactions, payment status, refunds, and financial reports.
+Administrator
+Manages authorized system areas according to assigned permissions.
+Super Admin
+Has full system privileges and manages staff, roles, permissions, and system settings.
+Payment Provider
+External service that processes payment transactions.
+Notification Service
+External/internal service for sending email/SMS/in-app notifications.
+System / Scheduler (added)
+Automated background actor that executes scheduled jobs such as flight-status synchronization, seat-hold expiry, and triggered notification delivery.
+4. Customer-Side Functional Requirements
+ID
+Feature
+Requirement
+FR-C01
+Registration
+The system shall allow a guest to create a customer account.
+FR-C02
+Authentication
+The system shall allow customers to securely log in and log out, and shall provide a secure password-reset / account-recovery flow (revised).
+FR-C03
+Profile
+The system shall allow customers to view and update profile information.
+FR-C04
+Flight Search
+The system shall allow users to search by trip type (one-way, round-trip, multi-city), origin, destination, dates, passengers, and cabin class (revised).
+FR-C05
+Flight Results
+The system shall display matching flights with schedule (in local airport time), duration, stops, fares, and availability (revised).
+FR-C06
+Filtering & Sorting
+The system shall allow filtering/sorting by price, time, duration, stops, and class.
+FR-C07
+Flight Details
+The system shall display detailed information for a selected flight.
+FR-C08
+Passenger Data
+The system shall collect and validate required passenger information.
+FR-C09
+Seat Selection
+The system shall allow eligible passengers to select available seats and shall place a temporary hold on a selected seat until the booking is confirmed or the hold expires (revised — see BR-13).
+FR-C10
+Baggage
+The system shall display baggage allowance and support eligible additional baggage.
+FR-C11
+Extras
+The system shall support configured additional travel services.
+FR-C12
+Fare Calculation
+The system shall calculate fare, taxes, fees, baggage, extras, and discounts.
+FR-C13
+Payment
+The system shall process payments through an integrated, PCI DSS–compliant payment provider and shall not store raw card data (revised — see NFR-01).
+FR-C14
+Booking Confirmation
+The system shall create a unique booking reference after successful booking.
+FR-C15
+My Bookings
+The system shall allow customers to view current and historical bookings.
+FR-C16
+Manage Booking
+The system shall allow permitted booking modifications, rebooking, and cancellation.
+FR-C17
+Online Check-in
+The system shall allow eligible customers to check in online.
+FR-C18
+Boarding Pass
+The system shall generate/display a digital boarding pass after successful check-in.
+FR-C19
+Flight Status
+The system shall allow users to search for flight status.
+FR-C20
+Baggage Tracking
+The system shall display baggage tracking information when available.
+FR-C21
+Notifications
+The system shall notify customers of important booking and flight events.
+FR-C22
+Loyalty
+The system shall display loyalty/miles balance and transaction history.
+FR-C23
+Responsive UI
+The customer interface shall support desktop, tablet, and mobile layouts.
+FR-C24 (new)
+Account Recovery
+The system shall support secure password reset and, where required by policy, optional multi-factor authentication (MFA) for customer accounts.
+5. Full Admin Dashboard Requirements
+5.1 Dashboard Overview & Analytics
+Display total flights, bookings, passengers, users, revenue, and occupancy indicators.
+Display booking and revenue trends by selectable time periods.
+Display today's flights and operational status.
+Display delayed, cancelled, completed, and scheduled flights.
+Display recent bookings and recent administrative activities.
+Allow dashboard data to be filtered by date and other relevant dimensions.
+Provide role-aware dashboard access so users only see authorized information.
+5.2 Flight Management
+Create, view, update, activate, deactivate, and cancel flights.
+Manage flight number, origin, destination, departure, arrival, duration, status, and capacity.
+Assign or change aircraft.
+Manage flight schedules and rescheduling.
+Manage cabin classes and fare availability.
+Manage seat capacity and availability.
+Prevent invalid schedules and capacity conflicts where applicable.
+5.3 Airport Management
+Create, view, update, activate/deactivate, and manage airports.
+Maintain airport code, name, city, country, timezone, and operational status.
+Associate airports with supported routes and flights.
+5.4 Aircraft Management
+Create, view, update, activate/deactivate, and manage aircraft.
+Store aircraft model, registration/identifier, capacity, and status.
+Define seat configuration and cabin layout.
+Assign aircraft to flights.
+5.5 Route Management
+Create, view, update, activate/deactivate, and manage routes.
+Define origin, destination, distance or duration metadata where required.
+Associate routes with scheduled flights.
+5.6 Booking Management
+Search, filter, view, and manage all bookings.
+View passenger, flight, fare, seat, baggage, payment, and booking-status details.
+Confirm, modify, cancel, or rebook bookings according to authorized business rules.
+Process or initiate refunds where permitted.
+Prevent unauthorized booking modifications.
+Manual confirmation of a booking without a successful payment record remains subject to BR-04 and is only permitted through an explicitly authorized exception workflow, which shall always generate an audit-log entry (new — closes a gap between this section and BR-04).
+5.7 User & Passenger Management
+Search and view customer accounts.
+Create, update, activate, suspend, or deactivate accounts according to permission.
+View customer booking history.
+Manage customer roles and account status.
+View passenger information required for operational processing.
+5.8 Staff, Roles & Permissions
+Create and manage staff/admin accounts.
+Create and manage roles.
+Assign permissions to roles.
+Assign roles to staff.
+Support a Super Admin role with full system permissions.
+Enforce authorization on the backend for every protected administrative operation.
+5.9 Payments & Finance
+View and search payment transactions.
+Filter transactions by status, date, booking, customer, and payment method.
+View successful, pending, failed, and refunded payments.
+Support authorized refund operations.
+Display financial summaries and revenue reports.
+5.10 Baggage Management
+View baggage records associated with bookings and passengers.
+Manage additional baggage where supported.
+Update baggage operational status.
+Record lost, delayed, or delivered baggage events.
+Allow authorized staff to search baggage records.
+5.11 Check-in & Boarding
+View passenger check-in status.
+View assigned seats.
+Manage eligible check-in records.
+View or invalidate boarding passes according to authorized rules.
+5.12 Loyalty / Miles Management
+View customer loyalty accounts.
+View miles/points balance and transactions.
+Add or adjust loyalty transactions with proper authorization.
+Configure loyalty tiers or benefits if included in the project scope.
+5.13 Notification Management
+Create and manage notification templates.
+Send operational notifications to selected users or affected passengers.
+Support booking, payment, check-in, delay, cancellation, and other configured events.
+View notification delivery status when supported.
+5.14 Reports
+Generate booking reports.
+Generate revenue/payment reports.
+Generate passenger reports.
+Generate flight and occupancy reports.
+Generate cancellation and refund reports.
+Allow date and filter-based reporting.
+Allow authorized users to export reports.
+5.15 Audit Log
+Record important administrative and security-sensitive actions.
+Store actor, action, target entity, timestamp, and relevant metadata.
+Allow authorized administrators to search and filter audit logs.
+Audit logs shall not be editable by ordinary administrators.
+5.16 System Settings
+Manage configurable system settings.
+Manage supported currencies, basic booking rules, notification settings, and configurable reference data where applicable.
+Restrict sensitive settings to Super Admin or explicitly authorized roles.
+6. Role-Based Access Control
+The system shall implement backend-enforced Role-Based Access Control (RBAC). UI visibility alone shall not be considered authorization.
+Role
+Access Scope
+Super Admin
+Full system access; staff, roles, permissions, settings, and all business modules.
+Administrator
+Access to assigned administrative modules.
+Flight Manager
+Flights, routes, airports, aircraft, schedules, and operational status.
+Booking Manager
+Bookings, passengers, rebooking, cancellation, and customer booking support.
+Finance Staff
+Payments, refunds, financial reports.
+Support Staff
+Customer and booking support within assigned permissions.
+Customer
+Own profile, bookings, payments, check-in, baggage, and loyalty information only.
+7. Core Use Cases
+ID
+Use Case
+Actor
+Description
+UC-01
+Search Flights
+Guest/Customer
+Enter search criteria and view available flights.
+UC-02
+Book Flight
+Customer
+Select flight, passenger data, seat/extras, payment, and confirmation.
+UC-03
+Manage Booking
+Customer
+View and perform permitted changes to an existing booking.
+UC-04
+Online Check-in
+Customer
+Retrieve booking, check in, confirm seat, and obtain boarding pass.
+UC-05
+Flight Status
+Guest/Customer
+Search and view flight status.
+UC-06
+Manage Flights
+Flight Manager/Admin
+Create and manage flight schedules and operational data.
+UC-07
+Manage Bookings
+Booking Manager/Admin
+Search and administer customer bookings.
+UC-08
+Manage Users
+Admin
+Manage customer accounts and authorized user data.
+UC-09
+Manage Staff & Roles
+Super Admin
+Create staff, roles, and permissions.
+UC-10
+Manage Payments
+Finance/Admin
+View payments and perform authorized financial actions.
+UC-11
+Generate Reports
+Authorized Admin
+Generate operational and financial reports.
+UC-12
+Review Audit Logs
+Authorized Admin
+Search and review administrative/security events.
+8. Business Rules
+BR-01: A confirmed booking must reference at least one valid passenger and one valid flight segment.
+BR-02: A seat cannot be assigned to more than one passenger on the same flight segment.
+BR-03: A flight cannot exceed its configured passenger capacity.
+BR-04: A booking cannot become confirmed unless the required payment state is successful.
+BR-05: Payment failure shall not create a confirmed booking.
+BR-06: Cancellation, refund, and rebooking eligibility shall follow configured fare/business rules.
+BR-07: Check-in shall only be available when the booking and flight satisfy configured eligibility rules.
+BR-08: Only authorized staff may perform administrative operations.
+BR-09: Super Admin shall have full administrative permissions.
+BR-10: Sensitive administrative actions shall create audit-log records.
+BR-11: An audit log record shall identify the actor, action, target, and timestamp.
+BR-12: Customer users shall not access other customers' private booking or payment information.
+BR-13 (new): The system shall place a temporary hold on a selected seat during checkout to prevent concurrent double-booking; the hold shall expire automatically if payment is not completed within a configured time window.
+BR-14 (new): Administrative confirmation of a booking without a successful payment record shall only occur through an explicitly authorized exception workflow, and every such exception shall generate an audit-log entry (resolves the BR-04 / Section 5.6 conflict).
+BR-15 (new): Cancellation and refund amounts shall be calculated according to configured fare rules, applicable cancellation fees, and the original payment amount.
+9. Non-Functional Requirements
+ID
+Category
+Requirement
+NFR-01
+Security
+Use secure password hashing, protected authentication, backend authorization, secure session/token handling, and input validation. Raw payment card data shall never be stored; card handling shall occur exclusively through a PCI DSS–compliant payment provider (e.g., via tokenization). Public search and booking endpoints shall apply rate-limiting / anti-abuse protections (revised).
+NFR-02
+Performance
+Common user and dashboard operations should provide acceptable response times under normal project load.
+NFR-03
+Scalability
+The system architecture should support growth in users, flights, bookings, and administrative activity.
+NFR-04
+Reliability
+Booking/payment operations shall maintain consistent state and avoid duplicate confirmed bookings.
+NFR-05
+Availability
+The system should handle temporary failures of external services gracefully.
+NFR-06
+Usability
+The customer and dashboard interfaces shall provide clear navigation, validation, feedback, and error messages.
+NFR-07
+Responsive Design
+The customer-facing web application shall support desktop, tablet, and mobile layouts.
+NFR-08
+Maintainability
+The code shall use modular architecture and separation of concerns.
+NFR-09
+Auditability
+Security-sensitive and administrative actions shall be traceable.
+NFR-10
+Privacy
+Personal and operational data shall be accessible only to authorized users, and shall be handled in compliance with applicable data-protection regulations (e.g., GDPR for EU customers), including defined data-retention and deletion periods (revised).
+NFR-11
+Data Integrity
+Relationships among flights, seats, passengers, bookings, payments, and baggage shall remain consistent.
+NFR-12
+Backup & Recovery
+The production design should provide a strategy for database backup and recovery.
+NFR-13 (new)
+Localization
+The customer-facing platform shall support multiple languages and currencies appropriate to Lufthansa's international customer base.
+10. Core Data Entities
+User
+Role
+Permission
+UserRole
+RolePermission
+Passenger
+Airport
+Route
+Aircraft
+Seat
+SeatHold (new — supports BR-13 checkout hold)
+Flight
+FlightSegment
+Fare
+Booking
+BookingPassenger
+BookingSeat
+Payment
+Baggage
+BaggageEvent
+CheckIn
+BoardingPass
+ExtraService
+BookingExtra
+Notification
+NotificationTemplate
+LoyaltyAccount
+LoyaltyTransaction
+Refund
+AuditLog
+SystemSetting
+11. High-Level Architecture
+The implementation shall use a layered full-stack architecture. The selected baseline is Angular for the frontend, NestJS for the backend API, PostgreSQL for the relational database, and Prisma as the object-relational mapper (ORM).
+Customer Web App → Backend API → Authentication/Authorization → Business Services → Database
+Admin Dashboard → Backend API → RBAC/Permissions → Business Services → Database
+Backend → Payment Provider for payment operations.
+Backend → Notification Provider for email/SMS notifications where required.
+12. Main Customer Flow
+Search → Flight Results → Flight Details → Passenger Information → Seat/Extras → Fare Review → Payment → Booking Confirmation → Manage Booking → Check-in → Boarding Pass
+13. Main Admin Flow
+Admin Login → Authorization → Dashboard Overview → Select Module → Perform Management Action → Validate Business Rules → Update Database → Create Audit Log → Refresh Analytics
+14. Suggested Dashboard Navigation
+Overview
+Flights
+Routes
+Airports
+Aircraft
+Bookings
+Passengers / Users
+Staff
+Roles & Permissions
+Payments
+Refunds
+Baggage
+Check-in
+Loyalty / Miles
+Notifications
+Reports & Analytics
+Audit Logs
+System Settings
+15. Assumptions and Constraints
+The project is an educational Lufthansa-inspired system, not an official Lufthansa product.
+Live flight inventory, airport operational systems, payment processing, and baggage tracking may require external APIs or mocked services.
+Real-world airline policies may vary by route, fare, date, and operating carrier; project rules should therefore be configurable.
+Development may initially use seeded/mock flight data.
+External integrations should be isolated behind services/interfaces so they can be replaced by mocks during development.
+The baseline technology stack is defined in Section 19. Any replacement technology shall preserve the stated functional, security, data-integrity, and traceability requirements.
+16. Requirements Traceability
+Every functional requirement should later be mapped to at least one use case, UI screen, API endpoint, database entity, and test case. This provides a traceable path from Market Research → Requirements → Design → Implementation → Testing.
+17. Market Research Basis
+The system scope is inspired by publicly visible Lufthansa concepts including flight search and booking, customer account services, manage-booking functions, online check-in, flight status, baggage services, and loyalty-related services. The project should validate exact current Lufthansa behavior against official public documentation before presenting any specific operational rule as a real Lufthansa requirement.
+18. Version 2.1 Review — Change Log (new)
+The following gaps, contradictions, and omissions were identified in v2.0 and corrected in this version:
+Added a System / Scheduler actor (Section 3) — automated jobs (status sync, seat-hold expiry, notifications) had no owning actor.
+FR-C02 & new FR-C24 — no account-recovery (password reset) or MFA requirement existed for a system handling payment data.
+FR-C04 — flight search did not specify trip type (one-way / round-trip / multi-city).
+FR-C09 & BR-13 & SeatHold entity — no mechanism prevented two customers from concurrently booking the same seat during checkout (a real double-booking risk).
+FR-C13 & NFR-01 — no requirement barring storage of raw card data or requiring PCI DSS–compliant payment handling.
+Section 5.6 & BR-14 — admin 'Confirm booking' capability could bypass BR-04's payment-success requirement with no stated safeguard; now scoped to an audited exception workflow.
+BR-15 — no rule governed how refund/cancellation amounts are actually calculated.
+NFR-10 — privacy requirement did not reference data-protection regulation (e.g., GDPR) or retention/deletion periods, despite Lufthansa being EU-based.
+NFR-13 — no localization requirement existed despite the platform targeting an international customer base.
+NFR-01 — no anti-abuse/rate-limiting requirement for public-facing search and booking endpoints.
+19. Technical Architecture, ERD, and Mapping Schema
+This section defines the implementation baseline for the requirements in this SRS. It refines the high-level architecture in Section 11 and establishes a shared contract between the Angular frontend, NestJS backend, PostgreSQL database, and Prisma data-access layer. The design is intentionally modular so that external payment, notification, and operational integrations can be mocked during development and replaced without changing the customer-facing requirements.
+19.1 Technology Stack
+Layer
+Technology
+SRS-aligned responsibility
+Frontend
+Angular
+Customer portal and admin dashboard; routed feature modules; typed API clients; reactive forms; client-side validation and accessibility.
+Backend API
+NestJS
+REST API, DTO validation, authentication, authorization guards, domain services, integration adapters, scheduled jobs, and audit orchestration.
+Database
+PostgreSQL
+Transactional system of record for users, flights, bookings, payments, check-in, baggage, loyalty, notifications, settings, and audit data.
+ORM / data access
+Prisma
+Type-safe database client, schema definition, migrations, relation queries, transaction boundaries, and generated TypeScript types.
+Developer guidance
+mattpocock/skills
+Optional shared TypeScript and engineering guidance used by the project team during implementation and review; it is not a runtime dependency.
+External integrations
+Provider adapters behind NestJS interfaces
+Payment, email/SMS, flight-status, and other providers remain replaceable and may be mocked in non-production environments.
+19.2 Logical Application Architecture
+The Angular application communicates with NestJS over HTTPS using JSON APIs. NestJS owns business rules and authorization decisions; Angular must not be treated as a security boundary. Prisma is the only application data access layer for PostgreSQL, and all multi-record booking, payment, seat-hold, check-in, and cancellation updates shall use explicit transaction boundaries. Scheduled workers are responsible for status synchronization, expiry of seat holds, notification retries, and other automated actions described in the requirements.
+• Angular feature areas shall be organized around search, booking, manage booking, check-in, customer profile, and administration.
+• NestJS modules shall isolate flights, bookings, payments, operations, users and RBAC, notifications, reporting, and audit concerns.
+• PostgreSQL constraints and indexes shall enforce uniqueness and lookup requirements such as IATA codes, booking references, payment provider references, and seat-hold expiry queries.
+• Prisma migrations shall be version-controlled and applied through the project deployment process; production schema changes shall not be made manually.
+19.3 Entity Relationship Diagram
+The following conceptual ERD maps the core entities already listed in Section 10 to their principal relationships. Join entities are shown explicitly for many-to-many relationships, and SeatHold is included to support the concurrency rule that prevents two customers from booking the same seat during checkout.
+Figure 1. Conceptual entity relationship diagram for the Lufthansa-inspired booking platform.
+19.4 Module-to-API-to-Data Mapping Schema
+The mapping schema below defines the expected direction of dependencies. Angular feature modules call NestJS controllers. Controllers validate DTOs and delegate to domain services. Domain services use Prisma model groups and integration ports; they do not expose database details directly to the frontend.
+Figure 2. Application module, API, domain-service, integration, and Prisma mapping schema.
+Frontend capability
+NestJS API module
+Primary Prisma entities
+Key controls
+Search and flight results
+FlightsModule
+Airport, Route, Aircraft, Flight, FlightSegment, Fare, Seat
+Validated search criteria; status and schedule filtering; pagination; rate limiting.
+Booking and manage booking
+BookingsModule
+Booking, BookingPassenger, BookingSeat, Passenger, Fare, SeatHold, ExtraService, BookingExtra
+Seat-hold transaction; fare revalidation; booking-reference authorization; immutable booking history.
+Payments and refunds
+PaymentsModule
+Payment, Refund, Booking
+Provider tokenization; no raw card storage; idempotency; payment-success gate; audited refund calculation.
+Check-in and boarding
+OperationsModule
+CheckIn, BoardingPass, BookingPassenger, BookingSeat, Flight
+Eligibility checks; one boarding pass per eligible passenger/segment; operational status validation.
+Baggage services
+OperationsModule
+Baggage, BaggageEvent, Booking
+Tag uniqueness; event history; role-based operational access; customer visibility limits.
+Accounts, staff, RBAC, and loyalty
+UsersModule
+User, Role, Permission, UserRole, RolePermission, LoyaltyAccount, LoyaltyTransaction
+Password hashing; MFA support; backend guards; least privilege; points ledger integrity.
+Notifications and audit
+NotificationsModule plus AuditModule
+NotificationTemplate, Notification, AuditLog, SystemSetting
+Retryable delivery; template versioning; actor/entity audit trail; retention policy.
+19.5 Prisma and PostgreSQL Design Rules
+• Every persistent entity shall have a stable UUID primary key unless a documented external identifier is required for interoperability.
+• Natural business identifiers such as booking reference, IATA code, member number, tag number, and provider reference shall have explicit unique constraints where applicable.
+• Foreign keys shall use restrictive or cascading behavior deliberately. Booking and payment records shall be retained for audit and financial traceability rather than deleted casually.
+• Seat allocation shall be protected by a combination of active seat holds, transaction isolation, and database uniqueness rules appropriate to the booking lifecycle.
+• Sensitive values shall be minimized, encrypted or tokenized where required, excluded from logs, and subject to the retention and deletion requirements in the SRS.
+• Prisma schema names may follow project TypeScript conventions while PostgreSQL table and column mappings remain explicit through @@map and @map where a stable SQL naming convention is needed.
+19.6 Traceability and Implementation Acceptance Criteria
+A feature is considered technically traceable when its requirement identifier can be followed through a use case, Angular screen or workflow, NestJS endpoint and service, Prisma model or transaction, PostgreSQL constraint or index where relevant, and automated test case. This traceability path extends the requirement statement in Section 16 and shall be maintained as the implementation evolves.
+• The repository shall contain the Prisma schema and migration history for every released database change.
+• API DTOs, authorization guards, and service methods shall be covered by unit or integration tests for the corresponding business rules.
+• Critical booking, seat-hold, payment, cancellation, and check-in flows shall have end-to-end tests against a PostgreSQL test database.
+• The Angular and NestJS module names shall remain aligned with the mapping schema unless the traceability section is updated in the same change.
