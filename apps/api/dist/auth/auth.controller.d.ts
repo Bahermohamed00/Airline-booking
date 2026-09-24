@@ -33,6 +33,8 @@ export declare class AuthController {
     me(user: AuthUser): {
         userId: string;
         email: string;
+        firstName: string;
+        lastName: string;
         roles: string[];
         permissions: string[];
     };

@@ -322,7 +322,7 @@ model Fare {
 
   flight Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
 
-  @@unique([flightId, cabinClass])
+  @@index([flightId, cabinClass])
   @@map("fares")
 }
 

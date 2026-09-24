@@ -6,7 +6,7 @@ import { BookingService } from '../../../core/services/booking.service';
 import { PaymentService } from '../../../core/services/domain-services';
 import { PricingService, formatMoney } from '../../../core/services/pricing.service';
 import { FLIGHT_STATUS_MAP } from '../../../core/status-maps';
-import type { BookingDraft } from '../../../core/models/booking-flow.model';
+import type { BookingDraft, DraftLeg } from '../../../core/models/booking-flow.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
@@ -39,6 +39,9 @@ import { BOOKING_STEPS } from './passengers.component';
                 <h2 id="trip-h">Trip</h2>
                 <a [routerLink]="['/flights', d.outbound.id]">Edit</a>
               </header>
+              @if (hasMultipleLegs(d)) {
+                <h3 class="leg__title">{{ d.criteria.tripType === 'MULTI_CITY' ? 'Leg 1' : 'Outbound' }}</h3>
+              }
               <p>
                 <strong>{{ d.outbound.flightNumber }}</strong> — {{ d.outbound.route.origin.iataCode }}
                 ({{ d.outbound.route.origin.city }}) → {{ d.outbound.route.destination.iataCode }}
@@ -49,6 +52,32 @@ import { BOOKING_STEPS } from './passengers.component';
                 {{ cabinName(d.fare.cabinClass) }} ·
                 <na-badge [tone]="statusTone(d.outbound.status)">{{ statusLabel(d.outbound.status) }}</na-badge>
               </p>
+              @if (d.returnFlight; as rf) {
+                <h3 class="leg__title">{{ d.criteria.tripType === 'MULTI_CITY' ? 'Leg 2' : 'Return' }}</h3>
+                <p>
+                  <strong>{{ rf.flightNumber }}</strong> — {{ rf.route.origin.iataCode }}
+                  ({{ rf.route.origin.city }}) → {{ rf.route.destination.iataCode }}
+                  ({{ rf.route.destination.city }})
+                </p>
+                <p class="na-text-small na-text-muted">
+                  {{ fullDate(rf.departureTime) }} → {{ time(rf.arrivalTime) }} ·
+                  {{ cabinName((d.returnFare ?? d.fare).cabinClass) }} ·
+                  <na-badge [tone]="statusTone(rf.status)">{{ statusLabel(rf.status) }}</na-badge>
+                </p>
+              }
+              @for (leg of extraLegs(d); track leg.flight.id; let i = $index) {
+                <h3 class="leg__title">Leg {{ i + 3 }}</h3>
+                <p>
+                  <strong>{{ leg.flight.flightNumber }}</strong> — {{ leg.flight.route.origin.iataCode }}
+                  ({{ leg.flight.route.origin.city }}) → {{ leg.flight.route.destination.iataCode }}
+                  ({{ leg.flight.route.destination.city }})
+                </p>
+                <p class="na-text-small na-text-muted">
+                  {{ fullDate(leg.flight.departureTime) }} → {{ time(leg.flight.arrivalTime) }} ·
+                  {{ cabinName(leg.fare.cabinClass) }} ·
+                  <na-badge [tone]="statusTone(leg.flight.status)">{{ statusLabel(leg.flight.status) }}</na-badge>
+                </p>
+              }
             </section>
 
             <section class="na-card panel" aria-labelledby="pax-h">
@@ -64,7 +93,7 @@ import { BOOKING_STEPS } from './passengers.component';
                       <span class="na-text-muted na-text-small">({{ typeLabel(p.passengerType) }})</span>
                     </span>
                     <span class="na-text-small na-text-muted">
-                      Seat {{ seatNumber(d, i) ?? 'not selected' }}
+                      Seat {{ seatLabel(d, i) }}
                     </span>
                   </li>
                 }
@@ -168,6 +197,10 @@ import { BOOKING_STEPS } from './passengers.component';
     .layout { display: grid; grid-template-columns: 1fr 360px; gap: var(--na-space-5); align-items: start; }
     .main { display: grid; gap: var(--na-space-4); align-content: start; }
     .panel { padding: var(--na-space-6); }
+    .leg__title {
+      font-size: var(--na-text-sm); font-weight: var(--na-font-semibold); color: var(--na-ink-500);
+      text-transform: uppercase; letter-spacing: 0.08em; margin: var(--na-space-4) 0 var(--na-space-2);
+    }
     .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--na-space-3); }
     .panel__head h2 { font-size: var(--na-text-xl); }
     .panel__head a { font-weight: var(--na-font-semibold); min-height: 44px; display: inline-flex; align-items: center; }
@@ -215,9 +248,11 @@ export class ReviewPage {
     return this.pricing.computeBreakdown({
       fare: d.fare,
       returnFare: d.returnFare,
+      extraLegFares: d.legs.slice(2).map((l) => l.fare),
       passengerTypes: d.passengers.map((p) => p.passengerType),
       seats: d.seats,
       returnSeats: d.returnSeats,
+      extraLegSeats: d.extraLegSeats,
       extras: d.extras,
       extraBags: d.baggagePieces.reduce((a, b) => a + b, 0),
       promoCode: d.criteria.promoCode,
@@ -226,7 +261,7 @@ export class ReviewPage {
 
   protected readonly holdWarning = computed(() => {
     const d = this.draft();
-    return !!d && d.seats.length > 0 && this.draftApi.isHoldExpired();
+    return !!d && d.seats.length + d.returnSeats.length + d.extraLegSeats.length > 0 && this.draftApi.isHoldExpired();
   });
 
   constructor() {
@@ -237,6 +272,27 @@ export class ReviewPage {
 
   protected seatNumber(d: BookingDraft, passengerIndex: number): string | null {
     return d.seats.find((s) => s.passengerIndex === passengerIndex)?.seat.seatNumber ?? null;
+  }
+
+  /** Seat numbers across all legs, e.g. "12A / 14C" for round trip; identical to the outbound seat for one-way. */
+  protected seatLabel(d: BookingDraft, passengerIndex: number): string {
+    const numbers = [
+      this.seatNumber(d, passengerIndex),
+      d.returnSeats.find((s) => s.passengerIndex === passengerIndex)?.seat.seatNumber ?? null,
+      ...d.extraLegSeats
+        .filter((s) => s.passengerIndex === passengerIndex)
+        .sort((a, b) => (a.legIndex ?? 0) - (b.legIndex ?? 0))
+        .map((s) => s.seat.seatNumber),
+    ].filter((n): n is string => !!n);
+    return numbers.length ? numbers.join(' / ') : 'not selected';
+  }
+
+  protected hasMultipleLegs(d: BookingDraft): boolean {
+    return !!d.returnFlight || d.legs.length > 2;
+  }
+
+  protected extraLegs(d: BookingDraft): DraftLeg[] {
+    return d.legs.slice(2);
   }
 
   protected totalExtraBags(d: BookingDraft): number {

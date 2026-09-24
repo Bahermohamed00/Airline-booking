@@ -1,6 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 import type {
-  BookingDraft, SearchCriteria, PassengerForm, SeatSelection, ExtraSelection,
+  BookingDraft, SearchCriteria, PassengerForm, SeatSelection, ExtraSelection, DraftLeg,
 } from '../models/booking-flow.model';
 import type { Flight, Fare } from '../models/domain.model';
 
@@ -17,7 +17,7 @@ export class BookingDraftService {
   readonly fare = computed(() => this.draftSignal()?.fare ?? null);
   readonly seatHoldExpiresAt = computed(() => this.draftSignal()?.seatHoldExpiresAt ?? null);
 
-  start(criteria: SearchCriteria, flight: Flight, fare: Fare, returnFlight?: Flight, returnFare?: Fare): void {
+  start(criteria: SearchCriteria, flight: Flight, fare: Fare, returnFlight?: Flight, returnFare?: Fare, legs?: DraftLeg[]): void {
     const count = criteria.passengers;
     const passengers: PassengerForm[] = [
       ...Array.from({ length: count.adults }, () => this.emptyPassenger('ADULT')),
@@ -30,9 +30,11 @@ export class BookingDraftService {
       returnFlight: returnFlight ?? null,
       fare,
       returnFare: returnFare ?? null,
+      legs: legs ?? [],
       passengers,
       seats: [],
       returnSeats: [],
+      extraLegSeats: [],
       extras: [],
       baggagePieces: passengers.map(() => 0),
       seatHoldExpiresAt: null,
@@ -49,9 +51,9 @@ export class BookingDraftService {
     this.update((d) => ({ ...d, passengers }));
   }
 
-  setSeats(seats: SeatSelection[], returnSeats: SeatSelection[]): void {
+  setSeats(seats: SeatSelection[], returnSeats: SeatSelection[], extraLegSeats: SeatSelection[] = []): void {
     const expiresAt = new Date(Date.now() + HOLD_MINUTES * 60000).toISOString();
-    this.update((d) => ({ ...d, seats, returnSeats, seatHoldExpiresAt: expiresAt }));
+    this.update((d) => ({ ...d, seats, returnSeats, extraLegSeats, seatHoldExpiresAt: expiresAt }));
   }
 
   setExtras(extras: ExtraSelection[]): void {
@@ -79,7 +81,7 @@ export class BookingDraftService {
   }
 
   releaseHold(): void {
-    this.update((d) => ({ ...d, seats: [], returnSeats: [], seatHoldExpiresAt: null }));
+    this.update((d) => ({ ...d, seats: [], returnSeats: [], extraLegSeats: [], seatHoldExpiresAt: null }));
   }
 
   clear(): void {

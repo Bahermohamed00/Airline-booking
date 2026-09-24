@@ -45,9 +45,11 @@ export class BookingService {
     const breakdown = this.pricing.computeBreakdown({
       fare: draft.fare,
       returnFare: draft.returnFare,
+      extraLegFares: draft.legs.slice(2).map((l) => l.fare),
       passengerTypes: draft.passengers.map((p) => p.passengerType),
       seats: draft.seats,
       returnSeats: draft.returnSeats,
+      extraLegSeats: draft.extraLegSeats,
       extras: draft.extras,
       extraBags: draft.baggagePieces.reduce((a, b) => a + b, 0),
       promoCode: draft.criteria.promoCode,

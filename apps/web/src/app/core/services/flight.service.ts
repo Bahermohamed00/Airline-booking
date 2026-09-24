@@ -1,12 +1,23 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, of, delay, map } from 'rxjs';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, of, delay } from 'rxjs';
 import { FLIGHTS, AIRPORTS } from '../mock/mock-data';
+import { environment } from '../../../environments/environment';
 import type { Flight, Airport } from '../models/domain.model';
 import type { SearchCriteria, ResultFilters, ResultSort } from '../models/booking-flow.model';
 
 @Injectable({ providedIn: 'root' })
 export class FlightService {
+  private readonly http = inject(HttpClient);
+  private readonly baseUrl = environment.apiBaseUrl;
+  /** When true, read from the real NestJS API; otherwise use mock data. */
+  private readonly useRealApi = environment.useRealApi;
+
   searchAirports(query: string): Observable<Airport[]> {
+    if (this.useRealApi) {
+      const params = query.trim() ? new HttpParams().set('query', query.trim()) : undefined;
+      return this.http.get<Airport[]>(`${this.baseUrl}/airports`, { params });
+    }
     const q = query.trim().toLowerCase();
     const results = q.length === 0
       ? AIRPORTS
@@ -21,6 +32,11 @@ export class FlightService {
   }
 
   searchFlights(criteria: SearchCriteria): Observable<Flight[]> {
+    if (this.useRealApi) {
+      return this.http.get<Flight[]>(`${this.baseUrl}/flights/search`, {
+        params: searchParams(criteria),
+      });
+    }
     const targetDate = new Date(criteria.departureDate);
     const matches = FLIGHTS.filter((f) => {
       const sameRoute =
@@ -39,6 +55,11 @@ export class FlightService {
   }
 
   adjacentDateAvailability(criteria: SearchCriteria): Observable<{ date: string; minPrice: number | null }[]> {
+    if (this.useRealApi) {
+      return this.http.get<{ date: string; minPrice: number | null }[]>(`${this.baseUrl}/flights/adjacent`, {
+        params: searchParams(criteria),
+      });
+    }
     const base = new Date(criteria.departureDate);
     const days: { date: string; minPrice: number | null }[] = [];
     for (let offset = -3; offset <= 3; offset++) {
@@ -63,10 +84,18 @@ export class FlightService {
   }
 
   getFlight(id: string): Observable<Flight | undefined> {
+    if (this.useRealApi) {
+      return this.http.get<Flight>(`${this.baseUrl}/flights/${id}`);
+    }
     return of(FLIGHTS.find((f) => f.id === id)).pipe(delay(200));
   }
 
   flightStatusByNumber(flightNumber: string, date?: string): Observable<Flight[]> {
+    if (this.useRealApi) {
+      let params = new HttpParams().set('flightNumber', flightNumber.trim());
+      if (date) params = params.set('date', date);
+      return this.http.get<Flight[]>(`${this.baseUrl}/flights/status/by-number`, { params });
+    }
     const n = flightNumber.trim().toUpperCase();
     return of(
       FLIGHTS.filter((f) => {
@@ -78,6 +107,12 @@ export class FlightService {
   }
 
   flightStatusByRoute(originCode: string, destinationCode: string): Observable<Flight[]> {
+    if (this.useRealApi) {
+      const params = new HttpParams()
+        .set('origin', originCode.toUpperCase())
+        .set('destination', destinationCode.toUpperCase());
+      return this.http.get<Flight[]>(`${this.baseUrl}/flights/status/by-route`, { params });
+    }
     return of(
       FLIGHTS.filter(
         (f) =>
@@ -90,6 +125,22 @@ export class FlightService {
   adminFlights(): Observable<Flight[]> {
     return of(FLIGHTS).pipe(delay(250));
   }
+}
+
+/** Query-param contract shared by the search page and the API (FR-C04). */
+function searchParams(criteria: SearchCriteria): HttpParams {
+  let params = new HttpParams()
+    .set('tripType', criteria.tripType)
+    .set('origin', criteria.originCode)
+    .set('destination', criteria.destinationCode)
+    .set('depart', criteria.departureDate)
+    .set('adults', criteria.passengers.adults)
+    .set('children', criteria.passengers.children)
+    .set('infants', criteria.passengers.infants)
+    .set('cabin', criteria.cabinClass);
+  if (criteria.returnDate) params = params.set('return', criteria.returnDate);
+  if (criteria.promoCode) params = params.set('promo', criteria.promoCode);
+  return params;
 }
 
 export function applyFilters(flights: Flight[], filters: ResultFilters, cabinClass: string): Flight[] {

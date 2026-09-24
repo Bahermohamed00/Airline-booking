@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FlightService, applyFilters, applySort, flightDurationLabel } from '../../../core/services/flight.service';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import type { Fare, Flight, CabinClass } from '../../../core/models/domain.model';
-import type { ResultFilters, ResultSort, SearchCriteria, TripType } from '../../../core/models/booking-flow.model';
+import type { DraftLeg, ResultFilters, ResultSort, SearchCriteria, SearchLeg, TripType } from '../../../core/models/booking-flow.model';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
@@ -19,6 +20,22 @@ interface AdjacentDay {
   minPrice: number | null;
 }
 
+interface ResultSection {
+  index: number;
+  title: string;
+  origin: string;
+  destination: string;
+  date: string;
+  /** null = loading */
+  flights: Flight[] | null;
+  error: boolean;
+}
+
+interface LegPick {
+  flight: Flight;
+  fare: Fare;
+}
+
 function cabinLabel(c: CabinClass): string {
   return c
     .split('_')
@@ -30,7 +47,7 @@ function cabinLabel(c: CabinClass): string {
   selector: 'na-results-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, NaButton, NaBadge, NaAlert, NaSkeleton, NaEmptyState, NaSegmented, NaRouteLine],
+  imports: [RouterLink, NgTemplateOutlet, NaButton, NaBadge, NaAlert, NaSkeleton, NaEmptyState, NaSegmented, NaRouteLine],
   host: { '(document:keydown.escape)': 'onEscape()' },
   template: `
     <div class="na-container page">
@@ -44,24 +61,27 @@ function cabinLabel(c: CabinClass): string {
             {{ prettyDate(c.departureDate) }}
             @if (c.returnDate) { – {{ prettyDate(c.returnDate) }} }
             · {{ passengerLabel(c) }} · {{ cabinName(c.cabinClass) }}
+            @if (c.tripType === 'MULTI_CITY') { · Multi-city }
           </p>
           <a routerLink="/search" class="summary__edit">Modify search</a>
         </div>
 
         <div class="dates" role="group" aria-label="Nearby dates">
-          @for (d of adjacent(); track d.date) {
-            <button
-              type="button"
-              class="dates__day"
-              [class.dates__day--active]="d.date === c.departureDate"
-              [attr.aria-pressed]="d.date === c.departureDate"
-              [disabled]="d.minPrice === null && d.date !== c.departureDate"
-              (click)="pickDate(d.date)"
-            >
-              <span class="dates__dow">{{ weekday(d.date) }}</span>
-              <span class="dates__date">{{ shortDate(d.date) }}</span>
-              <span class="dates__price">{{ d.minPrice === null ? '—' : money(d.minPrice) }}</span>
-            </button>
+          @if (c.tripType !== 'MULTI_CITY') {
+            @for (d of adjacent(); track d.date) {
+              <button
+                type="button"
+                class="dates__day"
+                [class.dates__day--active]="d.date === c.departureDate"
+                [attr.aria-pressed]="d.date === c.departureDate"
+                [disabled]="d.minPrice === null && d.date !== c.departureDate"
+                (click)="pickDate(d.date)"
+              >
+                <span class="dates__dow">{{ weekday(d.date) }}</span>
+                <span class="dates__date">{{ shortDate(d.date) }}</span>
+                <span class="dates__price">{{ d.minPrice === null ? '—' : money(d.minPrice) }}</span>
+              </button>
+            }
           }
         </div>
 
@@ -132,7 +152,9 @@ function cabinLabel(c: CabinClass): string {
 
             <div class="results__bar">
               <p class="na-text-muted na-text-small">
-                @if (flights() !== null) {
+                @if (multiLeg()) {
+                  {{ totalVisible() }} of {{ totalFlights() }} flights across {{ sections().length }} legs
+                } @else if (flights() !== null) {
                   {{ visibleFlights().length }} of {{ flights()!.length }} flights
                 }
               </p>
@@ -147,11 +169,41 @@ function cabinLabel(c: CabinClass): string {
               </div>
             </div>
 
-            @if (error()) {
-              <na-alert tone="danger" icon="⚠" title="We couldn't load flights for this route" [retryable]="true" (retry)="runSearch()">
+            @if (multiLeg()) {
+              @for (s of sections(); track s.index) {
+                <section class="leg" [attr.aria-labelledby]="'leg-h-' + s.index">
+                  <h2 class="leg__title" [id]="'leg-h-' + s.index">{{ s.title }}</h2>
+                  <ng-container
+                    [ngTemplateOutlet]="flightCards"
+                    [ngTemplateOutletContext]="{ flights: s.flights, error: s.error, index: s.index }"
+                  />
+                </section>
+              }
+
+              <div class="na-card continue" aria-live="polite">
+                <ul class="continue__list">
+                  @for (s of sections(); track s.index) {
+                    <li>
+                      <span class="continue__leg">{{ s.title }}</span>
+                      <strong>{{ pickLabel(s.index) }}</strong>
+                    </li>
+                  }
+                </ul>
+                <na-button variant="cta" size="lg" [disabled]="!allPicked()" (clicked)="continueMulti()">Continue</na-button>
+              </div>
+            } @else {
+              <ng-container
+                [ngTemplateOutlet]="flightCards"
+                [ngTemplateOutletContext]="{ flights: flights(), error: !!error(), index: 0 }"
+              />
+            }
+
+            <ng-template #flightCards let-list="flights" let-failed="error" let-legIndex="index">
+            @if (failed) {
+              <na-alert tone="danger" icon="⚠" title="We couldn't load flights for this route" [retryable]="true" (retry)="runSearch(legIndex)">
                 Try again in a moment.
               </na-alert>
-            } @else if (flights() === null) {
+            } @else if (list === null) {
               <div class="skel" aria-hidden="true">
                 @for (i of skeletons; track i) {
                   <div class="na-card skel__card">
@@ -162,7 +214,7 @@ function cabinLabel(c: CabinClass): string {
                 }
               </div>
               <span class="na-visually-hidden">Loading flights…</span>
-            } @else if (visibleFlights().length === 0) {
+            } @else if (visibleIn(list).length === 0) {
               <na-empty-state
                 icon="✈"
                 title="No flights match your search"
@@ -172,8 +224,8 @@ function cabinLabel(c: CabinClass): string {
               />
             } @else {
               <ol class="cards" role="list">
-                @for (f of visibleFlights(); track f.id) {
-                  <li class="na-card card">
+                @for (f of visibleIn(list); track f.id) {
+                  <li class="na-card card" [class.card--picked]="pickedFlightId(legIndex) === f.id">
                     <div class="card__top">
                       <p class="card__airline">NovaAir · {{ f.flightNumber }} · {{ f.aircraft.model }}</p>
                       <div class="card__badges">
@@ -234,7 +286,9 @@ function cabinLabel(c: CabinClass): string {
                           <p class="card__from">From</p>
                           <p class="card__price">{{ fareTotal(fare) }}</p>
                           <p class="card__per">per adult</p>
-                          <na-button variant="cta" (clicked)="select(f, fare)">Select</na-button>
+                          <na-button [variant]="isPicked(legIndex, f.id, fare.id) ? 'secondary' : 'cta'" (clicked)="select(legIndex, f, fare)">
+                            {{ isPicked(legIndex, f.id, fare.id) ? 'Selected ✓' : 'Select' }}
+                          </na-button>
                         }
                       </div>
                     </div>
@@ -260,8 +314,8 @@ function cabinLabel(c: CabinClass): string {
                                 variant="secondary"
                                 size="sm"
                                 [disabled]="fare.availableCount === 0"
-                                (clicked)="select(f, fare)"
-                              >{{ fare.availableCount === 0 ? 'Sold out' : 'Select' }}</na-button>
+                                (clicked)="select(legIndex, f, fare)"
+                              >{{ fare.availableCount === 0 ? 'Sold out' : isPicked(legIndex, f.id, fare.id) ? 'Selected ✓' : 'Select' }}</na-button>
                             </div>
                           </div>
                         }
@@ -271,6 +325,7 @@ function cabinLabel(c: CabinClass): string {
                 }
               </ol>
             }
+            </ng-template>
           </section>
         </div>
 
@@ -334,6 +389,19 @@ function cabinLabel(c: CabinClass): string {
     .skel { display: grid; gap: var(--na-space-4); }
     .skel__card { padding: var(--na-space-6); }
     .cards { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--na-space-4); }
+    .leg { margin-bottom: var(--na-space-6); }
+    .leg__title {
+      font-size: var(--na-text-lg); font-weight: var(--na-font-bold); color: var(--na-ink-900);
+      margin-bottom: var(--na-space-4); padding-bottom: var(--na-space-2); border-bottom: 1px solid var(--na-border);
+    }
+    .continue {
+      display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4); flex-wrap: wrap;
+      padding: var(--na-space-5); position: sticky; bottom: var(--na-space-4); box-shadow: var(--na-shadow-lg);
+    }
+    .continue__list { list-style: none; display: flex; gap: var(--na-space-5); flex-wrap: wrap; padding: 0; margin: 0; }
+    .continue__list li { display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
+    .continue__leg { color: var(--na-ink-500); font-size: var(--na-text-xs); }
+    .card--picked { border-color: var(--na-blue-600); box-shadow: var(--na-shadow-md); }
     .card {
       display: grid; gap: var(--na-space-5); padding: var(--na-space-6);
       transition: transform var(--na-motion-fast) var(--na-ease), box-shadow var(--na-motion-fast) var(--na-ease);
@@ -423,6 +491,10 @@ export class ResultsPage {
   protected readonly sort = signal<ResultSort>('recommended');
   protected readonly filtersOpen = signal(false);
   protected readonly skeletons = [1, 2, 3];
+  /** One section per leg for round-trip / multi-city searches. Empty for one-way. */
+  protected readonly sections = signal<ResultSection[]>([]);
+  /** Selected flight+fare per section index; null until the user picks one. */
+  protected readonly picks = signal<(LegPick | null)[]>([]);
 
   private readonly filtersCloseBtn = viewChild('filtersClose', { read: ElementRef });
 
@@ -432,6 +504,26 @@ export class ResultsPage {
     { value: 'afternoon', label: 'Afternoon' },
     { value: 'evening', label: 'Evening' },
   ];
+
+  protected readonly multiLeg = computed(() => {
+    const c = this.criteria();
+    if (!c) return false;
+    if (c.tripType === 'MULTI_CITY') return (c.legs?.length ?? 0) >= 2;
+    return c.tripType === 'ROUND_TRIP' && !!c.returnDate;
+  });
+
+  protected readonly allPicked = computed(() => {
+    const picks = this.picks();
+    return this.multiLeg() && picks.length > 0 && picks.every((p) => p !== null);
+  });
+
+  protected readonly totalFlights = computed(() =>
+    this.sections().reduce((n, s) => n + (s.flights?.length ?? 0), 0),
+  );
+
+  protected readonly totalVisible = computed(() =>
+    this.sections().reduce((n, s) => n + (s.flights ? this.visibleIn(s.flights).length : 0), 0),
+  );
 
   protected readonly visibleFlights = computed(() => {
     const list = this.flights();
@@ -455,8 +547,20 @@ export class ResultsPage {
         this.criteria.set(null);
         return;
       }
+      const tripType = (params.get('tripType') as TripType) ?? 'ONE_WAY';
+      let legs: SearchLeg[] | undefined;
+      if (tripType === 'MULTI_CITY') {
+        const decoded: SearchLeg[] = [];
+        for (let i = 1; i <= 3; i++) {
+          const o = params.get(`leg${i}Origin`);
+          const d = params.get(`leg${i}Destination`);
+          const dt = params.get(`leg${i}Date`);
+          if (o && d && dt) decoded.push({ originCode: o, destinationCode: d, departureDate: dt });
+        }
+        if (decoded.length >= 2) legs = decoded;
+      }
       const criteria: SearchCriteria = {
-        tripType: (params.get('tripType') as TripType) ?? 'ONE_WAY',
+        tripType,
         originCode: origin,
         destinationCode: destination,
         departureDate: depart,
@@ -468,16 +572,27 @@ export class ResultsPage {
         },
         cabinClass: (params.get('cabin') as CabinClass) ?? 'ECONOMY',
         promoCode: params.get('promo'),
+        legs,
       };
       this.criteria.set(criteria);
+      const sections = this.buildSections(criteria);
+      this.sections.set(sections);
+      this.picks.set(sections.map(() => null));
+      this.expanded.set(new Set());
       this.runSearch();
-      this.loadAdjacent();
+      if (tripType !== 'MULTI_CITY') this.loadAdjacent();
     });
   }
 
-  protected runSearch(): void {
+  protected runSearch(legIndex?: number): void {
     const c = this.criteria();
     if (!c) return;
+    if (this.multiLeg()) {
+      for (const s of this.sections()) {
+        if (legIndex == null || s.index === legIndex) this.searchSection(s, c);
+      }
+      return;
+    }
     this.flights.set(null);
     this.error.set(null);
     this.flightsApi.searchFlights(c).subscribe({
@@ -487,6 +602,91 @@ export class ResultsPage {
         this.error.set('The flight search service is unavailable right now.');
       },
     });
+  }
+
+  private buildSections(c: SearchCriteria): ResultSection[] {
+    if (c.tripType === 'MULTI_CITY' && c.legs && c.legs.length >= 2) {
+      return c.legs.map((leg, i) => ({
+        index: i,
+        title: `Leg ${i + 1} — ${leg.originCode}→${leg.destinationCode}`,
+        origin: leg.originCode,
+        destination: leg.destinationCode,
+        date: leg.departureDate,
+        flights: null,
+        error: false,
+      }));
+    }
+    if (c.tripType === 'ROUND_TRIP' && c.returnDate) {
+      return [
+        {
+          index: 0,
+          title: `Outbound — ${c.originCode}→${c.destinationCode}`,
+          origin: c.originCode,
+          destination: c.destinationCode,
+          date: c.departureDate,
+          flights: null,
+          error: false,
+        },
+        {
+          index: 1,
+          title: `Return — ${c.destinationCode}→${c.originCode}`,
+          origin: c.destinationCode,
+          destination: c.originCode,
+          date: c.returnDate,
+          flights: null,
+          error: false,
+        },
+      ];
+    }
+    return [];
+  }
+
+  private searchSection(section: ResultSection, c: SearchCriteria): void {
+    this.patchSection(section.index, { flights: null, error: false });
+    this.flightsApi
+      .searchFlights({ ...c, originCode: section.origin, destinationCode: section.destination, departureDate: section.date })
+      .subscribe({
+        next: (flights) => this.patchSection(section.index, { flights }),
+        error: () => this.patchSection(section.index, { flights: [], error: true }),
+      });
+  }
+
+  private patchSection(index: number, patch: Partial<ResultSection>): void {
+    this.sections.update((list) => list.map((s) => (s.index === index ? { ...s, ...patch } : s)));
+  }
+
+  protected visibleIn(list: Flight[]): Flight[] {
+    const c = this.criteria();
+    if (!c) return [];
+    return applySort(applyFilters(list, this.filters(), c.cabinClass), this.sort(), c.cabinClass);
+  }
+
+  protected isPicked(legIndex: number, flightId: string, fareId: string): boolean {
+    if (!this.multiLeg()) return false;
+    const p = this.picks()[legIndex];
+    return !!p && p.flight.id === flightId && p.fare.id === fareId;
+  }
+
+  protected pickedFlightId(legIndex: number): string | null {
+    return this.multiLeg() ? (this.picks()[legIndex]?.flight.id ?? null) : null;
+  }
+
+  protected pickLabel(legIndex: number): string {
+    const p = this.picks()[legIndex];
+    return p ? `${p.flight.flightNumber} · ${cabinLabel(p.fare.cabinClass)}` : 'Not selected';
+  }
+
+  protected continueMulti(): void {
+    const c = this.criteria();
+    if (!c || !this.allPicked()) return;
+    const chosen = this.picks().map((p) => p!);
+    if (c.tripType === 'ROUND_TRIP') {
+      this.draft.start(c, chosen[0].flight, chosen[0].fare, chosen[1].flight, chosen[1].fare);
+    } else {
+      const legs: DraftLeg[] = chosen.map((p) => ({ flight: p.flight, fare: p.fare }));
+      this.draft.start(c, chosen[0].flight, chosen[0].fare, chosen[1]?.flight, chosen[1]?.fare, legs);
+    }
+    this.router.navigate(['/booking/passengers']);
   }
 
   protected pickDate(date: string): void {
@@ -541,9 +741,13 @@ export class ResultsPage {
     });
   }
 
-  protected select(flight: Flight, fare: Fare): void {
+  protected select(legIndex: number, flight: Flight, fare: Fare): void {
     const c = this.criteria();
     if (!c) return;
+    if (this.multiLeg()) {
+      this.picks.update((list) => list.map((p, i) => (i === legIndex ? { flight, fare } : p)));
+      return;
+    }
     this.draft.start(c, flight, fare);
     this.router.navigate(['/flights', flight.id]);
   }

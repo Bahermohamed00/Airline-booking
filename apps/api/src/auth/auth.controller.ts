@@ -76,6 +76,8 @@ export class AuthController {
     return {
       userId: user.userId,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
       roles: user.roles,
       permissions: user.permissions,
     };

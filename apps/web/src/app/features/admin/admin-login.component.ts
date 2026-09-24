@@ -1,13 +1,17 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
 import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
+import { environment } from '../../../environments/environment';
+import { NaAlert } from '../../shared/ui/alert.component';
+import { NaButton } from '../../shared/ui/button.component';
 
 @Component({
   selector: 'app-admin-login',
   standalone: true,
-  imports: [NgOptimizedImage],
+  imports: [NgOptimizedImage, ReactiveFormsModule, NaAlert, NaButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="login">
@@ -34,15 +38,46 @@ import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
       <div class="login__panel">
         <div class="card na-card">
           <h1>Staff sign-in</h1>
-          <p class="na-text-muted">Choose a demo staff role to explore role-aware access to the operations dashboard.</p>
-          <div class="roles">
-            @for (role of roles; track role) {
-              <button type="button" class="role-btn" (click)="signInAs(role)">
-                <span class="role-btn__name">{{ role }}</span>
-                <span class="role-btn__hint">{{ hint(role) }}</span>
-              </button>
+          @if (useRealApi) {
+            <p class="na-text-muted">Sign in with your staff account to access the operations dashboard.</p>
+
+            @if (error()) {
+              <na-alert tone="danger" title="Sign-in failed">{{ error() }}</na-alert>
             }
-          </div>
+
+            <form [formGroup]="form" (ngSubmit)="submit()">
+              <div class="na-field">
+                <label class="na-label" for="admin-email">Email</label>
+                <input
+                  id="admin-email" class="na-input" type="email" formControlName="email" autocomplete="email"
+                  [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched"
+                />
+                @if (form.controls.email.touched && form.controls.email.errors?.['required']) { <span class="na-error">Email is required.</span> }
+                @if (form.controls.email.touched && form.controls.email.errors?.['email']) { <span class="na-error">Enter a valid email address.</span> }
+              </div>
+              <div class="na-field">
+                <label class="na-label" for="admin-password">Password</label>
+                <input
+                  id="admin-password" class="na-input" type="password" formControlName="password" autocomplete="current-password"
+                  [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched"
+                />
+                @if (form.controls.password.touched && form.controls.password.errors?.['required']) { <span class="na-error">Password is required.</span> }
+              </div>
+              <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Sign in</na-button>
+            </form>
+
+            <p class="demo-hint">Demo credentials: <strong>admin@airline.local</strong> / <strong>Admin123!</strong></p>
+          } @else {
+            <p class="na-text-muted">Choose a demo staff role to explore role-aware access to the operations dashboard.</p>
+            <div class="roles">
+              @for (role of roles; track role) {
+                <button type="button" class="role-btn" (click)="signInAs(role)">
+                  <span class="role-btn__name">{{ role }}</span>
+                  <span class="role-btn__hint">{{ hint(role) }}</span>
+                </button>
+              }
+            </div>
+          }
         </div>
       </div>
     </div>
@@ -75,6 +110,9 @@ import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
     .role-btn:hover { border-color: var(--na-blue-600); background: var(--na-blue-100); }
     .role-btn__name { font-weight: var(--na-font-semibold); }
     .role-btn__hint { color: var(--na-ink-500); font-size: var(--na-text-xs); text-align: right; }
+    na-alert { display: block; margin-top: var(--na-space-4); }
+    form { margin-top: var(--na-space-6); }
+    .demo-hint { margin-top: var(--na-space-6); padding: var(--na-space-3); background: var(--na-info-bg); border-radius: var(--na-radius-md); font-size: var(--na-text-xs); color: var(--na-info); }
     @media (max-width: 899px) {
       .login { grid-template-columns: 1fr; }
       .login__visual { min-height: 260px; }
@@ -85,7 +123,17 @@ import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
 export class AdminLoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly fb = inject(FormBuilder);
   readonly roles = Object.keys(STAFF_ROLE_PERMISSIONS);
+  readonly useRealApi = environment.useRealApi;
+
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
+
+  readonly form = this.fb.nonNullable.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', Validators.required],
+  });
 
   hint(role: string): string {
     const perms = STAFF_ROLE_PERMISSIONS[role] ?? [];
@@ -95,5 +143,19 @@ export class AdminLoginPage {
   signInAs(role: string): void {
     this.auth.loginAsRole(role);
     this.router.navigate(['/admin/dashboard']);
+  }
+
+  submit(): void {
+    if (this.form.invalid) return;
+    this.loading.set(true);
+    this.error.set(null);
+    const { email, password } = this.form.getRawValue();
+    this.auth.login(email, password).subscribe({
+      next: () => this.router.navigate(['/admin/dashboard']),
+      error: (err) => {
+        this.loading.set(false);
+        this.error.set(err?.error?.message ?? err?.message ?? 'Unable to sign in. Check your credentials and try again.');
+      },
+    });
   }
 }

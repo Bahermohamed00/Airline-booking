@@ -1,8 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AIRPORTS, FLIGHTS, ROUTES } from '../../../core/mock/mock-data';
-import { airportByCode } from '../../../core/mock/mock-data';
-import type { Airport, Route } from '../../../core/models/domain.model';
+import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
+import type { Airport, Flight, Route } from '../../../core/models/domain.model';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';
@@ -183,6 +182,7 @@ function durationLabel(minutes: number | null | undefined): string {
   `,
 })
 export class RoutesPage {
+  private readonly catalog = inject(AdminCatalogService);
   private readonly toast = inject(ToastService);
 
   readonly columns: TableColumn<RouteRow>[] = [
@@ -199,6 +199,8 @@ export class RoutesPage {
 
   readonly loading = signal(true);
   readonly routeList = signal<Route[]>([]);
+  readonly airports = signal<Airport[]>([]);
+  readonly flights = signal<Flight[]>([]);
   readonly selectedId = signal<string | null>(null);
   readonly selected = computed(() => this.routeList().find((r) => r.id === this.selectedId()) ?? null);
 
@@ -208,7 +210,7 @@ export class RoutesPage {
 
   form: RouteForm = { originCode: '', destinationCode: '', distanceKm: null, durationMinutes: null };
 
-  readonly activeAirports = computed<Airport[]>(() => AIRPORTS.filter((a) => a.status === 'ACTIVE'));
+  readonly activeAirports = computed<Airport[]>(() => this.airports().filter((a) => a.status === 'ACTIVE'));
 
   readonly rows = computed<RouteRow[]>(() =>
     this.routeList().map((r) => ({
@@ -222,10 +224,12 @@ export class RoutesPage {
   );
 
   constructor() {
-    setTimeout(() => {
-      this.routeList.set(ROUTES.map((r) => ({ ...r })));
+    this.catalog.listRoutes().subscribe((routes) => {
+      this.routeList.set(routes);
       this.loading.set(false);
-    }, 300);
+    });
+    this.catalog.listAirports().subscribe((airports) => this.airports.set(airports));
+    this.catalog.listFlights().subscribe((flights) => this.flights.set(flights));
   }
 
   openDetail(id: string): void {
@@ -237,7 +241,7 @@ export class RoutesPage {
   }
 
   flightCount(r: Route): number {
-    return FLIGHTS.filter((f) => f.routeId === r.id).length;
+    return this.flights().filter((f) => f.routeId === r.id).length;
   }
 
   durationLabel(minutes: number | null | undefined): string {
@@ -268,23 +272,24 @@ export class RoutesPage {
       this.createError.set(`Route ${originCode} → ${destinationCode} already exists.`);
       return;
     }
-    const origin = airportByCode(originCode);
-    const destination = airportByCode(destinationCode);
-    this.routeList.update((list) => [
-      ...list,
-      {
-        id: crypto.randomUUID(),
+    const origin = this.airports().find((a) => a.iataCode === originCode);
+    const destination = this.airports().find((a) => a.iataCode === destinationCode);
+    if (!origin || !destination) {
+      this.createError.set('Both origin and destination are required.');
+      return;
+    }
+    this.catalog
+      .createRoute({
         originAirportId: origin.id,
         destinationAirportId: destination.id,
-        origin,
-        destination,
         distanceKm: this.form.distanceKm ? Number(this.form.distanceKm) : null,
         durationMinutes: this.form.durationMinutes ? Number(this.form.durationMinutes) : null,
-        status: 'ACTIVE',
-      },
-    ]);
-    this.createOpen.set(false);
-    this.toast.success(`Route ${originCode} → ${destinationCode} added.`);
+      })
+      .subscribe((route) => {
+        this.routeList.update((list) => [...list, route]);
+        this.createOpen.set(false);
+        this.toast.success(`Route ${originCode} → ${destinationCode} added.`);
+      });
   }
 
   confirmToggle(): void {
@@ -292,9 +297,11 @@ export class RoutesPage {
     const r = this.selected();
     if (!r) return;
     const next = r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    this.routeList.update((list) => list.map((x) => (x.id === r.id ? { ...x, status: next } : x)));
-    this.toast.success(
-      `Route ${r.origin.iataCode} → ${r.destination.iataCode} ${next === 'ACTIVE' ? 'activated' : 'deactivated'}.`,
-    );
+    this.catalog.updateRoute(r.id, { status: next }).subscribe((updated) => {
+      this.routeList.update((list) => list.map((x) => (x.id === r.id ? { ...x, ...updated } : x)));
+      this.toast.success(
+        `Route ${r.origin.iataCode} → ${r.destination.iataCode} ${next === 'ACTIVE' ? 'activated' : 'deactivated'}.`,
+      );
+    });
   }
 }

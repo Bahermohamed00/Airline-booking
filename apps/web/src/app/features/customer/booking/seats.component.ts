@@ -3,11 +3,12 @@ import { Router } from '@angular/router';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
 import { SeatService, SeatMapState } from '../../../core/services/seat.service';
 import { PricingService, formatMoney } from '../../../core/services/pricing.service';
-import type { Seat } from '../../../core/models/domain.model';
+import type { Fare, Flight, Seat } from '../../../core/models/domain.model';
 import type { SeatSelection } from '../../../core/models/booking-flow.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
+import { NaTabs, TabItem } from '../../../shared/ui/tabs.component';
 import { BOOKING_STEPS } from './passengers.component';
 
 const STATE_LABELS: Record<SeatMapState, string> = {
@@ -23,7 +24,7 @@ const STATE_LABELS: Record<SeatMapState, string> = {
   selector: 'na-seats-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NaStepper, NaButton, NaAlert],
+  imports: [NaStepper, NaButton, NaAlert, NaTabs],
   template: `
     <div class="na-container page">
       <na-stepper [steps]="steps" [currentIndex]="2" />
@@ -49,6 +50,15 @@ const STATE_LABELS: Record<SeatMapState, string> = {
             Your held seats will be released in less than two minutes.
           </na-alert>
         }
+      }
+
+      @if (legTabs().length > 1) {
+        <na-tabs
+          ariaLabel="Choose a flight leg"
+          [tabs]="legTabs()"
+          [active]="String(activeLeg())"
+          (tabChange)="switchLeg($event)"
+        />
       }
 
       <div class="pax-tabs" role="tablist" aria-label="Assign seats per passenger">
@@ -162,6 +172,7 @@ const STATE_LABELS: Record<SeatMapState, string> = {
     .page__sub { margin-bottom: var(--na-space-4); }
     .hold { color: var(--na-ink-700); margin-bottom: var(--na-space-3); }
     na-alert { display: block; margin-bottom: var(--na-space-4); }
+    na-tabs { display: block; margin-bottom: var(--na-space-4); }
     .pax-tabs { display: flex; gap: var(--na-space-2); flex-wrap: wrap; margin-bottom: var(--na-space-5); }
     .pax-tab {
       display: flex; flex-direction: column; align-items: flex-start; gap: var(--na-space-1);
@@ -224,16 +235,44 @@ export class SeatsPage {
   protected readonly steps = BOOKING_STEPS;
   protected readonly passengers = this.draft.passengers;
   protected readonly activePassenger = signal(0);
-  protected readonly selections = signal<SeatSelection[]>([]);
+  protected readonly activeLeg = signal(0);
+  /** Selections for every leg; each entry carries a legIndex (0 = outbound). */
+  protected readonly allSelections = signal<SeatSelection[]>([]);
   protected readonly now = signal(Date.now());
   protected readonly accessibleSeats = signal<Seat[]>([]);
   protected readonly accessibleError = signal(false);
   protected readonly expiredNotice = signal(false);
 
-  private readonly occupied = new Set<string>();
+  private readonly occupied = signal<Set<string>>(new Set());
+
+  protected readonly String = String;
+
+  /** Flight + fare per leg: outbound, return (if any), then multi-city legs 3+. */
+  protected readonly legsList = computed<{ flight: Flight; fare: Fare }[]>(() => {
+    const d = this.draft.draft();
+    if (!d) return [];
+    if (d.legs.length >= 2) return d.legs;
+    const list = [{ flight: d.outbound, fare: d.fare }];
+    if (d.returnFlight && d.returnFare) list.push({ flight: d.returnFlight, fare: d.returnFare });
+    return list;
+  });
+
+  protected readonly legTabs = computed<TabItem[]>(() =>
+    this.legsList().map((leg, i) => ({
+      id: String(i),
+      label: `${leg.flight.route.origin.iataCode} → ${leg.flight.route.destination.iataCode}`,
+    })),
+  );
+
+  protected readonly activeFlight = computed(() => this.legsList()[this.activeLeg()]?.flight ?? null);
+
+  /** Selections for the currently displayed leg. */
+  protected readonly selections = computed(() =>
+    this.allSelections().filter((s) => (s.legIndex ?? 0) === this.activeLeg()),
+  );
 
   protected readonly rows = computed(() => {
-    const f = this.draft.outbound();
+    const f = this.activeFlight();
     return f ? this.seatsApi.seatMapRows(f) : [];
   });
 
@@ -253,7 +292,7 @@ export class SeatsPage {
   });
 
   protected readonly seatFees = computed(() =>
-    this.selections().reduce((sum, s) => sum + this.pricing.seatFee(s.seat), 0),
+    this.allSelections().reduce((sum, s) => sum + this.pricing.seatFee(s.seat), 0),
   );
 
   constructor() {
@@ -262,13 +301,17 @@ export class SeatsPage {
       this.router.navigateByUrl('/search');
       return;
     }
-    this.occupied = this.seatsApi.occupiedSeatIds(d.outbound);
-    this.selections.set(d.seats);
+    this.occupied.set(this.seatsApi.occupiedSeatIds(d.outbound));
+    this.allSelections.set([
+      ...d.seats.map((s) => ({ ...s, legIndex: 0 })),
+      ...d.returnSeats.map((s) => ({ ...s, legIndex: 1 })),
+      ...d.extraLegSeats,
+    ]);
 
     // If a previous hold already expired, release it immediately.
     if (this.draft.isHoldExpired()) {
       this.draft.releaseHold();
-      this.selections.set([]);
+      this.allSelections.set([]);
       this.expiredNotice.set(true);
     }
 
@@ -276,27 +319,37 @@ export class SeatsPage {
 
     const timer = setInterval(() => {
       this.now.set(Date.now());
-      if (this.draft.isHoldExpired() && this.selections().length > 0) {
+      if (this.draft.isHoldExpired() && this.allSelections().length > 0) {
         this.draft.releaseHold();
-        this.selections.set([]);
+        this.allSelections.set([]);
         this.expiredNotice.set(true);
       }
     }, 1000);
     this.destroyRef.onDestroy(() => clearInterval(timer));
   }
 
+  protected switchLeg(id: string): void {
+    const index = Number(id);
+    if (index === this.activeLeg() || !this.legsList()[index]) return;
+    this.activeLeg.set(index);
+    this.activePassenger.set(0);
+    const flight = this.legsList()[index].flight;
+    this.occupied.set(this.seatsApi.occupiedSeatIds(flight));
+    this.loadAccessibleSeats();
+  }
+
   protected loadAccessibleSeats(): void {
-    const d = this.draft.draft();
-    if (!d) return;
+    const leg = this.legsList()[this.activeLeg()];
+    if (!leg) return;
     this.accessibleError.set(false);
-    this.seatsApi.accessibleSeatList(d.outbound, d.fare.cabinClass).subscribe({
+    this.seatsApi.accessibleSeatList(leg.flight, leg.fare.cabinClass).subscribe({
       next: (list) => this.accessibleSeats.set(list),
       error: () => this.accessibleError.set(true),
     });
   }
 
   protected stateOf(seat: Seat): SeatMapState {
-    return this.seatsApi.stateOf(seat, this.occupied, this.selectedIds(), this.holdExpires(), this.now());
+    return this.seatsApi.stateOf(seat, this.occupied(), this.selectedIds(), this.holdExpires(), this.now());
   }
 
   protected isSelected(seat: Seat): boolean {
@@ -321,11 +374,13 @@ export class SeatsPage {
   protected toggleSeat(seat: Seat): void {
     if (this.stateOf(seat) === 'occupied') return;
     const active = this.activePassenger();
-    this.selections.update((list) => {
-      const without = list.filter((s) => s.seat.id !== seat.id && s.passengerIndex !== active);
+    const leg = this.activeLeg();
+    this.allSelections.update((all) => {
+      const inLeg = (s: SeatSelection) => (s.legIndex ?? 0) === leg;
+      const without = all.filter((s) => !inLeg(s) || (s.seat.id !== seat.id && s.passengerIndex !== active));
       // Clicking an already-selected seat just deselects it.
-      if (list.some((s) => s.seat.id === seat.id)) return without;
-      return [...without, { passengerIndex: active, seat }];
+      if (all.some((s) => inLeg(s) && s.seat.id === seat.id)) return without;
+      return [...without, { passengerIndex: active, seat, legIndex: leg }];
     });
     // Auto-advance to the next passenger without a seat.
     const next = this.passengers().findIndex((_, i) => i > active && !this.seatFor(i));
@@ -344,7 +399,11 @@ export class SeatsPage {
   }
 
   protected continue(): void {
-    this.draft.setSeats(this.selections(), []);
+    const all = this.allSelections();
+    const seats = all.filter((s) => (s.legIndex ?? 0) === 0);
+    const returnSeats = all.filter((s) => (s.legIndex ?? 0) === 1);
+    const extraLegSeats = all.filter((s) => (s.legIndex ?? 0) >= 2);
+    this.draft.setSeats(seats, returnSeats, extraLegSeats);
     this.router.navigateByUrl('/booking/extras');
   }
 

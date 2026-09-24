@@ -16,6 +16,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
+import { FlightsModule } from './flights/flights.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -41,6 +42,7 @@ AppModule = __decorate([
             AuditModule,
             AuthModule,
             UsersModule,
+            FlightsModule,
         ],
         controllers: [AppController],
         providers: [

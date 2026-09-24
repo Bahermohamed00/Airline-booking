@@ -1,10 +1,21 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { AuthService } from './auth.service';
 import { STAFF_USERS } from '../mock/mock-data';
+import { environment } from '../../../environments/environment';
 
 describe('AuthService permissions', () => {
   let auth: AuthService;
+  const originalUseRealApi = environment.useRealApi;
+
+  beforeAll(() => {
+    // Permission logic is mode-independent; force mock mode for these specs.
+    environment.useRealApi = false;
+  });
+
+  afterAll(() => {
+    environment.useRealApi = originalUseRealApi;
+  });
 
   beforeEach(() => {
     TestBed.configureTestingModule({});

@@ -61,6 +61,8 @@ let JwtStrategy = class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         return {
             userId: user.id,
             email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
             roles,
             permissions: Array.from(permissionSet),
         };
