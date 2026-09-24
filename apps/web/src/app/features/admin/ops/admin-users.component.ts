@@ -187,7 +187,7 @@ export class AdminUsersPage {
   readonly statusLabel = statusLabel;
 
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Users & Passengers' },
   ];
 

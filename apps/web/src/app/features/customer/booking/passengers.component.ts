@@ -123,7 +123,7 @@ export const BOOKING_STEPS: StepItem[] = [
     h1 { margin-bottom: var(--na-space-1); }
     .page > p { margin-bottom: var(--na-space-6); }
     .pax-list { display: grid; gap: var(--na-space-5); margin-bottom: var(--na-space-5); }
-    .pax { padding: var(--na-space-5); }
+    .pax { padding: var(--na-space-6); }
     .pax__head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--na-space-4); margin-bottom: var(--na-space-4); flex-wrap: wrap; }
     .pax__head h2 { font-size: var(--na-text-xl); }
     .pax__fill { min-width: 220px; }

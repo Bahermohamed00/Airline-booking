@@ -141,7 +141,7 @@ export class AdminCheckInPage {
   readonly statusLabel = statusLabel;
 
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Check-in' },
   ];
 

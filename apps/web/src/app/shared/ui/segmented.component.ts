@@ -25,12 +25,16 @@ export interface SegmentOption {
     </div>
   `,
   styles: `
-    .seg { display: inline-flex; background: var(--na-surface-sunken); border-radius: var(--na-radius-md); padding: 3px; gap: 2px; }
+    .seg { display: inline-flex; flex-wrap: wrap; background: var(--na-surface-sunken); border-radius: var(--na-radius-md); padding: 3px; gap: 2px; }
     .seg__btn {
       border: none; background: transparent; padding: 0.45rem 1rem; border-radius: var(--na-radius-sm);
       font-weight: var(--na-font-medium); color: var(--na-ink-500); min-height: 40px;
     }
     .seg__btn--active { background: var(--na-surface-raised); color: var(--na-ink-900); box-shadow: var(--na-shadow-sm); font-weight: var(--na-font-semibold); }
+    @media (max-width: 400px) {
+      .seg { display: flex; width: 100%; }
+      .seg__btn { flex: 1 1 0; min-width: 0; padding: 0.45rem 0.4rem; white-space: nowrap; font-size: var(--na-text-sm); }
+    }
   `,
 })
 export class NaSegmented {

@@ -20,8 +20,8 @@ import { ToastService } from './toast.service';
     .toast {
       display: flex; align-items: center; justify-content: space-between; gap: var(--na-space-3);
       padding: var(--na-space-3) var(--na-space-4); border-radius: var(--na-radius-md);
-      background: var(--na-navy-800); color: #fff; box-shadow: var(--na-shadow-md); font-size: var(--na-text-sm);
-      border-left: 4px solid var(--na-blue-500);
+      background: var(--na-navy-700); color: var(--na-ink-900); box-shadow: var(--na-shadow-md); font-size: var(--na-text-sm);
+      border: 1px solid var(--na-border); border-left: 4px solid var(--na-blue-500);
     }
     .toast--success { border-left-color: var(--na-success); }
     .toast--warning { border-left-color: var(--na-warning); }

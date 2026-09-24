@@ -33,7 +33,7 @@ export interface StepItem {
       background: var(--na-surface-sunken); border: 2px solid var(--na-border-strong); font-size: var(--na-text-xs); font-weight: var(--na-font-semibold); flex-shrink: 0;
     }
     .step--done { color: var(--na-success); }
-    .step--done .step__dot { background: var(--na-success); border-color: var(--na-success); color: #fff; }
+    .step--done .step__dot { background: var(--na-success); border-color: var(--na-success); color: var(--na-on-success); }
     .step--current { color: var(--na-blue-600); font-weight: var(--na-font-semibold); }
     .step--current .step__dot { border-color: var(--na-blue-600); color: var(--na-blue-600); background: var(--na-blue-100); }
     @media (max-width: 639px) {

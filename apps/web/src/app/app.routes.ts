@@ -5,6 +5,11 @@ import { authGuard, staffGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
+    path: '',
+    pathMatch: 'full',
+    loadComponent: () => import('./features/home/home.component').then((m) => m.HomePage),
+  },
+  {
     path: 'admin',
     children: [
       {

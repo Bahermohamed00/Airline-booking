@@ -28,6 +28,13 @@ const STATE_LABELS: Record<SeatMapState, string> = {
     <div class="na-container page">
       <na-stepper [steps]="steps" [currentIndex]="2" />
       <h1>Choose your seats</h1>
+      <p class="page__sub na-text-muted">Select a seat for each traveller, or skip and we'll assign seats at check-in.</p>
+
+      @if (accessibleError()) {
+        <na-alert tone="danger" icon="⚠" title="We couldn't load the seat list" [retryable]="true" (retry)="loadAccessibleSeats()">
+          The text seat list is unavailable right now. The seat map below still works — or retry to load the list.
+        </na-alert>
+      }
 
       @if (holdExpires()) {
         <p class="hold na-text-small" aria-live="polite">
@@ -151,12 +158,13 @@ const STATE_LABELS: Record<SeatMapState, string> = {
   `,
   styles: `
     .page { padding-top: var(--na-space-6); padding-bottom: var(--na-space-12); }
-    h1 { margin-bottom: var(--na-space-4); }
+    h1 { margin-bottom: var(--na-space-1); }
+    .page__sub { margin-bottom: var(--na-space-4); }
     .hold { color: var(--na-ink-700); margin-bottom: var(--na-space-3); }
     na-alert { display: block; margin-bottom: var(--na-space-4); }
     .pax-tabs { display: flex; gap: var(--na-space-2); flex-wrap: wrap; margin-bottom: var(--na-space-5); }
     .pax-tab {
-      display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      display: flex; flex-direction: column; align-items: flex-start; gap: var(--na-space-1);
       border: 1px solid var(--na-border-strong); background: var(--na-surface-raised);
       border-radius: var(--na-radius-md); padding: var(--na-space-2) var(--na-space-4); min-height: 44px; min-width: 120px;
     }
@@ -164,7 +172,7 @@ const STATE_LABELS: Record<SeatMapState, string> = {
     .pax-tab__name { font-weight: var(--na-font-semibold); font-size: var(--na-text-sm); }
     .pax-tab__seat { font-size: var(--na-text-xs); color: var(--na-ink-500); }
     .layout { display: grid; grid-template-columns: 1fr 300px; gap: var(--na-space-5); align-items: start; }
-    .map-panel { padding: var(--na-space-5); overflow-x: auto; }
+    .map-panel { padding: var(--na-space-6); overflow-x: auto; }
     .legend { display: flex; gap: var(--na-space-4); flex-wrap: wrap; font-size: var(--na-text-xs); color: var(--na-ink-500); margin-bottom: var(--na-space-4); }
     .legend span { display: inline-flex; align-items: center; gap: var(--na-space-1); }
     .sw { width: 14px; height: 14px; border-radius: var(--na-radius-sm); display: inline-block; border: 1px solid var(--na-border-strong); }
@@ -174,7 +182,7 @@ const STATE_LABELS: Record<SeatMapState, string> = {
     .sw--exit { background: var(--na-surface-raised); border-color: var(--na-warning); border-width: 2px; }
     .seatmap { display: inline-block; }
     .seatmap__cols { display: grid; grid-template-columns: repeat(3, 40px) 28px repeat(3, 40px); font-size: var(--na-text-xs); color: var(--na-ink-300); text-align: center; margin-bottom: var(--na-space-1); }
-    .seatmap__row { display: grid; grid-template-columns: repeat(3, 40px) 28px repeat(3, 40px); gap: 4px; margin-bottom: 4px; align-items: center; }
+    .seatmap__row { display: grid; grid-template-columns: repeat(3, 40px) 28px repeat(3, 40px); gap: var(--na-space-1); margin-bottom: var(--na-space-1); align-items: center; }
     .seatmap__aisle { text-align: center; font-size: var(--na-text-xs); color: var(--na-ink-300); }
     .seat {
       width: 40px; height: 40px; border-radius: var(--na-radius-sm); border: 1px solid var(--na-border-strong);
@@ -194,7 +202,7 @@ const STATE_LABELS: Record<SeatMapState, string> = {
     .alt__list { list-style: none; padding: 0; margin: var(--na-space-2) 0 0; display: grid; gap: var(--na-space-1); max-height: 260px; overflow-y: auto; }
     .alt__pick { width: 100%; text-align: left; background: none; border: 1px solid var(--na-border); border-radius: var(--na-radius-sm); padding: var(--na-space-2) var(--na-space-3); min-height: 40px; }
     .alt__pick:hover { background: var(--na-blue-100); }
-    .side { padding: var(--na-space-5); position: sticky; top: var(--na-space-4); }
+    .side { padding: var(--na-space-6); position: sticky; top: var(--na-space-4); }
     .side h2 { font-size: var(--na-text-lg); margin-bottom: var(--na-space-4); }
     .side__list { list-style: none; padding: 0; margin: 0 0 var(--na-space-3); display: grid; gap: var(--na-space-2); }
     .side__list li { display: flex; justify-content: space-between; gap: var(--na-space-3); font-size: var(--na-text-sm); }
@@ -219,6 +227,7 @@ export class SeatsPage {
   protected readonly selections = signal<SeatSelection[]>([]);
   protected readonly now = signal(Date.now());
   protected readonly accessibleSeats = signal<Seat[]>([]);
+  protected readonly accessibleError = signal(false);
   protected readonly expiredNotice = signal(false);
 
   private readonly occupied = new Set<string>();
@@ -263,9 +272,7 @@ export class SeatsPage {
       this.expiredNotice.set(true);
     }
 
-    this.seatsApi
-      .accessibleSeatList(d.outbound, d.fare.cabinClass)
-      .subscribe((list) => this.accessibleSeats.set(list));
+    this.loadAccessibleSeats();
 
     const timer = setInterval(() => {
       this.now.set(Date.now());
@@ -276,6 +283,16 @@ export class SeatsPage {
       }
     }, 1000);
     this.destroyRef.onDestroy(() => clearInterval(timer));
+  }
+
+  protected loadAccessibleSeats(): void {
+    const d = this.draft.draft();
+    if (!d) return;
+    this.accessibleError.set(false);
+    this.seatsApi.accessibleSeatList(d.outbound, d.fare.cabinClass).subscribe({
+      next: (list) => this.accessibleSeats.set(list),
+      error: () => this.accessibleError.set(true),
+    });
   }
 
   protected stateOf(seat: Seat): SeatMapState {

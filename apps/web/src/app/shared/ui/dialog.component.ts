@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, output } from '@angular/core';
 import { NaButton } from './button.component';
 
 @Component({
@@ -6,6 +6,9 @@ import { NaButton } from './button.component';
   standalone: true,
   imports: [NaButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: {
+    '(document:keydown.escape)': 'onEscape()',
+  },
   template: `
     @if (open()) {
       <div class="backdrop" (click)="onBackdrop()" role="presentation"></div>
@@ -20,10 +23,10 @@ import { NaButton } from './button.component';
     }
   `,
   styles: `
-    .backdrop { position: fixed; inset: 0; background: rgba(8, 17, 32, 0.5); z-index: 100; }
+    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 100; }
     .dialog {
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: var(--na-surface-raised); border-radius: var(--na-radius-lg);
+      background: var(--na-surface-raised); border: 1px solid var(--na-border); border-radius: var(--na-radius-lg);
       box-shadow: var(--na-shadow-lg); padding: var(--na-space-6); z-index: 101;
       width: min(480px, calc(100vw - 2rem));
     }
@@ -41,7 +44,21 @@ export class NaDialog {
   readonly confirmed = output<void>();
   readonly cancelled = output<void>();
 
+  constructor() {
+    const destroyRef = inject(DestroyRef);
+    effect(() => {
+      document.body.style.overflow = this.open() ? 'hidden' : '';
+    });
+    destroyRef.onDestroy(() => {
+      document.body.style.overflow = '';
+    });
+  }
+
   onBackdrop(): void {
     this.cancelled.emit();
+  }
+
+  onEscape(): void {
+    if (this.open()) this.cancelled.emit();
   }
 }

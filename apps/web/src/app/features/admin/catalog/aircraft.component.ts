@@ -194,13 +194,14 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
     .card { padding: var(--na-space-5); text-align: left; cursor: pointer; transition: box-shadow var(--na-motion-fast), border-color var(--na-motion-fast); }
     .card:hover { box-shadow: var(--na-shadow-md); border-color: var(--na-navy-300); }
     .card__top { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-2); }
-    .card__reg { font-weight: var(--na-font-bold); color: var(--na-navy-700); }
+    .card__reg { font-weight: var(--na-font-bold); color: var(--na-ink-900); }
     .card__model { margin-top: var(--na-space-2); font-weight: var(--na-font-medium); }
     .card__cap { color: var(--na-ink-500); font-size: var(--na-text-sm); margin-top: var(--na-space-1); }
-    .backdrop { position: fixed; inset: 0; background: rgba(8, 17, 32, 0.5); z-index: 100; }
+    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 101;
-      width: min(460px, 100vw); background: var(--na-surface-raised);
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
+      width: min(480px, 100vw); background: var(--na-surface-raised);
+      border-left: 1px solid var(--na-border);
       box-shadow: var(--na-shadow-lg); display: flex; flex-direction: column;
     }
     .drawer__head {

@@ -1,18 +1,27 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import type { StatusTone } from '../../core/status-maps';
 import { NaSkeleton } from './skeleton.component';
 import { NaEmptyState } from './empty-state.component';
+import { NaBadge } from './badge.component';
 
-export interface TableColumn {
+export interface BadgeCell {
+  text: string;
+  tone: StatusTone;
+}
+
+export interface TableColumn<T = Record<string, unknown>> {
   key: string;
   label: string;
   /** hide on mobile when 'low' priority */
   priority?: 'high' | 'low';
+  /** render the cell as a status badge instead of plain text */
+  badge?: (row: T) => BadgeCell | null;
 }
 
 @Component({
   selector: 'na-data-table',
   standalone: true,
-  imports: [NaSkeleton, NaEmptyState],
+  imports: [NaSkeleton, NaEmptyState, NaBadge],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (loading()) {
@@ -34,7 +43,15 @@ export interface TableColumn {
               <tr tabindex="0" (click)="rowClick.emit(row)" (keydown.enter)="rowClick.emit(row)">
                 @for (col of columns(); track col.key) {
                   <td [class.col--low]="col.priority === 'low'" [attr.data-label]="col.label">
-                    {{ cellText(row, col.key) }}
+                    @if (col.badge) {
+                      @if (col.badge(row); as cell) {
+                        <na-badge [tone]="cell.tone">{{ cell.text }}</na-badge>
+                      } @else {
+                        —
+                      }
+                    } @else {
+                      {{ cellText(row, col.key) }}
+                    }
                   </td>
                 }
               </tr>
@@ -60,7 +77,7 @@ export interface TableColumn {
   `,
 })
 export class NaDataTable<T = Record<string, unknown>> {
-  readonly columns = input.required<TableColumn[]>();
+  readonly columns = input.required<TableColumn<T>[]>();
   readonly rows = input.required<T[]>();
   readonly loading = input(false);
   readonly emptyTitle = input('Nothing here yet');

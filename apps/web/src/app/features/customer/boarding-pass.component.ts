@@ -86,7 +86,8 @@ interface PassView {
     .pass { margin-top: var(--na-space-6); display: grid; grid-template-columns: 1fr 220px; max-width: 720px; overflow: hidden; }
     .pass__main { padding: var(--na-space-6); }
     .pass__route { display: flex; align-items: center; gap: var(--na-space-6); margin-bottom: var(--na-space-6); }
-    .pass__code { font-size: var(--na-text-3xl); font-weight: var(--na-font-bold); }
+    .pass__route > div:last-child { text-align: right; }
+    .pass__code { font-family: var(--na-font-display); font-size: var(--na-text-3xl); font-weight: var(--na-font-bold); letter-spacing: 0.02em; }
     .pass__time { font-size: var(--na-text-xl); font-weight: var(--na-font-semibold); }
     .pass__plane { font-size: var(--na-text-2xl); color: var(--na-blue-600); }
     .pass__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--na-space-4); margin: 0; }
@@ -98,9 +99,9 @@ interface PassView {
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--na-space-3);
       background: var(--na-surface-sunken);
     }
-    .qr { display: grid; grid-template-columns: repeat(12, 1fr); width: 132px; height: 132px; background: var(--na-surface-raised); border: 1px solid var(--na-border); padding: 4px; }
-    .qr__cell--on { background: var(--na-navy-800); }
-    .pass__ref { text-align: center; }
+    .qr { display: grid; grid-template-columns: repeat(12, 1fr); width: 132px; height: 132px; background: var(--na-cream); border-radius: var(--na-radius-sm); padding: 6px; }
+    .qr__cell--on { background: var(--na-brown-900); }
+    .pass__ref { text-align: center; letter-spacing: 0.08em; }
     .actions { display: flex; gap: var(--na-space-3); margin-top: var(--na-space-6); flex-wrap: wrap; }
     @media (max-width: 639px) {
       .pass { grid-template-columns: 1fr; }

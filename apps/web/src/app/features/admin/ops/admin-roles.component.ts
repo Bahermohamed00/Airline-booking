@@ -104,7 +104,7 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 })
 export class AdminRolesPage {
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Roles & Permissions' },
   ];
 

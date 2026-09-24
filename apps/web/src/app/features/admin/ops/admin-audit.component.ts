@@ -134,7 +134,7 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
 })
 export class AdminAuditPage {
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Audit Log' },
   ];
 
