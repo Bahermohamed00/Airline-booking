@@ -10,13 +10,15 @@ import { NaSkeleton } from '../../shared/ui/skeleton.component';
 import { NaDialog } from '../../shared/ui/dialog.component';
 import { NaEmptyState } from '../../shared/ui/empty-state.component';
 import { ToastService } from '../../shared/ui/toast.service';
+import { SessionsPanel } from './sessions-panel.component';
 
-type ProfileSection = 'profile' | 'passengers' | 'security' | 'notifications' | 'privacy';
+type ProfileSection = 'profile' | 'passengers' | 'security' | 'sessions' | 'notifications' | 'privacy';
 
 const SECTIONS: { id: ProfileSection; label: string }[] = [
   { id: 'profile', label: 'Profile' },
   { id: 'passengers', label: 'Saved passengers' },
   { id: 'security', label: 'Security & MFA' },
+  { id: 'sessions', label: 'Sessions & devices' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'privacy', label: 'Privacy' },
 ];
@@ -44,7 +46,7 @@ const CHANNEL_GROUPS = [
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [RouterLink, ReactiveFormsModule, NaButton, NaAlert, NaBadge, NaSkeleton, NaDialog, NaEmptyState],
+  imports: [RouterLink, ReactiveFormsModule, NaButton, NaAlert, NaBadge, NaSkeleton, NaDialog, NaEmptyState, SessionsPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="na-container page">
@@ -89,6 +91,9 @@ const CHANNEL_GROUPS = [
               }
 
               <form [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+                @if (profileError()) {
+                  <na-alert tone="danger" title="Could not save your profile">{{ profileError() }}</na-alert>
+                }
                 <div class="field-grid">
                   <div class="na-field">
                     <label class="na-label" for="firstName">First name</label>
@@ -100,9 +105,8 @@ const CHANNEL_GROUPS = [
                   </div>
                   <div class="na-field">
                     <label class="na-label" for="email">Email</label>
-                    <input id="email" class="na-input" type="email" formControlName="email" autocomplete="email" aria-describedby="email-hint" [attr.aria-invalid]="profileForm.controls.email.invalid && profileForm.controls.email.touched" />
-                    <span id="email-hint" class="na-hint">Used for booking confirmations and signing in.</span>
-                    @if (profileForm.controls.email.touched && profileForm.controls.email.errors?.['email']) { <span class="na-error">Enter a valid email address.</span> }
+                    <input id="email" class="na-input" type="email" formControlName="email" autocomplete="email" aria-describedby="email-hint" />
+                    <span id="email-hint" class="na-hint">Your sign-in email can&apos;t be changed here.</span>
                   </div>
                   <div class="na-field">
                     <label class="na-label" for="phone">Phone</label>
@@ -111,7 +115,7 @@ const CHANNEL_GROUPS = [
                   </div>
                 </div>
                 <div class="form-actions">
-                  <na-button variant="cta" type="submit" [disabled]="profileForm.invalid">Save changes</na-button>
+                  <na-button variant="cta" type="submit" [loading]="profileLoading()" [disabled]="profileForm.invalid">Save changes</na-button>
                 </div>
               </form>
             </section>
@@ -160,6 +164,9 @@ const CHANNEL_GROUPS = [
               <div class="subsec" aria-labelledby="pwd-h">
                 <h3 id="pwd-h" class="subsec__title">Change password</h3>
                 <form class="form-narrow" [formGroup]="passwordForm" (ngSubmit)="changePassword()">
+                  @if (passwordError()) {
+                    <na-alert tone="danger" title="Could not change your password">{{ passwordError() }}</na-alert>
+                  }
                   <div class="na-field">
                     <label class="na-label" for="currentPassword">Current password</label>
                     <input id="currentPassword" class="na-input" type="password" formControlName="currentPassword" autocomplete="current-password" />
@@ -167,8 +174,8 @@ const CHANNEL_GROUPS = [
                   <div class="na-field">
                     <label class="na-label" for="newPassword">New password</label>
                     <input id="newPassword" class="na-input" type="password" formControlName="newPassword" autocomplete="new-password" aria-describedby="new-pwd-hint" [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
-                    <span id="new-pwd-hint" class="na-hint">At least 8 characters.</span>
-                    @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.errors?.['minlength']) { <span class="na-error">Password must be at least 8 characters.</span> }
+                    <span id="new-pwd-hint" class="na-hint">At least 12 characters.</span>
+                    @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.errors?.['minlength']) { <span class="na-error">Password must be at least 12 characters.</span> }
                   </div>
                   <div class="na-field">
                     <label class="na-label" for="confirmNewPassword">Confirm new password</label>
@@ -176,7 +183,7 @@ const CHANNEL_GROUPS = [
                     @if (passwordForm.controls.confirmNewPassword.touched && passwordForm.errors?.['passwordMismatch']) { <span class="na-error">Passwords do not match.</span> }
                   </div>
                   <div class="form-actions">
-                    <na-button variant="primary" type="submit" [disabled]="passwordForm.invalid">Update password</na-button>
+                    <na-button variant="primary" type="submit" [loading]="passwordLoading()" [disabled]="passwordForm.invalid">Update password</na-button>
                   </div>
                 </form>
               </div>
@@ -232,6 +239,10 @@ const CHANNEL_GROUPS = [
                 <na-button variant="secondary" [loading]="resetLoading()" (clicked)="requestReset()">Send reset link</na-button>
               </div>
             </section>
+          }
+
+          @if (section() === 'sessions') {
+            <app-sessions-panel />
           }
 
           @if (section() === 'notifications') {
@@ -491,6 +502,10 @@ export class ProfilePage {
   readonly mfaError = signal<string | null>(null);
   readonly mfaEnabled = signal(false);
   readonly resetLoading = signal(false);
+  readonly profileLoading = signal(false);
+  readonly profileError = signal<string | null>(null);
+  readonly passwordLoading = signal(false);
+  readonly passwordError = signal<string | null>(null);
   readonly notifPrefs = signal<Record<string, boolean>>({ EMAIL: true, SMS: false, PUSH: true, IN_APP: true });
   readonly exportOpen = signal(false);
   readonly deleteOpen = signal(false);
@@ -515,7 +530,7 @@ export class ProfilePage {
   readonly passwordForm = this.fb.nonNullable.group(
     {
       currentPassword: ['', Validators.required],
-      newPassword: ['', [Validators.required, Validators.minLength(8)]],
+      newPassword: ['', [Validators.required, Validators.minLength(12)]],
       confirmNewPassword: ['', Validators.required],
     },
     {
@@ -538,6 +553,7 @@ export class ProfilePage {
         email: u.email,
         phone: u.phone ?? '',
       });
+      this.profileForm.controls.email.disable(); // email change is not supported here
       this.mfaEnabled.set(u.mfaEnabled);
     }
 
@@ -546,8 +562,21 @@ export class ProfilePage {
   }
 
   saveProfile(): void {
-    if (this.profileForm.invalid) return;
-    this.toast.success('Profile updated.');
+    if (this.profileForm.invalid || this.profileLoading()) return;
+    this.profileLoading.set(true);
+    this.profileError.set(null);
+    // Email is intentionally excluded: email change is not supported here.
+    const { firstName, lastName, phone } = this.profileForm.getRawValue();
+    this.auth.updateProfile({ firstName, lastName, phone }).subscribe({
+      next: () => {
+        this.profileLoading.set(false);
+        this.toast.success('Profile updated.');
+      },
+      error: (err) => {
+        this.profileLoading.set(false);
+        this.profileError.set(err?.message ?? 'Could not update your profile. Please try again.');
+      },
+    });
   }
 
   loadPassengers(): void {
@@ -566,9 +595,21 @@ export class ProfilePage {
   }
 
   changePassword(): void {
-    if (this.passwordForm.invalid) return;
-    this.passwordForm.reset();
-    this.toast.success('Password updated.');
+    if (this.passwordForm.invalid || this.passwordLoading()) return;
+    this.passwordLoading.set(true);
+    this.passwordError.set(null);
+    const { currentPassword, newPassword, confirmNewPassword } = this.passwordForm.getRawValue();
+    this.auth.changePassword({ currentPassword, newPassword, confirmPassword: confirmNewPassword }).subscribe({
+      next: () => {
+        this.passwordLoading.set(false);
+        this.passwordForm.reset();
+        this.toast.success('Password changed. Other devices have been signed out.');
+      },
+      error: (err) => {
+        this.passwordLoading.set(false);
+        this.passwordError.set(err?.message ?? 'Could not change your password. Please try again.');
+      },
+    });
   }
 
   startMfa(): void {

@@ -49,9 +49,9 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
         <div class="na-field">
           <label class="na-label" for="password">Password</label>
           <input id="password" class="na-input" type="password" formControlName="password" autocomplete="new-password" aria-describedby="password-hint" [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched" />
-          <span id="password-hint" class="na-hint">At least 8 characters.</span>
+          <span id="password-hint" class="na-hint">At least 12 characters.</span>
           @if (form.controls.password.touched && form.controls.password.errors?.['required']) { <span class="na-error">Password is required.</span> }
-          @if (form.controls.password.touched && form.controls.password.errors?.['minlength']) { <span class="na-error">Password must be at least 8 characters.</span> }
+          @if (form.controls.password.touched && form.controls.password.errors?.['minlength']) { <span class="na-error">Password must be at least 12 characters.</span> }
         </div>
         <div class="na-field">
           <label class="na-label" for="confirmPassword">Confirm password</label>
@@ -93,7 +93,7 @@ export class RegisterPage {
       firstName: ['', Validators.required],
       lastName: ['', Validators.required],
       email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required, Validators.minLength(8)]],
+      password: ['', [Validators.required, Validators.minLength(12)]],
       confirmPassword: ['', Validators.required],
     },
     { validators: passwordsMatch },
@@ -106,7 +106,7 @@ export class RegisterPage {
     const { email, password, firstName, lastName } = this.form.getRawValue();
     this.auth.register({ email, password, firstName, lastName }).subscribe({
       next: () => {
-        this.toast.success('Account created. You can now sign in.');
+        this.toast.success('Account created. Check your email to verify your address, then sign in.');
         this.router.navigate(['/login']);
       },
       error: (err) => {

@@ -35,6 +35,7 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
                 <a routerLink="/profile" role="menuitem" (click)="accountOpen.set(false)">Profile</a>
                 <a routerLink="/profile/passengers" role="menuitem" (click)="accountOpen.set(false)">Saved passengers</a>
                 <a routerLink="/profile/security" role="menuitem" (click)="accountOpen.set(false)">Security & MFA</a>
+                <a routerLink="/profile/sessions" role="menuitem" (click)="accountOpen.set(false)">Sessions & devices</a>
                 <a routerLink="/profile/notifications" role="menuitem" (click)="accountOpen.set(false)">Notification preferences</a>
                 <button type="button" role="menuitem" (click)="signOut()">Sign out</button>
               </div>

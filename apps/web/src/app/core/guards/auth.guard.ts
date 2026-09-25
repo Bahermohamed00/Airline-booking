@@ -25,3 +25,15 @@ export function permissionGuard(permission: string): CanActivateFn {
     return router.createUrlTree(['/admin/denied'], { queryParams: { from: state.url } });
   };
 }
+
+/**
+ * Guest-only pages (login/register). Safe to read signals directly: the app
+ * initializer (app.config.ts) blocks bootstrap until restoreSession() settles,
+ * so session state is final before the first guard runs.
+ */
+export const guestGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (!auth.isLoggedIn()) return true;
+  return router.createUrlTree([auth.isStaff() ? '/admin/dashboard' : '/bookings']);
+};

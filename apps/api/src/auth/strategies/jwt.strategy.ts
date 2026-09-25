@@ -8,6 +8,7 @@ import { AuthUser } from '../decorators/current-user.decorator.js';
 interface JwtPayload {
   sub: string;
   email: string;
+  sid: string;
   type: 'access' | 'refresh';
 }
 
@@ -43,11 +44,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
             },
           },
         },
+        sessions: {
+          where: { id: payload.sid },
+          select: { id: true, revokedAt: true, expiresAt: true },
+        },
       },
     });
 
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('User not active');
+    }
+
+    const session = user.sessions[0];
+    if (!session || session.revokedAt || session.expiresAt <= new Date()) {
+      throw new UnauthorizedException('Session expired or revoked');
     }
 
     const roles = user.userRoles.map((ur) => ur.role.name);
@@ -64,8 +74,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     return {
       userId: user.id,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      emailVerified: user.emailVerified,
+      mfaEnabled: user.mfaEnabled,
       roles,
       permissions: Array.from(permissionSet),
+      sessionId: session.id,
     };
   }
 }

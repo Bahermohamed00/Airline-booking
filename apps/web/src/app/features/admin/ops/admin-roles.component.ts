@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
-import { ROLES } from '../../../core/mock/mock-data';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import type { Role } from '../../../core/models/domain.model';
+import { RolesService } from '../../../core/services/roles.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
@@ -19,7 +19,9 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
         <p class="page__sub">What each staff role may do across the admin console.</p>
       </header>
 
-      @if (loading()) {
+      @if (error()) {
+        <na-alert tone="danger" title="Could not load roles" retryable (retry)="load()">Please try again.</na-alert>
+      } @else if (loading()) {
         <na-skeleton [rows]="[1, 2, 3]" height="6rem" />
       } @else {
         <na-alert tone="info" icon="⚿">
@@ -27,7 +29,7 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
         </na-alert>
 
         <div class="cards">
-          @for (role of roles; track role.id) {
+          @for (role of roles(); track role.id) {
             <article class="role-card na-card" [class.role-card--super]="role.isSuperAdmin">
               <header class="role-card__head">
                 <h2 class="role-card__name">{{ role.name }}</h2>
@@ -35,7 +37,7 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
                   <na-badge tone="warning">Super Admin</na-badge>
                 }
               </header>
-              <p class="na-text-muted na-text-small">{{ role.description ?? 'No description' }}</p>
+              <p class="na-text-muted na-text-small">{{ role.description ?? 'No description' }}{{ role.userCount !== undefined ? ' · ' + role.userCount + ' assigned' : '' }}</p>
               <div class="chips">
                 @for (perm of role.permissions; track perm) {
                   <span class="chip na-text-mono">{{ perm }}</span>
@@ -51,7 +53,7 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
             <thead>
               <tr>
                 <th>Permission</th>
-                @for (role of roles; track role.id) {
+                @for (role of roles(); track role.id) {
                   <th [class.col--super]="role.isSuperAdmin">{{ role.name }}</th>
                 }
               </tr>
@@ -60,7 +62,7 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
               @for (perm of allPermissions(); track perm) {
                 <tr>
                   <td class="na-text-mono" data-label="Permission">{{ perm }}</td>
-                  @for (role of roles; track role.id) {
+                  @for (role of roles(); track role.id) {
                     <td [attr.data-label]="role.name" class="matrix__cell">
                       @if (hasPermission(role, perm)) {
                         <span class="matrix__check" role="img" [attr.aria-label]="role.name + ' has ' + perm">✓</span>
@@ -102,25 +104,43 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
     .matrix__dash { color: var(--na-ink-300); }
   `,
 })
-export class AdminRolesPage {
+export class AdminRolesPage implements OnInit {
+  private readonly rolesService = inject(RolesService);
+
   readonly crumbs = [
     { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Roles & Permissions' },
   ];
 
-  readonly roles: Role[] = ROLES;
+  readonly roles = signal<Role[]>([]);
   readonly loading = signal(true);
+  readonly error = signal(false);
 
   readonly allPermissions = computed(() => {
     const set = new Set<string>();
-    for (const role of this.roles) {
+    for (const role of this.roles()) {
       for (const perm of role.permissions) set.add(perm);
     }
     return [...set].sort();
   });
 
-  constructor() {
-    setTimeout(() => this.loading.set(false), 300);
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(false);
+    this.rolesService.listRoles().subscribe({
+      next: (roles) => {
+        this.roles.set(roles);
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+        this.error.set(true);
+      },
+    });
   }
 
   hasPermission(role: Role, permission: string): boolean {

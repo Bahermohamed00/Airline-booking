@@ -1,12 +1,15 @@
 import { PrismaClient, CabinClass, UserStatus, AircraftStatus, AirportStatus, RouteStatus, FlightStatus, BookingStatus, PaymentStatus, LoyaltyTier, Role, Permission, User, Aircraft, Airport, Route, Flight, Fare } from '@prisma/client';
-import * as bcrypt from 'bcryptjs';
+import { hash as argonHash } from '@node-rs/argon2';
 
 const prisma = new PrismaClient();
 
-const SALT_ROUNDS = 12;
-
 async function hash(password: string): Promise<string> {
-  return bcrypt.hash(password, SALT_ROUNDS);
+  // @node-rs/argon2 defaults to Argon2id (its Algorithm const enum breaks isolatedModules)
+  return argonHash(password, {
+    memoryCost: 19456,
+    timeCost: 2,
+    parallelism: 1,
+  });
 }
 
 function generateBookingReference(): string {
@@ -62,6 +65,20 @@ const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{
     description: 'Full system access',
     permissions: [],
     isSuperAdmin: true,
+  },
+  {
+    name: 'Administrator',
+    description: 'Access to assigned administrative modules',
+    permissions: [
+      { resource: 'users', action: 'read' },
+      { resource: 'users', action: 'create' },
+      { resource: 'users', action: 'update' },
+      { resource: 'users', action: 'delete' },
+      { resource: 'bookings', action: 'read' },
+      { resource: 'bookings', action: 'manage' },
+      { resource: 'reports', action: 'read' },
+      { resource: 'audit', action: 'read' },
+    ],
   },
   {
     name: 'Flight Manager',

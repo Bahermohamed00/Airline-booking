@@ -1,19 +1,23 @@
 import { IsEmail, IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
+import { NormalizeEmail, TrimString } from './transforms.js';
 
 export class RegisterDto {
+  @NormalizeEmail()
   @IsEmail()
   email!: string;
 
   @IsString()
-  @MinLength(8)
-  @MaxLength(100)
+  @MinLength(12)
+  @MaxLength(128)
   password!: string;
 
+  @TrimString()
   @IsString()
   @MinLength(1)
   @MaxLength(100)
   firstName!: string;
 
+  @TrimString()
   @IsString()
   @MinLength(1)
   @MaxLength(100)

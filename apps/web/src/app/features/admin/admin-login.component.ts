@@ -1,14 +1,14 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
-import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
+import { NaButton } from '../../shared/ui/button.component';
+import { NaAlert } from '../../shared/ui/alert.component';
 
 @Component({
   selector: 'app-admin-login',
-  standalone: true,
-  imports: [NgOptimizedImage],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [NgOptimizedImage, ReactiveFormsModule, NaButton, NaAlert],
   template: `
     <div class="login">
       <div class="login__visual">
@@ -34,15 +34,26 @@ import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
       <div class="login__panel">
         <div class="card na-card">
           <h1>Staff sign-in</h1>
-          <p class="na-text-muted">Choose a demo staff role to explore role-aware access to the operations dashboard.</p>
-          <div class="roles">
-            @for (role of roles; track role) {
-              <button type="button" class="role-btn" (click)="signInAs(role)">
-                <span class="role-btn__name">{{ role }}</span>
-                <span class="role-btn__hint">{{ hint(role) }}</span>
-              </button>
-            }
-          </div>
+          <p class="na-text-muted">Operations access requires a staff account. Use your NovaAir crew credentials.</p>
+
+          @if (error()) {
+            <na-alert tone="danger" title="Sign-in failed">{{ error() }}</na-alert>
+          }
+          @if (notice()) {
+            <na-alert tone="info" title="Signed out">{{ notice() }}</na-alert>
+          }
+
+          <form [formGroup]="form" (ngSubmit)="submit()">
+            <div class="na-field">
+              <label class="na-label" for="admin-email">Email</label>
+              <input id="admin-email" class="na-input" type="email" formControlName="email" autocomplete="email" />
+            </div>
+            <div class="na-field">
+              <label class="na-label" for="admin-password">Password</label>
+              <input id="admin-password" class="na-input" type="password" formControlName="password" autocomplete="current-password" />
+            </div>
+            <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Sign in to Ops</na-button>
+          </form>
         </div>
       </div>
     </div>
@@ -70,11 +81,8 @@ import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
     .login__panel { display: flex; align-items: center; justify-content: center; padding: var(--na-space-8) var(--na-space-4); }
     .card { width: min(520px, 100%); padding: var(--na-space-8); }
     .card h1 { margin-bottom: var(--na-space-2); }
-    .roles { display: flex; flex-direction: column; gap: var(--na-space-3); margin-top: var(--na-space-6); }
-    .role-btn { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-3); padding: var(--na-space-4); border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-md); background: var(--na-surface-raised); text-align: left; min-height: 56px; }
-    .role-btn:hover { border-color: var(--na-blue-600); background: var(--na-blue-100); }
-    .role-btn__name { font-weight: var(--na-font-semibold); }
-    .role-btn__hint { color: var(--na-ink-500); font-size: var(--na-text-xs); text-align: right; }
+    na-alert { display: block; margin-top: var(--na-space-4); }
+    form { margin-top: var(--na-space-6); display: grid; gap: var(--na-space-2); }
     @media (max-width: 899px) {
       .login { grid-template-columns: 1fr; }
       .login__visual { min-height: 260px; }
@@ -83,17 +91,46 @@ import { STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
   `,
 })
 export class AdminLoginPage {
+  private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
-  readonly roles = Object.keys(STAFF_ROLE_PERMISSIONS);
+  private readonly route = inject(ActivatedRoute);
 
-  hint(role: string): string {
-    const perms = STAFF_ROLE_PERMISSIONS[role] ?? [];
-    return perms.includes('super_admin') ? 'Full access' : `${perms.length} permissions`;
-  }
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly notice = signal<string | null>(
+    this.route.snapshot.queryParamMap.get('reason') === 'session-expired'
+      ? 'Your session has expired. Please sign in again.'
+      : null,
+  );
 
-  signInAs(role: string): void {
-    this.auth.loginAsRole(role);
-    this.router.navigate(['/admin/dashboard']);
+  readonly form = this.fb.nonNullable.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required]],
+  });
+
+  submit(): void {
+    if (this.form.invalid) return;
+    this.loading.set(true);
+    this.error.set(null);
+    const { email, password } = this.form.getRawValue();
+    this.auth.login(email, password).subscribe({
+      next: (result) => {
+        this.auth.setSession(result.user);
+        if (!this.auth.isStaff()) {
+          // Valid credentials, wrong portal: drop the session again.
+          this.auth.logout();
+          this.loading.set(false);
+          this.error.set('This portal is restricted to staff accounts.');
+          return;
+        }
+        const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+        void this.router.navigateByUrl(returnUrl ?? '/admin/dashboard');
+      },
+      error: (err) => {
+        this.loading.set(false);
+        this.error.set(err?.message ?? 'Unable to sign in. Check your credentials and try again.');
+      },
+    });
   }
 }

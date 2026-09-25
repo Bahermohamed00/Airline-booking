@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 import { CustomerShell } from './features/customer/customer-shell.component';
 import { AdminShell } from './features/admin/admin-shell.component';
-import { authGuard, staffGuard } from './core/guards/auth.guard';
+import { authGuard, guestGuard, staffGuard, permissionGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -14,6 +14,7 @@ export const routes: Routes = [
     children: [
       {
         path: 'login',
+        canActivate: [guestGuard],
         loadComponent: () => import('./features/admin/admin-login.component').then((m) => m.AdminLoginPage),
       },
       {
@@ -22,24 +23,24 @@ export const routes: Routes = [
         canActivate: [staffGuard],
         children: [
           { path: 'denied', loadComponent: () => import('./features/admin/denied.component').then((m) => m.DeniedPage) },
-          { path: 'dashboard', loadComponent: () => import('./features/admin/dashboard/dashboard.component').then((m) => m.DashboardPage) },
-          { path: 'flights', loadComponent: () => import('./features/admin/flights/flights.component').then((m) => m.FlightsPage) },
-          { path: 'airports', loadComponent: () => import('./features/admin/catalog/airports.component').then((m) => m.AirportsPage) },
-          { path: 'aircraft', loadComponent: () => import('./features/admin/catalog/aircraft.component').then((m) => m.AircraftPage) },
-          { path: 'routes', loadComponent: () => import('./features/admin/catalog/routes.component').then((m) => m.RoutesPage) },
-          { path: 'bookings', loadComponent: () => import('./features/admin/ops/admin-bookings.component').then((m) => m.AdminBookingsPage) },
-          { path: 'users', loadComponent: () => import('./features/admin/ops/admin-users.component').then((m) => m.AdminUsersPage) },
-          { path: 'staff', loadComponent: () => import('./features/admin/ops/admin-staff.component').then((m) => m.AdminStaffPage) },
-          { path: 'roles', loadComponent: () => import('./features/admin/ops/admin-roles.component').then((m) => m.AdminRolesPage) },
-          { path: 'payments', loadComponent: () => import('./features/admin/ops/admin-payments.component').then((m) => m.AdminPaymentsPage) },
-          { path: 'refunds', loadComponent: () => import('./features/admin/ops/admin-refunds.component').then((m) => m.AdminRefundsPage) },
-          { path: 'baggage', loadComponent: () => import('./features/admin/ops/admin-baggage.component').then((m) => m.AdminBaggagePage) },
-          { path: 'checkin', loadComponent: () => import('./features/admin/ops/admin-checkin.component').then((m) => m.AdminCheckInPage) },
-          { path: 'loyalty', loadComponent: () => import('./features/admin/ops/admin-loyalty.component').then((m) => m.AdminLoyaltyPage) },
-          { path: 'notifications', loadComponent: () => import('./features/admin/ops/admin-notifications.component').then((m) => m.AdminNotificationsPage) },
-          { path: 'reports', loadComponent: () => import('./features/admin/ops/admin-reports.component').then((m) => m.AdminReportsPage) },
-          { path: 'audit', loadComponent: () => import('./features/admin/ops/admin-audit.component').then((m) => m.AdminAuditPage) },
-          { path: 'settings', loadComponent: () => import('./features/admin/ops/admin-settings.component').then((m) => m.AdminSettingsPage) },
+          { path: 'dashboard', loadComponent: () => import('./features/admin/dashboard/dashboard.component').then((m) => m.DashboardPage), canActivate: [permissionGuard('dashboard:read')] },
+          { path: 'flights', loadComponent: () => import('./features/admin/flights/flights.component').then((m) => m.FlightsPage), canActivate: [permissionGuard('flights:read')] },
+          { path: 'airports', loadComponent: () => import('./features/admin/catalog/airports.component').then((m) => m.AirportsPage), canActivate: [permissionGuard('airports:manage')] },
+          { path: 'aircraft', loadComponent: () => import('./features/admin/catalog/aircraft.component').then((m) => m.AircraftPage), canActivate: [permissionGuard('aircraft:manage')] },
+          { path: 'routes', loadComponent: () => import('./features/admin/catalog/routes.component').then((m) => m.RoutesPage), canActivate: [permissionGuard('routes:manage')] },
+          { path: 'bookings', loadComponent: () => import('./features/admin/ops/admin-bookings.component').then((m) => m.AdminBookingsPage), canActivate: [permissionGuard('bookings:read')] },
+          { path: 'users', loadComponent: () => import('./features/admin/ops/admin-users.component').then((m) => m.AdminUsersPage), canActivate: [permissionGuard('users:read')] },
+          { path: 'staff', loadComponent: () => import('./features/admin/ops/admin-staff.component').then((m) => m.AdminStaffPage), canActivate: [permissionGuard('staff:manage')] },
+          { path: 'roles', loadComponent: () => import('./features/admin/ops/admin-roles.component').then((m) => m.AdminRolesPage), canActivate: [permissionGuard('roles:manage')] },
+          { path: 'payments', loadComponent: () => import('./features/admin/ops/admin-payments.component').then((m) => m.AdminPaymentsPage), canActivate: [permissionGuard('payments:read')] },
+          { path: 'refunds', loadComponent: () => import('./features/admin/ops/admin-refunds.component').then((m) => m.AdminRefundsPage), canActivate: [permissionGuard('payments:refund')] },
+          { path: 'baggage', loadComponent: () => import('./features/admin/ops/admin-baggage.component').then((m) => m.AdminBaggagePage), canActivate: [permissionGuard('baggage:manage')] },
+          { path: 'checkin', loadComponent: () => import('./features/admin/ops/admin-checkin.component').then((m) => m.AdminCheckInPage), canActivate: [permissionGuard('checkin:manage')] },
+          { path: 'loyalty', loadComponent: () => import('./features/admin/ops/admin-loyalty.component').then((m) => m.AdminLoyaltyPage), canActivate: [permissionGuard('loyalty:manage')] },
+          { path: 'notifications', loadComponent: () => import('./features/admin/ops/admin-notifications.component').then((m) => m.AdminNotificationsPage), canActivate: [permissionGuard('notifications:manage')] },
+          { path: 'reports', loadComponent: () => import('./features/admin/ops/admin-reports.component').then((m) => m.AdminReportsPage), canActivate: [permissionGuard('reports:read')] },
+          { path: 'audit', loadComponent: () => import('./features/admin/ops/admin-audit.component').then((m) => m.AdminAuditPage), canActivate: [permissionGuard('audit:read')] },
+          { path: 'settings', loadComponent: () => import('./features/admin/ops/admin-settings.component').then((m) => m.AdminSettingsPage), canActivate: [permissionGuard('settings:manage')] },
           { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
         ],
       },
@@ -57,8 +58,11 @@ export const routes: Routes = [
       { path: 'booking/extras', loadComponent: () => import('./features/customer/booking/extras.component').then((m) => m.ExtrasPage) },
       { path: 'booking/review', loadComponent: () => import('./features/customer/booking/review.component').then((m) => m.ReviewPage) },
       { path: 'booking/confirmation', loadComponent: () => import('./features/customer/booking/confirmation.component').then((m) => m.ConfirmationPage) },
-      { path: 'login', loadComponent: () => import('./features/customer/login.component').then((m) => m.LoginPage) },
-      { path: 'register', loadComponent: () => import('./features/customer/register.component').then((m) => m.RegisterPage) },
+      { path: 'login', loadComponent: () => import('./features/customer/login.component').then((m) => m.LoginPage), canActivate: [guestGuard] },
+      { path: 'register', loadComponent: () => import('./features/customer/register.component').then((m) => m.RegisterPage), canActivate: [guestGuard] },
+      { path: 'forgot-password', loadComponent: () => import('./features/customer/forgot-password.component').then((m) => m.ForgotPasswordPage), canActivate: [guestGuard] },
+      { path: 'reset-password', loadComponent: () => import('./features/customer/reset-password.component').then((m) => m.ResetPasswordPage), canActivate: [guestGuard] },
+      { path: 'verify-email', loadComponent: () => import('./features/customer/verify-email.component').then((m) => m.VerifyEmailPage) },
       { path: 'bookings', loadComponent: () => import('./features/customer/my-bookings.component').then((m) => m.MyBookingsPage), canActivate: [authGuard] },
       { path: 'bookings/:id', loadComponent: () => import('./features/customer/manage-booking.component').then((m) => m.ManageBookingPage), canActivate: [authGuard] },
       { path: 'manage', loadComponent: () => import('./features/customer/manage-lookup.component').then((m) => m.ManageLookupPage) },

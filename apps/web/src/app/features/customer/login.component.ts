@@ -19,6 +19,9 @@ import { NaAuthLayout } from './auth-layout.component';
       @if (error()) {
         <na-alert tone="danger" title="Sign-in failed">{{ error() }}</na-alert>
       }
+      @if (notice()) {
+        <na-alert tone="info" title="Signed out">{{ notice() }}</na-alert>
+      }
 
       <form [formGroup]="form" (ngSubmit)="submit()">
         <div class="na-field">
@@ -36,12 +39,12 @@ import { NaAuthLayout } from './auth-layout.component';
       </form>
 
       <div class="auth-links">
-        <a routerLink="/login/reset">Forgot your password?</a>
+        <a routerLink="/forgot-password">Forgot your password?</a>
         <span>·</span>
         <a routerLink="/register">Create an account</a>
       </div>
 
-      <p class="demo-hint">Demo account: <strong>customer@example.com</strong> with any password of 8+ characters.</p>
+      <p class="demo-hint">Demo account: <strong>customer@example.com</strong> / <strong>Customer123!</strong></p>
     </na-auth-layout>
   `,
   styles: `
@@ -60,6 +63,11 @@ export class LoginPage {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly notice = signal<string | null>(
+    this.route.snapshot.queryParamMap.get('reason') === 'session-expired'
+      ? 'Your session has expired. Please sign in again.'
+      : null,
+  );
 
   readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
@@ -75,7 +83,7 @@ export class LoginPage {
       next: (result) => {
         this.auth.setSession(result.user);
         const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? '/bookings';
-        this.router.navigateByUrl(returnUrl);
+        void this.router.navigateByUrl(returnUrl);
       },
       error: (err) => {
         this.loading.set(false);

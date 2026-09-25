@@ -6,7 +6,12 @@ Lufthansa-inspired airline booking platform (educational project).
 
 - **Node.js** ≥ 22
 - **npm** ≥ 10
-- **PostgreSQL** ≥ 16 (local install or Docker)
+- **PostgreSQL** ≥ 16 installed locally (Windows installer from postgresql.org or your package manager)
+- **pgAdmin 4** (optional) — GUI for administering the local PostgreSQL server
+
+> **Docker is NOT required to run this project.** The application connects directly to a
+> PostgreSQL server running on the host machine (`localhost:5432`). pgAdmin 4 is only a
+> database administration GUI — the app never connects through it.
 
 ## 1. Install dependencies
 
@@ -14,24 +19,19 @@ Lufthansa-inspired airline booking platform (educational project).
 npm install
 ```
 
-## 2. Set up PostgreSQL
+## 2. Set up PostgreSQL (local)
 
-### Option A — Docker (preferred)
-
-```bash
-docker-compose up -d postgres
-```
-
-### Option B — Local PostgreSQL
-
-If PostgreSQL is already installed locally:
+Make sure the PostgreSQL service is running, then create the application user and databases:
 
 ```powershell
-# Create the application user and databases
-psql -U postgres -c "CREATE USER airline WITH PASSWORD 'airline' CREATEDB;"
-psql -U postgres -c "CREATE DATABASE airline_booking OWNER airline;"
-psql -U postgres -c "CREATE DATABASE airline_booking_test OWNER airline;"
+# Create the application user and databases (run as the postgres superuser)
+psql -U postgres -h localhost -c "CREATE USER airline WITH PASSWORD 'airline' CREATEDB;"
+psql -U postgres -h localhost -c "CREATE DATABASE airline_booking OWNER airline;"
+psql -U postgres -h localhost -c "CREATE DATABASE airline_booking_test OWNER airline;"
 ```
+
+You can do the same from **pgAdmin 4**: connect to your local server, create the `airline`
+login role, then create the `airline_booking` and `airline_booking_test` databases owned by it.
 
 ## 3. Configure environment
 
@@ -51,7 +51,7 @@ npm run db:migrate
 For the test database (required for e2e tests):
 
 ```bash
-DATABASE_URL=postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public npx prisma migrate deploy --schema=prisma/schema.prisma
+DATABASE_URL=postgresql://airline:AymanAnwar24@@localhost:5432/airline_booking_test?schema=public npx prisma migrate deploy --schema=prisma/schema.prisma
 ```
 
 ## 5. Seed the database

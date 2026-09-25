@@ -4,8 +4,9 @@ export class PasswordResetDto {
   @IsString()
   token!: string;
 
+  // Same policy as registration (RegisterDto)
   @IsString()
-  @MinLength(8)
-  @MaxLength(100)
+  @MinLength(12)
+  @MaxLength(128)
   newPassword!: string;
 }

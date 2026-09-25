@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
-import { ADMIN_NAV, STAFF_ROLE_PERMISSIONS } from '../../core/admin-nav';
+import { ADMIN_NAV } from '../../core/admin-nav';
 import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
 
 @Component({
@@ -40,15 +40,7 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
           <span class="mock-pill" title="All data shown is mock demo data">DEMO DATA</span>
           <div class="topbar__right">
             <na-theme-toggle />
-            <label class="role-switch">
-              <span class="na-visually-hidden">Acting staff role</span>
-              <select [value]="currentRole()" (change)="switchRole($event)" aria-label="Acting staff role">
-                @for (role of roleNames; track role) {
-                  <option [value]="role">{{ role }}</option>
-                }
-              </select>
-            </label>
-            <span class="staff">{{ auth.user()?.firstName }} {{ auth.user()?.lastName }}</span>
+            <span class="staff">{{ auth.user()?.firstName }} {{ auth.user()?.lastName }} · {{ auth.user()?.roles?.[0] }}</span>
             <button type="button" class="signout" (click)="signOut()">Sign out</button>
           </div>
         </header>
@@ -82,10 +74,6 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
       background: var(--na-surface-raised); border-bottom: 1px solid var(--na-border);
       padding: var(--na-space-3) var(--na-space-5); position: sticky; top: 0; z-index: 50;
     }
-    .role-switch select {
-      padding: 0.5rem 0.75rem; border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-md); min-height: 40px;
-      background: var(--na-surface); color: var(--na-ink-900);
-    }
     .mock-pill { background: var(--na-warning-bg); color: var(--na-warning); border: 1px solid var(--na-warning); border-radius: var(--na-radius-full); padding: 0.15rem 0.6rem; font-size: var(--na-text-xs); font-weight: var(--na-font-bold); letter-spacing: 0.05em; }
     .topbar__right { margin-left: auto; display: flex; align-items: center; gap: var(--na-space-3); }
     .staff { font-weight: var(--na-font-medium); font-size: var(--na-text-sm); }
@@ -99,12 +87,10 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
       // The rail is fixed (out of flow): offset the content so it never slides under it.
       .content { margin-left: var(--na-sidebar-w-collapsed); }
       .topbar { gap: var(--na-space-2); padding: var(--na-space-3); }
-      .role-switch select { min-width: 0; max-width: 150px; }
       .staff { display: none; }
     }
     @media (max-width: 639px) {
       .mock-pill { display: none; }
-      .role-switch select { max-width: 116px; }
       .signout { padding: 0.4rem 0.55rem; }
       .page { padding: var(--na-space-4); }
     }
@@ -114,19 +100,10 @@ export class AdminShell {
   readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   readonly collapsed = signal(false);
-  readonly roleNames = Object.keys(STAFF_ROLE_PERMISSIONS);
-
-  readonly currentRole = computed(() => this.auth.user()?.roles[0] ?? 'Super Admin');
 
   readonly visibleNav = computed(() =>
     ADMIN_NAV.filter((item) => this.auth.hasPermission(item.permission)),
   );
-
-  switchRole(event: Event): void {
-    const role = (event.target as HTMLSelectElement).value;
-    this.auth.loginAsRole(role);
-    this.router.navigate(['/admin/dashboard']);
-  }
 
   signOut(): void {
     this.auth.logout();

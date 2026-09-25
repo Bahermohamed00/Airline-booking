@@ -40,6 +40,17 @@ export interface Role {
   description?: string | null;
   isSuperAdmin: boolean;
   permissions: string[];
+  userCount?: number;
+}
+
+/** Device/session metadata as exposed by GET /api/auth/sessions. Never contains tokens. */
+export interface SessionInfo {
+  id: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string; // ISO
+  lastUsedAt: string; // ISO
+  current: boolean;
 }
 
 export interface Passenger {
