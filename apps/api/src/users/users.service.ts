@@ -47,6 +47,7 @@ export class UsersService {
       action: 'USER_CREATED',
       targetType: 'User',
       targetId: user.id,
+      metadata: { roleIds: dto.roleIds ?? [] },
     });
 
     return user;

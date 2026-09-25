@@ -119,15 +119,15 @@ describe('RBAC guards & role matrix (e2e)', () => {
     await request(app.getHttpServer()).delete(`/api/users/${target}`).set('Authorization', `Bearer ${token}`).expect(204);
   });
 
-  it('Administrator (SRS role, newly seeded) manages users but is not super', async () => {
+  it('Administrator can read users but cannot create them (staff creation is Super Admin only)', async () => {
     const token = await loginAs('admin@matrix.test', 'Administrator');
     await request(app.getHttpServer()).get('/api/users').set('Authorization', `Bearer ${token}`).expect(200);
-    const res = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/api/users')
       .set('Authorization', `Bearer ${token}`)
       .send({ email: 'staffer@matrix.test', password: 'Password123!', firstName: 'Staff', lastName: 'Er' })
-      .expect(201);
-    expect(res.body.id).toBeDefined();
+      .expect(403);
+    expect(await prismaTestClient.user.findUnique({ where: { email: 'staffer@matrix.test' } })).toBeNull();
   });
 
   it('Support Staff can read users but not create them', async () => {

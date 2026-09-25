@@ -15,7 +15,7 @@ export class UsersController {
   constructor(@Inject(UsersService) private readonly usersService: UsersService) {}
 
   @Post()
-  @Roles('Super Admin', 'Administrator')
+  @Roles('Super Admin')
   @Permissions({ resource: 'users', action: 'create' })
   create(@Body() dto: CreateUserDto, @CurrentUser() user: AuthUser) {
     return this.usersService.create(dto, user);
