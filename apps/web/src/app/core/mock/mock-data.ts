@@ -73,10 +73,10 @@ function makeAircraft(id: string, registration: string, model: string, capacity:
 }
 
 export const AIRCRAFT: Aircraft[] = [
-  makeAircraft('c1000000-0000-4000-8000-000000000001', 'NA-320A', 'Airbus A320-200', 180),
-  makeAircraft('c1000000-0000-4000-8000-000000000002', 'NA-321B', 'Airbus A321-200', 220),
-  makeAircraft('c1000000-0000-4000-8000-000000000003', 'NA-748X', 'Boeing 747-8', 364),
-  makeAircraft('c1000000-0000-4000-8000-000000000004', 'NA-359Y', 'Airbus A350-900', 319),
+  makeAircraft('c1000000-0000-4000-8000-000000000001', 'NV-320A', 'Airbus A320-200', 180),
+  makeAircraft('c1000000-0000-4000-8000-000000000002', 'NV-321B', 'Airbus A321-200', 220),
+  makeAircraft('c1000000-0000-4000-8000-000000000003', 'NV-748X', 'Boeing 747-8', 364),
+  makeAircraft('c1000000-0000-4000-8000-000000000004', 'NV-359Y', 'Airbus A350-900', 319),
 ];
 
 // ---------- Routes ----------

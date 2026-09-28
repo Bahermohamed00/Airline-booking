@@ -2,7 +2,7 @@ import { IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, MaxLength, M
 import { Type } from 'class-transformer';
 import { AUDIT_EVENTS } from '../audit-events.js';
 
-export const AUDIT_ACTOR_TYPES = ['User', 'Staff', 'Guest'] as const;
+export const AUDIT_ACTOR_TYPES = ['User', 'Staff', 'Guest', 'System'] as const;
 export const AUDIT_SORT_FIELDS = ['createdAt', 'event'] as const;
 export const AUDIT_SORT_ORDERS = ['asc', 'desc'] as const;
 export const AUDIT_MAX_LIMIT = 100;

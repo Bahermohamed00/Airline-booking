@@ -11,6 +11,13 @@ import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { RolesModule } from './roles/roles.module.js';
+import { AirportsModule } from './airports/airports.module.js';
+import { RoutesModule } from './routes/routes.module.js';
+import { AircraftModule } from './aircraft/aircraft.module.js';
+import { FlightsModule } from './flights/flights.module.js';
+import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module.js';
+import { BookingsModule } from './bookings/bookings.module.js';
+import { OffersModule } from './offers/offers.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -38,6 +45,13 @@ const skipThrottleInTest = (): boolean => isTest && process.env['E2E_THROTTLE'] 
     AuthModule,
     UsersModule,
     RolesModule,
+    AirportsModule,
+    RoutesModule,
+    AircraftModule,
+    FlightsModule,
+    ScheduleRulesModule,
+    BookingsModule,
+    OffersModule,
   ],
   controllers: [AppController],
   providers: [

@@ -24,6 +24,7 @@ export const ADMIN_NAV: AdminNavItem[] = [
   { route: '/admin/checkin', label: 'Check-in', icon: '✓', permission: 'checkin:manage' },
   { route: '/admin/loyalty', label: 'Loyalty', icon: '★', permission: 'loyalty:manage' },
   { route: '/admin/notifications', label: 'Notifications', icon: '✉', permission: 'notifications:manage' },
+  { route: '/admin/offers', label: 'Offers', icon: '◈', permission: 'offers:manage' },
   { route: '/admin/reports', label: 'Reports & Analytics', icon: '◨', permission: 'reports:read' },
   { route: '/admin/audit', label: 'Audit Log', icon: '≡', permission: 'audit:read' },
   { route: '/admin/settings', label: 'System Settings', icon: '⚙', permission: 'settings:manage' },

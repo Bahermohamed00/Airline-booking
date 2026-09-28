@@ -37,6 +37,7 @@ export const routes: Routes = [
           { path: 'baggage', loadComponent: () => import('./features/admin/ops/admin-baggage.component').then((m) => m.AdminBaggagePage), canActivate: [permissionGuard('baggage:manage')] },
           { path: 'checkin', loadComponent: () => import('./features/admin/ops/admin-checkin.component').then((m) => m.AdminCheckInPage), canActivate: [permissionGuard('checkin:manage')] },
           { path: 'loyalty', loadComponent: () => import('./features/admin/ops/admin-loyalty.component').then((m) => m.AdminLoyaltyPage), canActivate: [permissionGuard('loyalty:manage')] },
+          { path: 'offers', loadComponent: () => import('./features/admin/ops/admin-offers.component').then((m) => m.AdminOffersPage), canActivate: [permissionGuard('offers:manage')] },
           { path: 'notifications', loadComponent: () => import('./features/admin/ops/admin-notifications.component').then((m) => m.AdminNotificationsPage), canActivate: [permissionGuard('notifications:manage')] },
           { path: 'reports', loadComponent: () => import('./features/admin/ops/admin-reports.component').then((m) => m.AdminReportsPage), canActivate: [permissionGuard('reports:read')] },
           { path: 'audit', loadComponent: () => import('./features/admin/ops/admin-audit.component').then((m) => m.AdminAuditPage), canActivate: [permissionGuard('audit:read')] },

@@ -39,7 +39,21 @@ export interface AuditQueryResult {
  * non-sensitive. Anything else is stripped from API responses — new writers
  * must extend this list deliberately (and only with safe values).
  */
-const SAFE_METADATA_KEYS = ['changedFields', 'roleIds', 'reason', 'operation', 'otherSessionsRevoked', 'email'] as const;
+const SAFE_METADATA_KEYS = [
+  'changedFields',
+  'roleIds',
+  'reason',
+  'operation',
+  'otherSessionsRevoked',
+  'email',
+  // Booking-domain metadata (non-sensitive identifiers only).
+  'bookingReference',
+  'flightNumber',
+  'seatNumbers',
+  'holdCount',
+  // Offer metadata.
+  'title',
+] as const;
 
 @Injectable()
 export class AuditService {

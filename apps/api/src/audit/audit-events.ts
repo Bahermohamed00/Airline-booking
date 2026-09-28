@@ -30,6 +30,16 @@ export const AUDIT_EVENTS = [
   // change, but is intentionally not implemented yet).
   'AUTH_RATE_LIMITED',
   'SUPER_ADMIN_INVARIANT_BLOCKED',
+  // Booking domain (Phase 4).
+  'BOOKING_CREATED',
+  'BOOKING_CANCELLED',
+  'SEAT_HELD',
+  'SEAT_HOLD_EXPIRED',
+  'SEAT_HOLD_RELEASED',
+  // Offer catalog (Phase 5).
+  'OFFER_CREATED',
+  'OFFER_UPDATED',
+  'OFFER_DELETED',
 ] as const;
 
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];

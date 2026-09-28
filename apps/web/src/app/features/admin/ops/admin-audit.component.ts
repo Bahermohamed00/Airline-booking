@@ -8,7 +8,7 @@ import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { NaButton } from '../../../shared/ui/button.component';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
-const ACTOR_TYPES = ['User', 'Staff', 'Guest'];
+const ACTOR_TYPES = ['User', 'Staff', 'Guest', 'System'];
 
 @Component({
   selector: 'na-admin-audit',

@@ -70,6 +70,7 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
     'email_verification_tokens',
     'password_reset_tokens',
     'system_settings',
+    'offers',
     'loyalty_transactions',
     'loyalty_accounts',
     'notifications',

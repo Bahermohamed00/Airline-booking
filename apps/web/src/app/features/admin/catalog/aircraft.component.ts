@@ -151,10 +151,10 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
               <label class="na-label" for="ac-reg">Registration</label>
               <input
                 id="ac-reg" class="na-input" name="acReg" [(ngModel)]="formRegistration"
-                placeholder="NA-738Z" required
+                placeholder="NV-738Z" required
                 [attr.aria-invalid]="createError() ? 'true' : null"
               />
-              <p class="na-hint">Unique tail number, e.g. NA-738Z.</p>
+              <p class="na-hint">Unique tail number, e.g. NV-738Z.</p>
             </div>
             <div class="na-field">
               <label class="na-label" for="ac-model">Model</label>

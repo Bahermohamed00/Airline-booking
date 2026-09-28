@@ -9,3 +9,8 @@ export function NormalizeEmail() {
 export function TrimString() {
   return Transform(({ value }) => (typeof value === 'string' ? value.trim() : value));
 }
+
+/** Trims surrounding whitespace and uppercases before validation (e.g. airport/aircraft codes). */
+export function UppercaseString() {
+  return Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value));
+}
