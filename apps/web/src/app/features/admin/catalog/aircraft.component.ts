@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AIRCRAFT } from '../../../core/mock/mock-data';
+import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
 import type { Aircraft, AircraftStatus, CabinClass, Seat } from '../../../core/models/domain.model';
 import type { StatusTone } from '../../../core/status-maps';
 import { ToastService } from '../../../shared/ui/toast.service';
@@ -17,31 +17,6 @@ const STATUS_PRESENTATION: Record<AircraftStatus, { label: string; tone: StatusT
 };
 
 const SEAT_PREVIEW_ROWS = 15;
-
-function buildSeats(aircraftId: string, capacity: number): Seat[] {
-  const seats: Seat[] = [];
-  const cols = ['A', 'B', 'C', 'D', 'E', 'F'];
-  let count = 0;
-  for (let row = 1; count < capacity; row++) {
-    for (const col of cols) {
-      if (count >= capacity) break;
-      const cabin: CabinClass =
-        row <= 2 && capacity >= 300 ? 'FIRST' : row <= 6 && capacity >= 220 ? 'BUSINESS' : 'ECONOMY';
-      seats.push({
-        id: `${aircraftId.slice(0, 8)}-s${row}${col}`,
-        aircraftId,
-        seatNumber: `${row}${col}`,
-        cabinClass: cabin,
-        seatRow: row,
-        seatColumn: col,
-        isExitRow: row === 12 || row === 25,
-        features: {},
-      });
-      count++;
-    }
-  }
-  return seats;
-}
 
 @Component({
   selector: 'na-admin-aircraft',
@@ -234,6 +209,7 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
   `,
 })
 export class AircraftPage {
+  private readonly catalog = inject(AdminCatalogService);
   private readonly toast = inject(ToastService);
 
   readonly previewRows = SEAT_PREVIEW_ROWS;
@@ -251,10 +227,10 @@ export class AircraftPage {
   formCapacity: number | null = null;
 
   constructor() {
-    setTimeout(() => {
-      this.fleet.set(AIRCRAFT.map((a) => ({ ...a })));
+    this.catalog.listAircraft().subscribe((fleet) => {
+      this.fleet.set(fleet);
       this.loading.set(false);
-    }, 300);
+    });
   }
 
   openDetail(id: string): void {
@@ -311,13 +287,11 @@ export class AircraftPage {
       this.createError.set('Capacity must be between 6 and 600 seats.');
       return;
     }
-    const id = crypto.randomUUID();
-    this.fleet.update((list) => [
-      ...list,
-      { id, registration: reg, model, capacity, status: 'ACTIVE', seats: buildSeats(id, capacity) },
-    ]);
-    this.createOpen.set(false);
-    this.toast.success(`Aircraft ${reg} added to the fleet.`);
+    this.catalog.createAircraft({ registration: reg, model, capacity }).subscribe((aircraft) => {
+      this.fleet.update((list) => [...list, aircraft]);
+      this.createOpen.set(false);
+      this.toast.success(`Aircraft ${reg} added to the fleet.`);
+    });
   }
 
   confirmToggle(): void {
@@ -325,11 +299,13 @@ export class AircraftPage {
     const a = this.selected();
     if (!a || a.status === 'RETIRED') return;
     const next: AircraftStatus = a.status === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE';
-    this.fleet.update((list) => list.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-    this.toast.success(
-      next === 'MAINTENANCE'
-        ? `${a.registration} sent to maintenance.`
-        : `${a.registration} returned to service.`,
-    );
+    this.catalog.updateAircraft(a.id, { status: next }).subscribe((updated) => {
+      this.fleet.update((list) => list.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));
+      this.toast.success(
+        next === 'MAINTENANCE'
+          ? `${a.registration} sent to maintenance.`
+          : `${a.registration} returned to service.`,
+      );
+    });
   }
 }

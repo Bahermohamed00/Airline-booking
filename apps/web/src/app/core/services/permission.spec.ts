@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { AuthService } from './auth.service';
 import type { User } from '../models/domain.model';
+import { environment } from '../../../environments/environment';
 
 function userWith(roles: string[], permissions: string[]): User {
   return {
@@ -21,6 +22,16 @@ function userWith(roles: string[], permissions: string[]): User {
 
 describe('AuthService permissions', () => {
   let auth: AuthService;
+  const originalUseRealApi = environment.useRealApi;
+
+  beforeAll(() => {
+    // Permission logic is mode-independent; force mock mode for these specs.
+    environment.useRealApi = false;
+  });
+
+  afterAll(() => {
+    environment.useRealApi = originalUseRealApi;
+  });
 
   beforeEach(() => {
     TestBed.resetTestingModule();

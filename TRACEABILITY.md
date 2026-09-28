@@ -42,6 +42,8 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 | Requirement | UI Screen | Route | Service / Guard | Test |
 |-------------|-----------|-------|-----------------|------|
 | FR-C04/05/06 Search & results | SearchPage, ResultsPage | `/search`, `/results` | `FlightService.searchFlights`, `applyFilters`/`applySort` | pricing/status specs |
+| FR-C04/05/06 (API) Search backend | ResultsPage (useRealApi) | `GET /api/flights/search`, `GET /api/flights/adjacent`, `GET /api/airports`, `GET /api/flights/:id` | `FlightsService` (trip types, cabin availability, bookable statuses, server-side filter/sort mirroring mock), `public-search` throttler group | `flights.e2e-spec.ts` (6 tests) |
+| SRS 5.2–5.5 (API) Catalog admin | Admin catalog pages (mock) | `GET|POST|PATCH|DELETE /api/admin/airports`, `/api/admin/routes`, `/api/admin/aircraft`, `/api/admin/flights`, `POST /api/admin/flights/:id/segments`, `POST|PATCH|DELETE /api/admin/fares` | `AdminCatalogService` + `PermissionsGuard` (airports/routes/aircraft:manage, flights:read/manage), audit on every mutation | `flights.e2e-spec.ts` auth test |
 | FR-C07 Flight details | FlightDetailsPage | `/flights/:id` | `FlightService.getFlight` | — |
 | FR-C08 Passenger data | PassengersPage | `/booking/passengers` | `BookingDraftService`, reactive form validators | — |
 | FR-C09 / BR-13 Seat selection & hold | SeatsPage | `/booking/seats` | `SeatService.stateOf`, `BookingDraftService` hold expiry | `seat-hold.spec.ts` |
@@ -51,7 +53,10 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 | FR-C14 Confirmation | ConfirmationPage | `/booking/confirmation` | `BookingService.confirmFromDraft` | — |
 | FR-C15/16 My bookings / manage | MyBookingsPage, ManageBookingPage, ManageLookupPage | `/bookings`, `/bookings/:id`, `/manage` | `BookingService`, cancel with refund estimate | — |
 | FR-C17/18 Check-in & boarding pass | CheckInPage, BoardingPassPage | `/checkin`, `/checkin/:id/pass` | `CheckInService.eligibility` (BR-07) | — |
-| FR-C19 Flight status | FlightStatusPage | `/status` | `FlightService.flightStatusBy*` | — |
+| FR-C19 Flight status | FlightStatusPage | `/status` | `FlightService.flightStatusBy*` (real API when useRealApi) | `flights.e2e-spec.ts` status tests |
+| FR-C19 (API) Status backend | — | `GET /api/flights/status/by-number`, `GET /api/flights/status/by-route` | `FlightsService.statusBy*`, `public-search` throttler | `flights.e2e-spec.ts` (3 tests) |
+| FR-C04 trip types (full) | ResultsPage round-trip/multi-city sections | `/results` | per-leg `searchFlights`, `BookingDraft.legs`, `PricingService.extraLegFares` | pricing specs |
+| SRS 5.2–5.5 (UI wiring) Admin catalog | Flights/Airports/Aircraft/Routes pages | `/admin/flights|airports|aircraft|routes` | `AdminCatalogService` (real/mock switch), `authInterceptor` JWT, real-mode admin login form | web build + live flip check |
 | FR-C20 Baggage tracking | BaggagePage | `/baggage` | `BaggageService.track` | — |
 | FR-C21 Notifications | ProfilePage notifications section | `/profile/notifications` | `NotificationService` | — |
 | FR-C22 Loyalty | LoyaltyPage | `/loyalty` | `LoyaltyService` | — |

@@ -27,9 +27,12 @@ export class PricingService {
   computeBreakdown(input: {
     fare: Fare;
     returnFare?: Fare | null;
+    /** Fares for multi-city legs 3+ — same passenger-type math as the return fare. */
+    extraLegFares?: Fare[] | null;
     passengerTypes: ('ADULT' | 'CHILD' | 'INFANT')[];
     seats: SeatSelection[];
     returnSeats?: SeatSelection[];
+    extraLegSeats?: SeatSelection[];
     extras: ExtraSelection[];
     extraBags: number;
     promoCode?: string | null;
@@ -48,13 +51,15 @@ export class PricingService {
       const total = fareTotal(input.fare, type);
       baseFare += total;
       if (input.returnFare) baseFare += fareTotal(input.returnFare, type);
+      for (const legFare of input.extraLegFares ?? []) baseFare += fareTotal(legFare, type);
     }
     taxes = input.fare.taxAmount * input.passengerTypes.length;
     fees = input.fare.feeAmount * input.passengerTypes.length;
 
     const seatCharges =
       input.seats.reduce((sum, s) => sum + this.seatFee(s.seat), 0) +
-      (input.returnSeats ?? []).reduce((sum, s) => sum + this.seatFee(s.seat), 0);
+      (input.returnSeats ?? []).reduce((sum, s) => sum + this.seatFee(s.seat), 0) +
+      (input.extraLegSeats ?? []).reduce((sum, s) => sum + this.seatFee(s.seat), 0);
 
     const extras = input.extras.reduce((sum, e) => sum + e.extra.price * e.quantity, 0);
     const baggage = input.extraBags * EXTRA_BAG_PRICE;

@@ -8,6 +8,12 @@ export interface PassengerCounts {
   infants: number;
 }
 
+export interface SearchLeg {
+  originCode: string;
+  destinationCode: string;
+  departureDate: string; // yyyy-mm-dd
+}
+
 export interface SearchCriteria {
   tripType: TripType;
   originCode: string;
@@ -17,6 +23,8 @@ export interface SearchCriteria {
   passengers: PassengerCounts;
   cabinClass: CabinClass;
   promoCode?: string | null;
+  /** Multi-city legs (2–3); only set when tripType is MULTI_CITY. */
+  legs?: SearchLeg[];
 }
 
 export interface ResultFilters {
@@ -42,6 +50,8 @@ export interface PassengerForm {
 export interface SeatSelection {
   passengerIndex: number;
   seat: Seat;
+  /** 0 = outbound, 1 = return/second leg, 2+ = additional multi-city legs. */
+  legIndex?: number;
 }
 
 export interface ExtraSelection {
@@ -61,15 +71,24 @@ export interface PriceBreakdown {
   currency: string;
 }
 
+export interface DraftLeg {
+  flight: Flight;
+  fare: Fare;
+}
+
 export interface BookingDraft {
   criteria: SearchCriteria;
   outbound: Flight;
   returnFlight?: Flight | null;
   fare: Fare;
   returnFare?: Fare | null;
+  /** All selected legs for multi-city trips (legs[0] mirrors outbound, legs[1] mirrors returnFlight). Empty otherwise. */
+  legs: DraftLeg[];
   passengers: PassengerForm[];
   seats: SeatSelection[];
   returnSeats: SeatSelection[];
+  /** Seat selections for multi-city legs 3+ (legIndex >= 2). */
+  extraLegSeats: SeatSelection[];
   extras: ExtraSelection[];
   baggagePieces: number[];
   seatHoldExpiresAt: string | null;

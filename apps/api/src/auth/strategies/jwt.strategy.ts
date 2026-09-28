@@ -62,10 +62,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     const roles = user.userRoles.map((ur) => ur.role.name);
     const permissionSet = new Set<string>();
+
     for (const ur of user.userRoles) {
       if (ur.role.isSuperAdmin) {
         permissionSet.add('super_admin');
       }
+
       for (const rp of ur.role.rolePermissions) {
         permissionSet.add(`${rp.permission.resource}:${rp.permission.action}`);
       }

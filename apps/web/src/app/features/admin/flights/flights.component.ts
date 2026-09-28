@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { FlightService, flightDurationLabel } from '../../../core/services/flight.service';
+import { flightDurationLabel } from '../../../core/services/flight.service';
+import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import { AIRCRAFT, ROUTES } from '../../../core/mock/mock-data';
 import { FLIGHT_STATUS_MAP, statusLabel } from '../../../core/status-maps';
 import type { Aircraft, Flight, FlightStatus, Route } from '../../../core/models/domain.model';
 import { ToastService } from '../../../shared/ui/toast.service';
@@ -178,7 +178,7 @@ function toLocalInput(iso: string): string {
               <label class="na-label" for="assign-aircraft">Assign aircraft</label>
               <div class="assign__row">
                 <select id="assign-aircraft" class="na-select" name="assignAircraft" [(ngModel)]="assignAircraftId">
-                  @for (a of aircraftOptions; track a.id) {
+                  @for (a of aircraftOptions(); track a.id) {
                     <option [value]="a.id">{{ a.registration }} — {{ a.model }}</option>
                   }
                 </select>
@@ -207,7 +207,7 @@ function toLocalInput(iso: string): string {
               <label class="na-label" for="nf-route">Route</label>
               <select id="nf-route" class="na-select" name="nfRoute" [(ngModel)]="form.routeId" required>
                 <option value="" disabled>Select a route…</option>
-                @for (r of routeOptions; track r.id) {
+                @for (r of routeOptions(); track r.id) {
                   <option [value]="r.id">{{ r.origin.iataCode }} → {{ r.destination.iataCode }} ({{ r.origin.city }} – {{ r.destination.city }})</option>
                 }
               </select>
@@ -216,7 +216,7 @@ function toLocalInput(iso: string): string {
               <label class="na-label" for="nf-aircraft">Aircraft</label>
               <select id="nf-aircraft" class="na-select" name="nfAircraft" [(ngModel)]="form.aircraftId" required>
                 <option value="" disabled>Select an aircraft…</option>
-                @for (a of aircraftOptions; track a.id) {
+                @for (a of aircraftOptions(); track a.id) {
                   <option [value]="a.id">{{ a.registration }} — {{ a.model }} ({{ a.capacity }} seats)</option>
                 }
               </select>
@@ -294,7 +294,7 @@ function toLocalInput(iso: string): string {
   `,
 })
 export class FlightsPage {
-  private readonly flightService = inject(FlightService);
+  private readonly catalog = inject(AdminCatalogService);
   private readonly toast = inject(ToastService);
 
   readonly columns: TableColumn<FlightRow>[] = [
@@ -313,8 +313,8 @@ export class FlightsPage {
     { key: 'capacity', label: 'Capacity', priority: 'low' },
   ];
   readonly statusOptions: FlightStatus[] = ['SCHEDULED', 'ACTIVE', 'DELAYED', 'CANCELLED', 'COMPLETED'];
-  readonly routeOptions: Route[] = ROUTES;
-  readonly aircraftOptions: Aircraft[] = AIRCRAFT;
+  readonly routeOptions = signal<Route[]>([]);
+  readonly aircraftOptions = signal<Aircraft[]>([]);
 
   readonly loading = signal(true);
   readonly flights = signal<Flight[]>([]);
@@ -360,10 +360,12 @@ export class FlightsPage {
   });
 
   constructor() {
-    this.flightService.adminFlights().subscribe((flights) => {
-      this.flights.set([...flights]);
+    this.catalog.listFlights().subscribe((flights) => {
+      this.flights.set(flights);
       this.loading.set(false);
     });
+    this.catalog.listRoutes().subscribe((routes) => this.routeOptions.set(routes));
+    this.catalog.listAircraft().subscribe((aircraft) => this.aircraftOptions.set(aircraft));
   }
 
   openDetail(id: string): void {
@@ -397,8 +399,10 @@ export class FlightsPage {
     this.cancelDialogOpen.set(false);
     const f = this.selected();
     if (!f) return;
-    this.patchFlight(f.id, { status: 'CANCELLED', scheduleStatus: 'CANCELLED' });
-    this.toast.success(`Flight ${f.flightNumber} cancelled. Passengers will be notified.`);
+    this.catalog.updateFlight(f.id, { status: 'CANCELLED' }).subscribe((updated) => {
+      this.applyUpdated(updated);
+      this.toast.success(`Flight ${f.flightNumber} cancelled. Passengers will be notified.`);
+    });
   }
 
   applyReschedule(event: Event): void {
@@ -417,22 +421,28 @@ export class FlightsPage {
     }
     this.rescheduleError.set(null);
     this.rescheduleOpen.set(false);
-    this.patchFlight(f.id, { departureTime: dep.toISOString(), arrivalTime: arr.toISOString() });
-    this.toast.success(`Flight ${f.flightNumber} rescheduled to ${dateTimeFmt.format(dep)}.`);
+    this.catalog
+      .updateFlight(f.id, { departureTime: dep.toISOString(), arrivalTime: arr.toISOString() })
+      .subscribe((updated) => {
+        this.applyUpdated(updated);
+        this.toast.success(`Flight ${f.flightNumber} rescheduled to ${dateTimeFmt.format(dep)}.`);
+      });
   }
 
   applyAircraft(): void {
     const f = this.selected();
-    const aircraft = AIRCRAFT.find((a) => a.id === this.assignAircraftId);
+    const aircraft = this.aircraftOptions().find((a) => a.id === this.assignAircraftId);
     if (!f || !aircraft) return;
-    this.patchFlight(f.id, { aircraftId: aircraft.id, aircraft });
-    this.toast.success(`${aircraft.registration} assigned to flight ${f.flightNumber}.`);
+    this.catalog.updateFlight(f.id, { aircraftId: aircraft.id }).subscribe((updated) => {
+      this.applyUpdated(updated);
+      this.toast.success(`${aircraft.registration} assigned to flight ${f.flightNumber}.`);
+    });
   }
 
   submitCreate(event: Event): void {
     event.preventDefault();
-    const route = ROUTES.find((r) => r.id === this.form.routeId);
-    const aircraft = AIRCRAFT.find((a) => a.id === this.form.aircraftId);
+    const route = this.routeOptions().find((r) => r.id === this.form.routeId);
+    const aircraft = this.aircraftOptions().find((a) => a.id === this.form.aircraftId);
     if (!this.form.flightNumber.trim() || !route || !aircraft || !this.form.departure || !this.form.arrival) {
       this.createError.set('All fields are required.');
       return;
@@ -443,57 +453,24 @@ export class FlightsPage {
       this.createError.set('Arrival must be after departure.');
       return;
     }
-    const id = crypto.randomUUID();
-    const newFlight: Flight = {
-      id,
-      flightNumber: this.form.flightNumber.trim().toUpperCase(),
-      routeId: route.id,
-      route,
-      aircraftId: aircraft.id,
-      aircraft,
-      departureTime: dep.toISOString(),
-      arrivalTime: arr.toISOString(),
-      status: 'SCHEDULED',
-      scheduleStatus: 'ONTIME',
-      segments: [
-        {
-          id: `${id}-seg1`,
-          flightId: id,
-          segmentNumber: 1,
-          originAirportId: route.originAirportId,
-          origin: route.origin,
-          destinationAirportId: route.destinationAirportId,
-          destination: route.destination,
-          departureTime: dep.toISOString(),
-          arrivalTime: arr.toISOString(),
-        },
-      ],
-      fares: [
-        {
-          id: `${id}-fare-economy`,
-          flightId: id,
-          cabinClass: 'ECONOMY',
-          basePrice: 129,
-          taxAmount: 20.64,
-          feeAmount: 5.16,
-          currency: 'EUR',
-          availableCount: aircraft.capacity,
-          rules: {
-            refundable: false, changeAllowed: true, changeFee: 90, cancellationFeePercent: 100,
-            checkedBaggagePieces: 1, checkedBaggageWeightKg: 23, carryOnPieces: 1,
-            seatSelectionFee: 15, priorityBoarding: false, loungeAccess: false,
-            description: 'Economy Light — changes for a fee, non-refundable.',
-          },
-        },
-      ],
-    };
-    this.flights.update((list) => [newFlight, ...list]);
-    this.createOpen.set(false);
-    this.toast.success(`Flight ${newFlight.flightNumber} created on ${route.origin.iataCode} → ${route.destination.iataCode}.`);
+    this.catalog
+      .createFlight({
+        flightNumber: this.form.flightNumber.trim().toUpperCase(),
+        routeId: route.id,
+        aircraftId: aircraft.id,
+        departureTime: dep.toISOString(),
+        arrivalTime: arr.toISOString(),
+        economyFareSeats: aircraft.capacity,
+      })
+      .subscribe((newFlight) => {
+        this.flights.update((list) => [newFlight, ...list]);
+        this.createOpen.set(false);
+        this.toast.success(`Flight ${newFlight.flightNumber} created on ${route.origin.iataCode} → ${route.destination.iataCode}.`);
+      });
   }
 
-  private patchFlight(id: string, patch: Partial<Flight>): void {
-    this.flights.update((list) => list.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  private applyUpdated(updated: Flight): void {
+    this.flights.update((list) => list.map((f) => (f.id === updated.id ? updated : f)));
   }
 
   flightStatus(f: Flight) {

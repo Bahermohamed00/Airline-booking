@@ -103,7 +103,7 @@ Grouped models in `prisma/schema.prisma`:
 | `roles` | roles & permissions admin | JWT + roles |
 | `audit` | audit log queries | JWT + roles |
 | `mail` | mail adapter (no public routes) | — |
-| `flights` | `GET /flights/airports/search?q=`, `GET /flights/destinations?from=&q=`, `GET /flights/search?from=&to=&date=&cabin=`, `GET /flights/:id` | **Public**, `public-search` throttled |
+| `flights` | Airport search (`/airports`, `/flights/airports/search`), route destinations, basic and advanced flight search, adjacent-date prices, flight status, details, and admin catalog | Public search routes are `public-search` throttled; catalog mutations require authorization |
 | `offers` | `GET /offers?cabin=&scope=` (only active, in-window offers on bookable flights) | **Public**, `public-search` throttled |
 
 Flight responses are shaped to the frontend contract: `origin`/`destination`
@@ -124,7 +124,7 @@ naming, `Decimal` prices → numbers, null `fareRules` → `DEFAULT_FARE_RULES`.
 
 ### Key user flows (real DB-backed)
 
-1. **Flight search** — `/search`: From autocomplete (`/flights/airports/search`, debounced 250 ms) → To shows only destinations with an active route from the origin (`/flights/destinations`) → results page queries `/flights/search` with date + cabin. Selecting a fare starts a `BookingDraft` and navigates to `/flights/:id`.
+1. **Flight search** — `/search`: From autocomplete (`/flights/airports/search`, debounced 250 ms) → To shows only destinations with an active route from the origin (`/flights/destinations`) → results page queries `/flights/search/advanced`; the basic `/flights/search?from=&to=&date=&cabin=` contract remains available. Adjacent-date pricing and flight-status lookups are also DB-backed. Selecting a fare starts a `BookingDraft` and navigates to `/flights/:id`.
 2. **Offers** — `/offers`: active offers from `GET /offers` with cabin/domestic/international filters, expiry labels ("Ends today / in N days"), original vs discounted price, baggage. **Book Now** fetches the real flight, starts a `BookingDraft` with the discounted fare (base price lowered so base+tax+fee = offer price) and enters the existing booking flow at `/flights/:id`.
 3. **Auth** — JWT access token + rotating refresh-token cookie; guards protect account pages and the admin area.
 
@@ -139,6 +139,12 @@ naming, `Decimal` prices → numbers, null `fareRules` → `DEFAULT_FARE_RULES`.
 
 ## Change log
 
+- **2026-09-28 — UI/enhance integration.** Merged flight management, admin
+  catalog, booking/search, adjacent-date pricing, and flight-status behavior
+  with the existing authenticated application. Kept cookie-based refresh and
+  in-memory access tokens, the auth interceptor/bootstrap restore, and active
+  airport/route filtering. Combined flight endpoints under one service and
+  removed accidental Markdown fences from four NestJS security source files.
 - **2026-09-27 — Flight Offers feature.** New `Offer` model (migration
   `20260927163802_add_offers`), `offers` API module (`GET /api/offers` with
   cabin/scope filters, DB-side activity window), seed offers (incl. expired +

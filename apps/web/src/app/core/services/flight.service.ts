@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, of, delay, map, catchError } from 'rxjs';
 import { FLIGHTS, AIRPORTS, ROUTES } from '../mock/mock-data';
 import { API_CONFIG, type ApiConfig } from '../config/api-config';
@@ -54,13 +54,8 @@ export class FlightService {
 
   searchFlights(criteria: SearchCriteria): Observable<Flight[]> {
     if (this.config.useRealApi) {
-      return this.http.get<Flight[]>(`${this.config.baseUrl}/flights/search`, {
-        params: {
-          from: criteria.originCode,
-          to: criteria.destinationCode,
-          date: criteria.departureDate,
-          cabin: criteria.cabinClass,
-        },
+      return this.http.get<Flight[]>(`${this.config.baseUrl}/flights/search/advanced`, {
+        params: searchParams(criteria),
       });
     }
     const targetDate = new Date(criteria.departureDate);
@@ -81,6 +76,11 @@ export class FlightService {
   }
 
   adjacentDateAvailability(criteria: SearchCriteria): Observable<{ date: string; minPrice: number | null }[]> {
+    if (this.config.useRealApi) {
+      return this.http.get<{ date: string; minPrice: number | null }[]>(`${this.config.baseUrl}/flights/adjacent`, {
+        params: searchParams(criteria),
+      });
+    }
     const base = new Date(criteria.departureDate);
     const days: { date: string; minPrice: number | null }[] = [];
     for (let offset = -3; offset <= 3; offset++) {
@@ -115,6 +115,11 @@ export class FlightService {
   }
 
   flightStatusByNumber(flightNumber: string, date?: string): Observable<Flight[]> {
+    if (this.config.useRealApi) {
+      let params = new HttpParams().set('flightNumber', flightNumber.trim());
+      if (date) params = params.set('date', date);
+      return this.http.get<Flight[]>(`${this.config.baseUrl}/flights/status/by-number`, { params });
+    }
     const n = flightNumber.trim().toUpperCase();
     return of(
       FLIGHTS.filter((f) => {
@@ -126,6 +131,12 @@ export class FlightService {
   }
 
   flightStatusByRoute(originCode: string, destinationCode: string): Observable<Flight[]> {
+    if (this.config.useRealApi) {
+      const params = new HttpParams()
+        .set('origin', originCode.toUpperCase())
+        .set('destination', destinationCode.toUpperCase());
+      return this.http.get<Flight[]>(`${this.config.baseUrl}/flights/status/by-route`, { params });
+    }
     return of(
       FLIGHTS.filter(
         (f) =>
@@ -138,6 +149,22 @@ export class FlightService {
   adminFlights(): Observable<Flight[]> {
     return of(FLIGHTS).pipe(delay(250));
   }
+}
+
+/** Query-param contract shared by the search page and the API (FR-C04). */
+function searchParams(criteria: SearchCriteria): HttpParams {
+  let params = new HttpParams()
+    .set('tripType', criteria.tripType)
+    .set('origin', criteria.originCode)
+    .set('destination', criteria.destinationCode)
+    .set('depart', criteria.departureDate)
+    .set('adults', criteria.passengers.adults)
+    .set('children', criteria.passengers.children)
+    .set('infants', criteria.passengers.infants)
+    .set('cabin', criteria.cabinClass);
+  if (criteria.returnDate) params = params.set('return', criteria.returnDate);
+  if (criteria.promoCode) params = params.set('promo', criteria.promoCode);
+  return params;
 }
 
 export function applyFilters(flights: Flight[], filters: ResultFilters, cabinClass: string): Flight[] {

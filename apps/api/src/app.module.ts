@@ -20,6 +20,7 @@ import { OwnershipGuard } from './auth/ownership.guard.js';
 import { AuditThrottlerGuard } from './auth/audit-throttler.guard.js';
 
 const isTest = process.env['NODE_ENV'] === 'test';
+
 // E2E suites skip throttling per request by default; the rate-limit suite opts
 // in by setting E2E_THROTTLE=1 before building the app (evaluated per request).
 const skipThrottleInTest = (): boolean => isTest && process.env['E2E_THROTTLE'] !== '1';

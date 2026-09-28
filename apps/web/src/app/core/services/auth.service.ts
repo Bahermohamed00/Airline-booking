@@ -1,7 +1,7 @@
 import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, of, delay, throwError, map, catchError, switchMap, tap, finalize, shareReplay } from 'rxjs';
-import { DEMO_CUSTOMER, STAFF_USERS, PASSENGERS } from '../mock/mock-data';
+import { DEMO_CUSTOMER, STAFF_USERS, PASSENGERS, ROLES } from '../mock/mock-data';
 import type { User, Passenger, SessionInfo } from '../models/domain.model';
 import { API_CONFIG, type ApiConfig } from '../config/api-config';
 
@@ -46,7 +46,6 @@ export class AuthService {
   // Incremented on every session clear; a late refresh response from before a
   // logout must not resurrect the session.
   private sessionEpoch = 0;
-
   readonly user = this.userSignal.asReadonly();
   readonly accessToken = this.accessTokenSignal.asReadonly();
   readonly isLoggedIn = computed(() => this.userSignal() !== null);
@@ -55,7 +54,7 @@ export class AuthService {
     return u !== null && u.roles.some((r) => r !== 'Customer');
   });
 
-  /** Mock login — accepts the seeded demo credentials. */
+  /** Login against the real NestJS API when useRealApi is on, otherwise mock. */
   login(email: string, password: string): Observable<LoginResult> {
     if (!this.config.useRealApi) {
       const all = [DEMO_CUSTOMER, ...STAFF_USERS];
@@ -118,7 +117,7 @@ export class AuthService {
     );
   }
 
-  /** Restore the session after a page reload via the refresh cookie (silent refresh). */
+  /** Restore the session after a page reload via the refresh cookie. */
   restoreSession(): Observable<void> {
     if (!this.config.useRealApi) return of(undefined);
     return this.refreshAccessToken().pipe(
@@ -132,10 +131,10 @@ export class AuthService {
     );
   }
 
-  /** Single-flight refresh: concurrent callers share one POST /auth/refresh. */
+  /** Share one refresh request across concurrent callers. */
   refreshAccessToken(): Observable<string> {
     const epoch = this.sessionEpoch;
-    this.refreshInFlight ??= this.http
+    const refreshInFlight = (this.refreshInFlight ??= this.http
       .post<{ accessToken: string; expiresIn: number }>(`${this.config.baseUrl}/auth/refresh`, {})
       .pipe(
         map((res) => res.accessToken),
@@ -153,8 +152,8 @@ export class AuthService {
           this.refreshInFlight = null;
         }),
         shareReplay({ bufferSize: 1, refCount: false }),
-      );
-    return this.refreshInFlight;
+      ));
+    return refreshInFlight;
   }
 
   logout(): void {
@@ -203,9 +202,17 @@ export class AuthService {
   }
 
   setSession(user: User): void {
-    this.userSignal.set(user);
+    this.persistSession(user, this.accessToken() ?? 'mock-access-token');
   }
 
+  /** Mock-only helper: instantly become a demo staff role. Not available in real API mode. */
+  loginAsRole(roleName: string): void {
+    if (this.config.useRealApi) return;
+    const role = ROLES.find((r) => r.name === roleName);
+    const staff = STAFF_USERS.find((u) => u.roles.includes(roleName));
+    if (!staff) return;
+    this.persistSession({ ...staff, permissions: role?.permissions ?? staff.permissions }, 'mock-access-token');
+  }
   hasPermission(permission: string): boolean {
     const u = this.userSignal();
     if (!u) return false;
@@ -323,5 +330,10 @@ export class AuthService {
       return err as AuthError;
     }
     return { status: 0, message: 'Network error. Please try again.' };
+  }
+
+  private persistSession(user: User, accessToken: string): void {
+    this.userSignal.set(user);
+    this.accessTokenSignal.set(accessToken);
   }
 }

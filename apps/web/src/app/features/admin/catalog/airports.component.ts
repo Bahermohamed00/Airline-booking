@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AIRPORTS, ROUTES } from '../../../core/mock/mock-data';
-import type { Airport } from '../../../core/models/domain.model';
+import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
+import type { Airport, Route } from '../../../core/models/domain.model';
 import type { StatusTone } from '../../../core/status-maps';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
@@ -211,6 +211,7 @@ const TIMEZONES = [
   `,
 })
 export class AirportsPage {
+  private readonly catalog = inject(AdminCatalogService);
   private readonly toast = inject(ToastService);
 
   readonly columns: TableColumn<AirportRow>[] = [
@@ -229,6 +230,7 @@ export class AirportsPage {
 
   readonly loading = signal(true);
   readonly airports = signal<Airport[]>([]);
+  readonly routes = signal<Route[]>([]);
   readonly selectedId = signal<string | null>(null);
   readonly selected = computed(() => this.airports().find((a) => a.id === this.selectedId()) ?? null);
 
@@ -251,10 +253,11 @@ export class AirportsPage {
   );
 
   constructor() {
-    setTimeout(() => {
-      this.airports.set(AIRPORTS.map((a) => ({ ...a })));
+    this.catalog.listAirports().subscribe((airports) => {
+      this.airports.set(airports);
       this.loading.set(false);
-    }, 300);
+    });
+    this.catalog.listRoutes().subscribe((routes) => this.routes.set(routes));
   }
 
   openDetail(id: string): void {
@@ -266,13 +269,13 @@ export class AirportsPage {
   }
 
   routeCount(a: Airport, direction: 'origin' | 'destination'): number {
-    return ROUTES.filter((r) =>
+    return this.routes().filter((r) =>
       direction === 'origin' ? r.originAirportId === a.id : r.destinationAirportId === a.id,
     ).length;
   }
 
   associatedRoutes(a: Airport) {
-    return ROUTES.filter((r) => r.originAirportId === a.id || r.destinationAirportId === a.id);
+    return this.routes().filter((r) => r.originAirportId === a.id || r.destinationAirportId === a.id);
   }
 
   statusTone(a: Airport): StatusTone {
@@ -300,21 +303,20 @@ export class AirportsPage {
     this.errors.set(errs);
     if (Object.keys(errs).length > 0) return;
 
-    this.airports.update((list) => [
-      ...list,
-      {
-        id: crypto.randomUUID(),
+    this.catalog
+      .createAirport({
         iataCode: iata,
         icaoCode: icao || null,
         name: this.form.name.trim(),
         city: this.form.city.trim(),
         country: this.form.country.trim(),
         timezone: this.form.timezone,
-        status: 'ACTIVE',
-      },
-    ]);
-    this.createOpen.set(false);
-    this.toast.success(`Airport ${iata} added to the catalog.`);
+      })
+      .subscribe((airport) => {
+        this.airports.update((list) => [...list, airport]);
+        this.createOpen.set(false);
+        this.toast.success(`Airport ${iata} added to the catalog.`);
+      });
   }
 
   confirmToggle(): void {
@@ -322,9 +324,15 @@ export class AirportsPage {
     const a = this.selected();
     if (!a) return;
     const next = a.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    this.airports.update((list) => list.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-    this.toast.success(
-      next === 'ACTIVE' ? `${a.iataCode} reactivated.` : `${a.iataCode} deactivated.`,
-    );
+    const request =
+      next === 'INACTIVE'
+        ? this.catalog.deactivateAirport(a.id)
+        : this.catalog.updateAirport(a.id, { status: 'ACTIVE' });
+    request.subscribe((updated) => {
+      this.airports.update((list) => list.map((x) => (x.id === a.id ? { ...x, ...updated } : x)));
+      this.toast.success(
+        next === 'ACTIVE' ? `${a.iataCode} reactivated.` : `${a.iataCode} deactivated.`,
+      );
+    });
   }
 }

@@ -1,48 +1,26 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { AirportStatus, FlightStatus, Prisma, RouteStatus } from '@prisma/client';
 import type { Airport } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { mapFlight } from './flight-response.mapper.js';
 import type { AirportSearchQueryDto } from './dto/airport-search-query.dto.js';
 import type { DestinationsQueryDto } from './dto/destinations-query.dto.js';
 import type { FlightSearchQueryDto } from './dto/flight-search-query.dto.js';
+import type { SearchFlightsDto } from './dto/search-flights.dto.js';
 
-const airportSelect = {
-  id: true,
-  iataCode: true,
-  icaoCode: true,
-  name: true,
-  city: true,
-  country: true,
-  timezone: true,
-  status: true,
-} satisfies Prisma.AirportSelect;
-
-type AirportRow = Pick<Airport, keyof typeof airportSelect>;
-
-const flightInclude = {
-  route: {
-    include: {
-      originAirport: { select: airportSelect },
-      destinationAirport: { select: airportSelect },
-    },
-  },
-  aircraft: true,
+const FLIGHT_INCLUDE = {
+  route: { include: { originAirport: true, destinationAirport: true } },
+  aircraft: { include: { seats: true } },
   segments: {
-    orderBy: { segmentNumber: 'asc' },
-    include: {
-      originAirport: { select: airportSelect },
-      destinationAirport: { select: airportSelect },
-    },
+    include: { originAirport: true, destinationAirport: true },
+    orderBy: { segmentNumber: 'asc' as const },
   },
   fares: true,
 } satisfies Prisma.FlightInclude;
 
-type FlightWithRelations = Prisma.FlightGetPayload<{ include: typeof flightInclude }>;
-
 const BOOKABLE_STATUSES: FlightStatus[] = [FlightStatus.SCHEDULED, FlightStatus.ACTIVE, FlightStatus.DELAYED];
+type FlightResponse = ReturnType<typeof mapFlight>;
 
-// fareRules is nullable Json in the schema and not populated by the seed; the
-// frontend contract requires a rules object on every fare.
 export const DEFAULT_FARE_RULES = {
   refundable: false,
   changeAllowed: false,
@@ -59,142 +37,213 @@ export const DEFAULT_FARE_RULES = {
 
 @Injectable()
 export class FlightsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async searchAirports(query: AirportSearchQueryDto): Promise<AirportRow[]> {
-    const q = query.q?.trim();
-    const where: Prisma.AirportWhereInput = { status: AirportStatus.ACTIVE };
-    if (q) {
-      where.OR = [
-        { iataCode: { contains: q, mode: 'insensitive' } },
-        { name: { contains: q, mode: 'insensitive' } },
-        { city: { contains: q, mode: 'insensitive' } },
-        { country: { contains: q, mode: 'insensitive' } },
-      ];
-    }
+  async searchAirports(query?: string): Promise<Airport[]> {
+    const q = query?.trim();
     return this.prisma.airport.findMany({
-      where,
-      select: airportSelect,
+      where: {
+        status: AirportStatus.ACTIVE,
+        ...(q
+          ? {
+              OR: [
+                { iataCode: { contains: q, mode: 'insensitive' } },
+                { name: { contains: q, mode: 'insensitive' } },
+                { city: { contains: q, mode: 'insensitive' } },
+                { country: { contains: q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
       orderBy: [{ city: 'asc' }, { iataCode: 'asc' }],
-      take: 15,
+      take: 20,
     });
   }
 
-  async searchDestinations(query: DestinationsQueryDto): Promise<AirportRow[]> {
+  async searchDestinations(query: DestinationsQueryDto): Promise<Airport[]> {
     const q = query.q?.trim();
-    const destinationFilter: Prisma.AirportWhereInput = { status: AirportStatus.ACTIVE };
-    if (q) {
-      destinationFilter.OR = [
-        { iataCode: { contains: q, mode: 'insensitive' } },
-        { name: { contains: q, mode: 'insensitive' } },
-        { city: { contains: q, mode: 'insensitive' } },
-        { country: { contains: q, mode: 'insensitive' } },
-      ];
-    }
+    const destinationFilter: Prisma.AirportWhereInput = {
+      status: AirportStatus.ACTIVE,
+      ...(q
+        ? {
+            OR: [
+              { iataCode: { contains: q, mode: 'insensitive' } },
+              { name: { contains: q, mode: 'insensitive' } },
+              { city: { contains: q, mode: 'insensitive' } },
+              { country: { contains: q, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
     const routes = await this.prisma.route.findMany({
       where: {
         status: RouteStatus.ACTIVE,
         originAirport: { iataCode: query.from, status: AirportStatus.ACTIVE },
         destinationAirport: destinationFilter,
       },
-      select: { destinationAirport: { select: airportSelect } },
+      select: { destinationAirport: true },
       orderBy: { destinationAirport: { city: 'asc' } },
       take: 50,
     });
-    return routes.map((r) => r.destinationAirport);
+    return routes.map((route) => route.destinationAirport);
   }
 
-  async searchFlights(query: FlightSearchQueryDto) {
-    const flights = await this.prisma.flight.findMany({
-      where: this.flightWhere(query),
-      include: flightInclude,
-      orderBy: { departureTime: 'asc' },
-      take: 50,
-    });
-    return flights.map((f) => this.toFlightResponse(f));
-  }
-
-  async getFlight(id: string) {
-    const flight = await this.prisma.flight.findUnique({
-      where: { id },
-      include: flightInclude,
-    });
-    return flight ? this.toFlightResponse(flight) : null;
-  }
-
-  private flightWhere(query: FlightSearchQueryDto): Prisma.FlightWhereInput {
+  async searchFlights(query: FlightSearchQueryDto): Promise<FlightResponse[]> {
     const where: Prisma.FlightWhereInput = {
       status: { in: BOOKABLE_STATUSES },
       route: {
         status: RouteStatus.ACTIVE,
-        originAirport: { iataCode: query.from },
-        destinationAirport: { iataCode: query.to },
+        originAirport: { iataCode: query.from, status: AirportStatus.ACTIVE },
+        destinationAirport: { iataCode: query.to, status: AirportStatus.ACTIVE },
       },
     };
     if (query.date) {
-      const dayStart = new Date(`${query.date}T00:00:00.000Z`);
-      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
-      where.departureTime = { gte: dayStart, lt: dayEnd };
+      const start = new Date(`${query.date}T00:00:00.000Z`);
+      where.departureTime = { gte: start, lt: new Date(start.getTime() + 86_400_000) };
     }
-    if (query.cabin) {
-      where.fares = { some: { cabinClass: query.cabin, availableCount: { gt: 0 } } };
-    }
-    return where;
+    if (query.cabin) where.fares = { some: { cabinClass: query.cabin, availableCount: { gt: 0 } } };
+
+    const flights = await this.prisma.flight.findMany({
+      where,
+      include: FLIGHT_INCLUDE,
+      orderBy: { departureTime: 'asc' },
+      take: 50,
+    });
+    return flights.map(mapFlight);
   }
 
-  // Shapes a Prisma flight row into the frontend's domain contract: routes and
-  // segments expose origin/destination (not originAirport/...), Decimal prices
-  // become numbers, and nullable fareRules get a default.
-  private toFlightResponse(f: FlightWithRelations) {
-    return {
-      id: f.id,
-      flightNumber: f.flightNumber,
-      routeId: f.routeId,
-      route: {
-        id: f.route.id,
-        originAirportId: f.route.originAirportId,
-        destinationAirportId: f.route.destinationAirportId,
-        origin: f.route.originAirport,
-        destination: f.route.destinationAirport,
-        distanceKm: f.route.distanceKm,
-        durationMinutes: f.route.durationMinutes,
-        status: f.route.status,
+  async searchAdvanced(dto: SearchFlightsDto): Promise<FlightResponse[]> {
+    const start = new Date(`${dto.depart}T00:00:00.000Z`);
+    const end = new Date(start.getTime() + 86_400_000);
+    const flights = await this.prisma.flight.findMany({
+      where: {
+        status: { in: BOOKABLE_STATUSES },
+        departureTime: { gte: start, lt: end },
+        route: {
+          status: RouteStatus.ACTIVE,
+          originAirport: { iataCode: dto.origin.toUpperCase(), status: AirportStatus.ACTIVE },
+          destinationAirport: { iataCode: dto.destination.toUpperCase(), status: AirportStatus.ACTIVE },
+        },
+        fares: { some: { cabinClass: dto.cabin, availableCount: { gt: 0 } } },
       },
-      aircraftId: f.aircraftId,
-      aircraft: {
-        id: f.aircraft.id,
-        registration: f.aircraft.registration,
-        model: f.aircraft.model,
-        capacity: f.aircraft.capacity,
-        status: f.aircraft.status,
-        seats: [],
-      },
-      departureTime: f.departureTime.toISOString(),
-      arrivalTime: f.arrivalTime.toISOString(),
-      status: f.status,
-      scheduleStatus: f.scheduleStatus,
-      segments: f.segments.map((s) => ({
-        id: s.id,
-        flightId: s.flightId,
-        segmentNumber: s.segmentNumber,
-        originAirportId: s.originAirportId,
-        origin: s.originAirport,
-        destinationAirportId: s.destinationAirportId,
-        destination: s.destinationAirport,
-        departureTime: s.departureTime.toISOString(),
-        arrivalTime: s.arrivalTime.toISOString(),
-      })),
-      fares: f.fares.map((fare) => ({
-        id: fare.id,
-        flightId: fare.flightId,
-        cabinClass: fare.cabinClass,
-        basePrice: fare.basePrice.toNumber(),
-        taxAmount: fare.taxAmount.toNumber(),
-        feeAmount: fare.feeAmount.toNumber(),
-        currency: fare.currency,
-        availableCount: fare.availableCount,
-        rules: fare.fareRules ?? DEFAULT_FARE_RULES,
-      })),
+      include: FLIGHT_INCLUDE,
+      orderBy: { departureTime: 'asc' },
+    });
+    return this.applySort(this.applyFilters(flights.map(mapFlight), dto), dto);
+  }
+
+  async adjacentDates(dto: Pick<SearchFlightsDto, 'origin' | 'destination' | 'depart' | 'cabin'>) {
+    const base = new Date(`${dto.depart}T00:00:00.000Z`);
+    const days: { date: string; minPrice: number | null }[] = [];
+    for (let offset = -3; offset <= 3; offset++) {
+      const day = new Date(base);
+      day.setUTCDate(day.getUTCDate() + offset);
+      const date = day.toISOString().slice(0, 10);
+      const start = new Date(`${date}T00:00:00.000Z`);
+      const end = new Date(start.getTime() + 86_400_000);
+      const flights = await this.prisma.flight.findMany({
+        where: {
+          status: { not: FlightStatus.CANCELLED },
+          departureTime: { gte: start, lt: end },
+          route: {
+            status: RouteStatus.ACTIVE,
+            originAirport: { iataCode: dto.origin.toUpperCase(), status: AirportStatus.ACTIVE },
+            destinationAirport: { iataCode: dto.destination.toUpperCase(), status: AirportStatus.ACTIVE },
+          },
+        },
+        include: { fares: { where: { cabinClass: dto.cabin } } },
+      });
+      const prices = flights.flatMap((flight) =>
+        flight.fares.map((fare) => Number(fare.basePrice) + Number(fare.taxAmount) + Number(fare.feeAmount)),
+      );
+      days.push({ date, minPrice: prices.length ? Math.min(...prices) : null });
+    }
+    return days;
+  }
+
+  async getFlight(id: string): Promise<FlightResponse> {
+    const flight = await this.prisma.flight.findUnique({ where: { id }, include: FLIGHT_INCLUDE });
+    if (!flight) throw new NotFoundException('Flight not found');
+    return mapFlight(flight);
+  }
+
+  async statusByNumber(flightNumber: string, date?: string): Promise<FlightResponse[]> {
+    const where: Prisma.FlightWhereInput = {
+      flightNumber: { contains: flightNumber.trim(), mode: 'insensitive' },
     };
+    if (date) {
+      const start = new Date(`${date}T00:00:00.000Z`);
+      where.departureTime = { gte: start, lt: new Date(start.getTime() + 86_400_000) };
+    }
+    const flights = await this.prisma.flight.findMany({
+      where,
+      include: FLIGHT_INCLUDE,
+      orderBy: { departureTime: 'asc' },
+      take: 20,
+    });
+    return flights.map(mapFlight);
+  }
+
+  async statusByRoute(origin: string, destination: string): Promise<FlightResponse[]> {
+    const flights = await this.prisma.flight.findMany({
+      where: {
+        route: {
+          originAirport: { iataCode: origin.toUpperCase() },
+          destinationAirport: { iataCode: destination.toUpperCase() },
+        },
+      },
+      include: FLIGHT_INCLUDE,
+      orderBy: { departureTime: 'asc' },
+      take: 20,
+    });
+    return flights.map(mapFlight);
+  }
+
+  private applyFilters(flights: FlightResponse[], dto: SearchFlightsDto): FlightResponse[] {
+    return flights.filter((flight) => {
+      const fare = flight.fares.find((item) => item.cabinClass === dto.cabin) ?? flight.fares[0];
+      if (!fare) return false;
+      const total = fare.basePrice + fare.taxAmount + fare.feeAmount;
+      if (dto.maxPrice != null && total > dto.maxPrice) return false;
+      if (dto.refundableOnly === 'true' && !fare.rules.refundable) return false;
+      if (dto.departureWindow) {
+        const hour = new Date(flight.departureTime).getHours();
+        const inWindow =
+          dto.departureWindow === 'morning'
+            ? hour < 12
+            : dto.departureWindow === 'afternoon'
+              ? hour >= 12 && hour < 18
+              : hour >= 18;
+        if (!inWindow) return false;
+      }
+      return dto.stops !== 'nonstop' || flight.segments.length <= 1;
+    });
+  }
+
+  private fareTotal(flight: FlightResponse, cabin: string): number {
+    const fare = flight.fares.find((item) => item.cabinClass === cabin) ?? flight.fares[0];
+    return fare ? fare.basePrice + fare.taxAmount + fare.feeAmount : Number.POSITIVE_INFINITY;
+  }
+
+  private applySort(flights: FlightResponse[], dto: SearchFlightsDto): FlightResponse[] {
+    const duration = (flight: FlightResponse) =>
+      new Date(flight.arrivalTime).getTime() - new Date(flight.departureTime).getTime();
+    const sorted = [...flights];
+    switch (dto.sort) {
+      case 'price':
+        return sorted.sort((a, b) => this.fareTotal(a, dto.cabin) - this.fareTotal(b, dto.cabin));
+      case 'duration':
+        return sorted.sort((a, b) => duration(a) - duration(b));
+      case 'departure':
+        return sorted.sort((a, b) => new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime());
+      case 'recommended':
+        return sorted.sort(
+          (a, b) =>
+            this.fareTotal(a, dto.cabin) * 0.7 + duration(a) / 60_000 -
+            (this.fareTotal(b, dto.cabin) * 0.7 + duration(b) / 60_000),
+        );
+      default:
+        return sorted;
+    }
   }
 }

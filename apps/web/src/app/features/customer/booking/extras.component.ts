@@ -171,9 +171,11 @@ export class ExtrasPage {
     return this.pricing.computeBreakdown({
       fare: d.fare,
       returnFare: d.returnFare,
+      extraLegFares: d.legs.slice(2).map((l) => l.fare),
       passengerTypes: d.passengers.map((p) => p.passengerType),
       seats: d.seats,
       returnSeats: d.returnSeats,
+      extraLegSeats: d.extraLegSeats,
       extras: this.extraSelections(),
       extraBags: this.baggage().reduce((a, b) => a + b, 0),
       promoCode: d.criteria.promoCode,

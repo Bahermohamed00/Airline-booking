@@ -3,6 +3,8 @@ import { NgOptimizedImage } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
+import { ROLES, STAFF_USERS } from '../../core/mock/mock-data';
+import { environment } from '../../../environments/environment';
 import { NaButton } from '../../shared/ui/button.component';
 import { NaAlert } from '../../shared/ui/alert.component';
 
@@ -34,26 +36,50 @@ import { NaAlert } from '../../shared/ui/alert.component';
       <div class="login__panel">
         <div class="card na-card">
           <h1>Staff sign-in</h1>
-          <p class="na-text-muted">Operations access requires a staff account. Use your NovaAir crew credentials.</p>
-
-          @if (error()) {
-            <na-alert tone="danger" title="Sign-in failed">{{ error() }}</na-alert>
-          }
           @if (notice()) {
             <na-alert tone="info" title="Signed out">{{ notice() }}</na-alert>
           }
 
-          <form [formGroup]="form" (ngSubmit)="submit()">
-            <div class="na-field">
-              <label class="na-label" for="admin-email">Email</label>
-              <input id="admin-email" class="na-input" type="email" formControlName="email" autocomplete="email" />
+          @if (useRealApi) {
+            <p class="na-text-muted">Sign in with your staff account to access the operations dashboard.</p>
+
+            @if (error()) {
+              <na-alert tone="danger" title="Sign-in failed">{{ error() }}</na-alert>
+            }
+
+            <form [formGroup]="form" (ngSubmit)="submit()">
+              <div class="na-field">
+                <label class="na-label" for="admin-email">Email</label>
+                <input
+                  id="admin-email" class="na-input" type="email" formControlName="email" autocomplete="email"
+                  [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched"
+                />
+                @if (form.controls.email.touched && form.controls.email.errors?.['required']) { <span class="na-error">Email is required.</span> }
+                @if (form.controls.email.touched && form.controls.email.errors?.['email']) { <span class="na-error">Enter a valid email address.</span> }
+              </div>
+              <div class="na-field">
+                <label class="na-label" for="admin-password">Password</label>
+                <input
+                  id="admin-password" class="na-input" type="password" formControlName="password" autocomplete="current-password"
+                  [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched"
+                />
+                @if (form.controls.password.touched && form.controls.password.errors?.['required']) { <span class="na-error">Password is required.</span> }
+              </div>
+              <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Sign in</na-button>
+            </form>
+
+            <p class="demo-hint">Demo credentials: <strong>admin@airline.local</strong> / <strong>Admin123!</strong></p>
+          } @else {
+            <p class="na-text-muted">Choose a demo staff role to explore role-aware access to the operations dashboard.</p>
+            <div class="roles">
+              @for (role of roles; track role) {
+                <button type="button" class="role-btn" (click)="signInAs(role)">
+                  <span class="role-btn__name">{{ role }}</span>
+                  <span class="role-btn__hint">{{ hint(role) }}</span>
+                </button>
+              }
             </div>
-            <div class="na-field">
-              <label class="na-label" for="admin-password">Password</label>
-              <input id="admin-password" class="na-input" type="password" formControlName="password" autocomplete="current-password" />
-            </div>
-            <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Sign in to Ops</na-button>
-          </form>
+          }
         </div>
       </div>
     </div>
@@ -83,6 +109,12 @@ import { NaAlert } from '../../shared/ui/alert.component';
     .card h1 { margin-bottom: var(--na-space-2); }
     na-alert { display: block; margin-top: var(--na-space-4); }
     form { margin-top: var(--na-space-6); display: grid; gap: var(--na-space-2); }
+    .roles { display: flex; flex-direction: column; gap: var(--na-space-3); margin-top: var(--na-space-6); }
+    .role-btn { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-3); padding: var(--na-space-4); border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-md); background: var(--na-surface-raised); text-align: left; min-height: 56px; }
+    .role-btn:hover { border-color: var(--na-blue-600); background: var(--na-blue-100); }
+    .role-btn__name { font-weight: var(--na-font-semibold); }
+    .role-btn__hint { color: var(--na-ink-500); font-size: var(--na-text-xs); text-align: right; }
+    .demo-hint { margin-top: var(--na-space-6); padding: var(--na-space-3); background: var(--na-info-bg); border-radius: var(--na-radius-md); font-size: var(--na-text-xs); color: var(--na-info); }
     @media (max-width: 899px) {
       .login { grid-template-columns: 1fr; }
       .login__visual { min-height: 260px; }
@@ -95,6 +127,8 @@ export class AdminLoginPage {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  readonly roles = [...new Set(STAFF_USERS.flatMap((user) => user.roles))];
+  readonly useRealApi = environment.useRealApi;
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -132,5 +166,14 @@ export class AdminLoginPage {
         this.error.set(err?.message ?? 'Unable to sign in. Check your credentials and try again.');
       },
     });
+  }
+
+  signInAs(role: string): void {
+    this.auth.loginAsRole(role);
+    void this.router.navigateByUrl('/admin/dashboard');
+  }
+
+  hint(role: string): string {
+    return ROLES.find((item) => item.name === role)?.description ?? 'Staff access';
   }
 }

@@ -302,7 +302,23 @@ async function seedRoutes(airports: Airport[]): Promise<Route[]> {
 async function seedFlights(routes: Route[], aircraft: Aircraft[]): Promise<Flight[]> {
   const existing = await prisma.flight.count();
   if (existing > 0) {
-    return prisma.flight.findMany();
+    // Demo data goes stale: regenerate when fewer than 3 days of future
+    // flights remain (keeps /search, /results and /status usable over time).
+    const newest = await prisma.flight.findFirst({ orderBy: { departureTime: 'desc' } });
+    const staleThreshold = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    if (newest && newest.departureTime >= staleThreshold) {
+      return prisma.flight.findMany();
+    }
+
+    // No bookings reference seeded flights, so cascade cleanup is safe here.
+    const referenced = await prisma.bookingSeat.findFirst({ select: { id: true } });
+    if (!referenced) {
+      await prisma.fare.deleteMany({});
+      await prisma.flightSegment.deleteMany({});
+      await prisma.flight.deleteMany({});
+    } else {
+      return prisma.flight.findMany();
+    }
   }
 
   const flights: Flight[] = [];
@@ -345,10 +361,30 @@ async function seedFlights(routes: Route[], aircraft: Aircraft[]): Promise<Fligh
         });
       }
 
+      const economyRules = {
+        refundable: false, changeAllowed: true, changeFee: 90, cancellationFeePercent: 100,
+        checkedBaggagePieces: 1, checkedBaggageWeightKg: 23, carryOnPieces: 1,
+        seatSelectionFee: 15, priorityBoarding: false, loungeAccess: false,
+        description: 'Economy Light — changes for a fee, non-refundable.',
+      };
+      const flexRules = {
+        refundable: true, changeAllowed: true, changeFee: 0, cancellationFeePercent: 0,
+        checkedBaggagePieces: 2, checkedBaggageWeightKg: 32, carryOnPieces: 2,
+        seatSelectionFee: 0, priorityBoarding: true, loungeAccess: true,
+        description: 'Fully flexible fare with free changes and refunds.',
+      };
+      const businessRules = {
+        refundable: true, changeAllowed: true, changeFee: 0, cancellationFeePercent: 10,
+        checkedBaggagePieces: 2, checkedBaggageWeightKg: 32, carryOnPieces: 2,
+        seatSelectionFee: 0, priorityBoarding: true, loungeAccess: true,
+        description: 'Premium fare with included seat selection and lounge access.',
+      };
+
       await prisma.fare.createMany({
         data: [
-          { flightId: flight.id, cabinClass: CabinClass.ECONOMY, basePrice: 299 + i * 10, taxAmount: 45, feeAmount: 10, currency: 'EUR', availableCount: ac.capacity - 20 },
-          { flightId: flight.id, cabinClass: CabinClass.BUSINESS, basePrice: 1299 + i * 50, taxAmount: 120, feeAmount: 50, currency: 'EUR', availableCount: 20 },
+          { flightId: flight.id, cabinClass: CabinClass.ECONOMY, basePrice: 299 + i * 10, taxAmount: 45, feeAmount: 10, currency: 'EUR', availableCount: ac.capacity - 20, fareRules: economyRules },
+          { flightId: flight.id, cabinClass: CabinClass.ECONOMY, basePrice: Math.round((299 + i * 10) * 1.6), taxAmount: 60, feeAmount: 12, currency: 'EUR', availableCount: 12, fareRules: flexRules },
+          { flightId: flight.id, cabinClass: CabinClass.BUSINESS, basePrice: 1299 + i * 50, taxAmount: 120, feeAmount: 50, currency: 'EUR', availableCount: 20, fareRules: businessRules },
         ],
       });
 

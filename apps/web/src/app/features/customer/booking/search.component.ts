@@ -22,6 +22,12 @@ interface PopularRoute {
   label: string;
 }
 
+interface MultiCityLegForm {
+  origin: string;
+  destination: string;
+  date: string;
+}
+
 function toDateInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -81,6 +87,7 @@ function toOption(a: Airport): AutocompleteOption {
             </div>
           </div>
 
+          @if (tripType() !== 'MULTI_CITY') {
           <div class="search-card__route">
             <na-autocomplete
               #fromField
@@ -114,32 +121,78 @@ function toOption(a: Airport): AutocompleteOption {
             <na-alert tone="danger" title="Couldn't load airports" icon="⚠">{{ airportsError() }}</na-alert>
           }
 
-          <div class="search-card__dates">
-            <div class="na-field">
-              <label class="na-label" for="depart">Departure</label>
-              <input
-                id="depart"
-                class="na-input"
-                type="date"
-                [min]="minDate"
-                [value]="departureDate()"
-                (change)="departureDate.set($any($event.target).value)"
-              />
-            </div>
-            @if (tripType() === 'ROUND_TRIP') {
+            <div class="search-card__dates">
               <div class="na-field">
-                <label class="na-label" for="return">Return</label>
+                <label class="na-label" for="depart">Departure</label>
                 <input
-                  id="return"
+                  id="depart"
                   class="na-input"
                   type="date"
-                  [min]="departureDate()"
-                  [value]="returnDate()"
-                  (change)="returnDate.set($any($event.target).value)"
+                  [min]="minDate"
+                  [value]="departureDate()"
+                  (change)="departureDate.set($any($event.target).value)"
                 />
               </div>
-            }
-          </div>
+              @if (tripType() === 'ROUND_TRIP') {
+                <div class="na-field">
+                  <label class="na-label" for="return">Return</label>
+                  <input
+                    id="return"
+                    class="na-input"
+                    type="date"
+                    [min]="departureDate()"
+                    [value]="returnDate()"
+                    (change)="returnDate.set($any($event.target).value)"
+                  />
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="mc-legs">
+              @for (leg of legs(); track $index; let i = $index) {
+                <div class="mc-leg">
+                  <span class="mc-leg__badge" aria-hidden="true">Leg {{ i + 1 }}</span>
+                  <div class="mc-leg__fields">
+                    <na-autocomplete
+                      [label]="'Leg ' + (i + 1) + ' — From'"
+                      placeholder="City or airport"
+                      [options]="originOptions()"
+                      [serverSide]="true"
+                      (query)="onFromQuery($event)"
+                      (focused)="onFromFocused()"
+                      (selected)="setLegAirport(i, 'origin', $event.value)"
+                    />
+                    <na-autocomplete
+                      [label]="'Leg ' + (i + 1) + ' — To'"
+                      placeholder="City or airport"
+                      [options]="originOptions()"
+                      [serverSide]="true"
+                      (query)="onFromQuery($event)"
+                      (focused)="onFromFocused()"
+                      (selected)="setLegAirport(i, 'destination', $event.value)"
+                    />
+                    <div class="na-field mc-leg__date">
+                      <label class="na-label" [for]="'leg-date-' + i">Date</label>
+                      <input
+                        [id]="'leg-date-' + i"
+                        class="na-input"
+                        type="date"
+                        [min]="i === 0 ? minDate : legs()[i - 1].date"
+                        [value]="leg.date"
+                        (change)="setLegDate(i, $any($event.target).value)"
+                      />
+                    </div>
+                    @if (i === 2) {
+                      <button type="button" class="mc-leg__remove" (click)="removeLeg()" aria-label="Remove third leg">×</button>
+                    }
+                  </div>
+                </div>
+              }
+              @if (legs().length < 3) {
+                <na-button variant="ghost" size="sm" (clicked)="addLeg()">+ Add a third leg</na-button>
+              }
+            </div>
+          }
 
           <fieldset class="pax">
             <legend class="na-label">Passengers</legend>
@@ -281,6 +334,22 @@ function toOption(a: Airport): AutocompleteOption {
     .swap:hover { transform: rotate(180deg); border-color: var(--na-navy-300); }
     .search-card__dates { display: flex; flex-wrap: wrap; gap: var(--na-space-4); }
     .search-card__dates .na-field { flex: 1 1 180px; max-width: 260px; }
+    .mc-legs { display: grid; gap: var(--na-space-3); justify-items: start; }
+    .mc-leg { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: var(--na-space-3); align-items: start; }
+    .mc-leg__badge {
+      margin-top: var(--na-space-8); padding: var(--na-space-1) var(--na-space-3);
+      background: var(--na-surface-sunken); border: 1px solid var(--na-border); border-radius: var(--na-radius-full);
+      font-size: var(--na-text-xs); font-weight: var(--na-font-semibold); color: var(--na-ink-500); white-space: nowrap;
+    }
+    .mc-leg__fields { display: grid; grid-template-columns: 1fr 1fr minmax(150px, 200px) auto; gap: var(--na-space-3); align-items: end; }
+    .mc-leg__fields .na-field { margin-bottom: 0; }
+    .mc-leg__remove {
+      width: 40px; height: 40px; margin-bottom: var(--na-space-1);
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-full);
+      background: var(--na-surface-sunken); color: var(--na-ink-700); font-size: var(--na-text-lg); line-height: 1;
+    }
+    .mc-leg__remove:hover { border-color: var(--na-danger); color: var(--na-danger); }
     .pax { border: none; padding: 0; margin: 0; }
     .pax legend { padding: 0; margin-bottom: var(--na-space-3); }
     .pax__row { display: flex; flex-wrap: wrap; gap: var(--na-space-4) var(--na-space-6); }
@@ -320,6 +389,10 @@ function toOption(a: Airport): AutocompleteOption {
       .swap:hover { transform: rotate(270deg); }
       .search-card__dates { flex-direction: column; }
       .search-card__dates .na-field { max-width: none; }
+      .mc-leg { grid-template-columns: 1fr; }
+      .mc-leg__badge { margin-top: 0; justify-self: start; }
+      .mc-leg__fields { grid-template-columns: 1fr; }
+      .mc-leg__remove { justify-self: end; margin-bottom: 0; }
       .search-card__footer { flex-direction: column; align-items: stretch; }
       .search-card__promo { flex: 1 1 auto; }
       .search-card__footer na-button { display: contents; }
@@ -415,6 +488,10 @@ export class SearchPage {
   protected readonly cabinClass = signal<CabinClass>('ECONOMY');
   protected readonly promoCode = signal('');
   protected readonly counts = signal({ adults: 1, children: 0, infants: 0 });
+  protected readonly legs = signal<MultiCityLegForm[]>([
+    { origin: '', destination: '', date: toDateInput(new Date(Date.now() + 86400000)) },
+    { origin: '', destination: '', date: toDateInput(new Date(Date.now() + 4 * 86400000)) },
+  ]);
   protected readonly formError = signal<string | null>(null);
   protected readonly advisoryDismissed = signal(false);
   protected readonly recentSearches = signal<SearchCriteria[]>(this.loadRecent());
@@ -495,7 +572,62 @@ export class SearchPage {
     this.loadDestinations();
   }
 
+  protected setLegAirport(index: number, key: 'origin' | 'destination', value: string): void {
+    this.legs.update((list) => list.map((leg, i) => (i === index ? { ...leg, [key]: value } : leg)));
+  }
+
+  protected setLegDate(index: number, value: string): void {
+    this.legs.update((list) => list.map((leg, i) => (i === index ? { ...leg, date: value } : leg)));
+  }
+
+  protected addLeg(): void {
+    this.legs.update((list) =>
+      list.length >= 3
+        ? list
+        : [...list, { origin: '', destination: '', date: toDateInput(new Date(Date.now() + 7 * 86400000)) }],
+    );
+  }
+
+  protected removeLeg(): void {
+    this.legs.update((list) => (list.length > 2 ? list.slice(0, 2) : list));
+  }
+
+  private validateLegs(): string | null {
+    const legs = this.legs();
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i];
+      if (!leg.origin || !leg.destination) return `Please choose an origin and a destination for leg ${i + 1}.`;
+      if (leg.origin === leg.destination) return `Origin and destination must be different on leg ${i + 1}.`;
+      if (!leg.date) return `Please pick a date for leg ${i + 1}.`;
+      if (i > 0 && leg.date < legs[i - 1].date) return 'Legs must be in chronological order.';
+    }
+    return null;
+  }
+
   protected submit(): void {
+    if (this.tripType() === 'MULTI_CITY') {
+      const legError = this.validateLegs();
+      if (legError) {
+        this.formError.set(legError);
+        return;
+      }
+      this.formError.set(null);
+      const legs = this.legs();
+      const criteria: SearchCriteria = {
+        tripType: 'MULTI_CITY',
+        originCode: legs[0].origin,
+        destinationCode: legs[0].destination,
+        departureDate: legs[0].date,
+        returnDate: null,
+        passengers: this.counts(),
+        cabinClass: this.cabinClass(),
+        promoCode: this.promoCode().trim() || null,
+        legs: legs.map((l) => ({ originCode: l.origin, destinationCode: l.destination, departureDate: l.date })),
+      };
+      this.remember(criteria);
+      this.goToResults(criteria);
+      return;
+    }
     const origin = this.origin();
     const destination = this.destination();
     if (!origin || !destination) {
@@ -542,6 +674,12 @@ export class SearchPage {
   }
 
   protected goToResults(c: SearchCriteria): void {
+    const legParams: Record<string, string> = {};
+    c.legs?.forEach((leg, i) => {
+      legParams[`leg${i + 1}Origin`] = leg.originCode;
+      legParams[`leg${i + 1}Destination`] = leg.destinationCode;
+      legParams[`leg${i + 1}Date`] = leg.departureDate;
+    });
     this.router.navigate(['/results'], {
       queryParams: {
         tripType: c.tripType,
@@ -554,6 +692,7 @@ export class SearchPage {
         infants: c.passengers.infants,
         cabin: c.cabinClass,
         promo: c.promoCode ?? undefined,
+        ...legParams,
       },
     });
   }

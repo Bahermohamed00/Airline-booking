@@ -4,7 +4,8 @@ import { BookingService } from '../../../core/services/booking.service';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
 import { flightDurationLabel } from '../../../core/services/flight.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import type { Booking } from '../../../core/models/domain.model';
+import type { Booking, Fare, Flight } from '../../../core/models/domain.model';
+import type { BookingDraft } from '../../../core/models/booking-flow.model';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
@@ -54,6 +55,18 @@ function icsDate(iso: string): string {
               {{ fullDate(b.flight.departureTime) }} → {{ time(b.flight.arrivalTime) }} ·
               {{ flightDurationLabel(b.flight) }} · {{ b.flight.aircraft.model }}
             </p>
+            @for (leg of extraLegs(); track leg.flight.id) {
+              <h3 class="leg__title">{{ leg.label }}</h3>
+              <p>
+                <strong>{{ leg.flight.flightNumber }}</strong> —
+                {{ leg.flight.route.origin.iataCode }} ({{ leg.flight.route.origin.city }}) →
+                {{ leg.flight.route.destination.iataCode }} ({{ leg.flight.route.destination.city }})
+              </p>
+              <p class="na-text-small na-text-muted">
+                {{ fullDate(leg.flight.departureTime) }} → {{ time(leg.flight.arrivalTime) }} ·
+                {{ flightDurationLabel(leg.flight) }} · {{ leg.flight.aircraft.model }}
+              </p>
+            }
           </section>
 
           <section class="na-card panel" aria-labelledby="pax-h">
@@ -112,6 +125,10 @@ function icsDate(iso: string): string {
     .panel h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-3); }
     .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-2); }
     .rows li { display: flex; justify-content: space-between; gap: var(--na-space-3); }
+    .leg__title {
+      font-size: var(--na-text-sm); font-weight: var(--na-font-semibold); color: var(--na-ink-500);
+      text-transform: uppercase; letter-spacing: 0.08em; margin: var(--na-space-4) 0 var(--na-space-2);
+    }
     .panel__total { border-top: 1px solid var(--na-border); margin-top: var(--na-space-3); padding-top: var(--na-space-3); }
     .actions { display: flex; gap: var(--na-space-3); flex-wrap: wrap; align-items: center; }
     .actions__link { min-height: 44px; display: inline-flex; align-items: center; font-weight: var(--na-font-semibold); }
@@ -132,13 +149,17 @@ export class ConfirmationPage {
   protected readonly booking = signal<Booking | null>(null);
   protected readonly loading = signal(true);
   protected readonly lookupError = signal(false);
+  /** Return / extra multi-city legs captured from the draft before it is cleared (empty on ref lookups). */
+  protected readonly extraLegs = signal<{ label: string; flight: Flight; fare: Fare }[]>([]);
 
   protected readonly flightDurationLabel = flightDurationLabel;
 
   private readonly ref = this.route.snapshot.queryParamMap.get('ref');
 
   constructor() {
-    const confirmed = this.draft.draft()?.confirmedBooking ?? null;
+    const d = this.draft.draft();
+    const confirmed = d?.confirmedBooking ?? null;
+    this.extraLegs.set(d ? this.collectExtraLegs(d) : []);
     this.draft.clear();
 
     if (confirmed) {
@@ -151,6 +172,18 @@ export class ConfirmationPage {
       return;
     }
     this.lookup();
+  }
+
+  private collectExtraLegs(d: BookingDraft): { label: string; flight: Flight; fare: Fare }[] {
+    const multiCity = d.criteria.tripType === 'MULTI_CITY';
+    const legs: { label: string; flight: Flight; fare: Fare }[] = [];
+    if (d.returnFlight) {
+      legs.push({ label: multiCity ? 'Leg 2' : 'Return', flight: d.returnFlight, fare: d.returnFare ?? d.fare });
+    }
+    d.legs.slice(2).forEach((leg, i) => {
+      legs.push({ label: `Leg ${i + 3}`, flight: leg.flight, fare: leg.fare });
+    });
+    return legs;
   }
 
   protected lookup(): void {
