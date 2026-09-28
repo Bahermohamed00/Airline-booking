@@ -51,6 +51,7 @@ export const routes: Routes = [
     component: CustomerShell,
     children: [
       { path: 'search', loadComponent: () => import('./features/customer/booking/search.component').then((m) => m.SearchPage) },
+      { path: 'offers', loadComponent: () => import('./features/customer/offers.component').then((m) => m.OffersPage) },
       { path: 'results', loadComponent: () => import('./features/customer/booking/results.component').then((m) => m.ResultsPage) },
       { path: 'flights/:id', loadComponent: () => import('./features/customer/booking/flight-details.component').then((m) => m.FlightDetailsPage) },
       { path: 'booking/passengers', loadComponent: () => import('./features/customer/booking/passengers.component').then((m) => m.PassengersPage) },

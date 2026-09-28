@@ -16,6 +16,7 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
       </a>
       <nav class="nav" aria-label="Main">
         <a routerLink="/search" routerLinkActive="nav__link--active" class="nav__link">Flight Search</a>
+        <a routerLink="/offers" routerLinkActive="nav__link--active" class="nav__link">Offers</a>
         <a routerLink="/bookings" routerLinkActive="nav__link--active" class="nav__link">Manage Booking</a>
         <a routerLink="/checkin" routerLinkActive="nav__link--active" class="nav__link">Check-in</a>
         <a routerLink="/status" routerLinkActive="nav__link--active" class="nav__link">Flight Status</a>
@@ -57,6 +58,7 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
 
     <nav class="mobile-nav" aria-label="Mobile">
       <a routerLink="/search" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Search</a>
+      <a routerLink="/offers" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Offers</a>
       <a routerLink="/bookings" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Bookings</a>
       <a routerLink="/checkin" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Check-in</a>
       <a routerLink="/status" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Status</a>
@@ -104,9 +106,13 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
         background: var(--na-navy-800); border-top: 1px solid var(--na-navy-600);
       }
-      .mobile-nav__link { flex: 1; color: var(--na-ink-100); text-align: center; padding: var(--na-space-3) 0 calc(var(--na-space-3) + env(safe-area-inset-bottom)); font-size: var(--na-text-xs); font-weight: var(--na-font-medium); }
+      .mobile-nav__link { flex: 1; min-width: 0; color: var(--na-ink-100); text-align: center; white-space: nowrap; padding: var(--na-space-3) var(--na-space-1) calc(var(--na-space-3) + env(safe-area-inset-bottom)); font-size: var(--na-text-xs); font-weight: var(--na-font-medium); }
       .mobile-nav__link--active { color: var(--na-ink-900); background: var(--na-navy-600); }
       .main { padding-bottom: calc(var(--na-space-16) + 64px); }
+    }
+    @media (max-width: 380px) {
+      // Six tabs must stay legible on a 320px viewport.
+      .mobile-nav__link { font-size: 0.6875rem; padding-left: 0; padding-right: 0; }
     }
     @media (max-width: 420px) {
       .topbar { gap: var(--na-space-2); padding: 0 var(--na-space-3); }

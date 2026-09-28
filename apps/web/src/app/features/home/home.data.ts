@@ -145,6 +145,7 @@ export const FOOTER_GROUPS: FooterLinkGroup[] = [
     heading: 'Book & manage',
     links: [
       { label: 'Flight search', path: '/search' },
+      { label: 'Offers', path: '/offers' },
       { label: 'Manage booking', path: '/manage' },
       { label: 'Online check-in', path: '/checkin' },
       { label: 'Flight status', path: '/status' },
