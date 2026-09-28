@@ -158,6 +158,37 @@ export interface Fare {
   rules: FareRule;
 }
 
+export interface FlightOffer {
+  id: string;
+  title: string;
+  description: string | null;
+  cabinClass: CabinClass;
+  discountPercentage: number;
+  startsAt: string; // ISO
+  endsAt: string; // ISO
+  flight: {
+    id: string;
+    flightNumber: string;
+    departureTime: string; // ISO
+    arrivalTime: string; // ISO
+    origin: Pick<Airport, 'iataCode' | 'name' | 'city' | 'country'>;
+    destination: Pick<Airport, 'iataCode' | 'name' | 'city' | 'country'>;
+  };
+  fare: {
+    id: string;
+    cabinClass: CabinClass;
+    currency: string;
+    originalPrice: number;
+    discountedPrice: number;
+    availableCount: number;
+    baggage: {
+      checkedBaggagePieces: number;
+      checkedBaggageWeightKg: number;
+      carryOnPieces: number;
+    };
+  };
+}
+
 export interface SeatHold {
   id: string;
   flightId: string;

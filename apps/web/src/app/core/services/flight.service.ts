@@ -1,12 +1,22 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, of, delay, map } from 'rxjs';
-import { FLIGHTS, AIRPORTS } from '../mock/mock-data';
+import { HttpClient } from '@angular/common/http';
+import { Observable, of, delay, map, catchError } from 'rxjs';
+import { FLIGHTS, AIRPORTS, ROUTES } from '../mock/mock-data';
+import { API_CONFIG, type ApiConfig } from '../config/api-config';
 import type { Flight, Airport } from '../models/domain.model';
 import type { SearchCriteria, ResultFilters, ResultSort } from '../models/booking-flow.model';
 
 @Injectable({ providedIn: 'root' })
 export class FlightService {
+  private readonly http = inject(HttpClient);
+  private readonly config: ApiConfig = inject(API_CONFIG);
+
   searchAirports(query: string): Observable<Airport[]> {
+    if (this.config.useRealApi) {
+      return this.http.get<Airport[]>(`${this.config.baseUrl}/flights/airports/search`, {
+        params: { q: query.trim() },
+      });
+    }
     const q = query.trim().toLowerCase();
     const results = q.length === 0
       ? AIRPORTS
@@ -20,7 +30,39 @@ export class FlightService {
     return of(results).pipe(delay(150));
   }
 
+  searchDestinations(originCode: string, query = ''): Observable<Airport[]> {
+    if (this.config.useRealApi) {
+      return this.http.get<Airport[]>(`${this.config.baseUrl}/flights/destinations`, {
+        params: { from: originCode, q: query.trim() },
+      });
+    }
+    const q = query.trim().toLowerCase();
+    const destinations = ROUTES.filter(
+      (r) => r.status === 'ACTIVE' && r.origin.iataCode === originCode.toUpperCase(),
+    ).map((r) => r.destination);
+    const results = q.length === 0
+      ? destinations
+      : destinations.filter(
+          (a) =>
+            a.iataCode.toLowerCase().includes(q) ||
+            a.name.toLowerCase().includes(q) ||
+            a.city.toLowerCase().includes(q) ||
+            a.country.toLowerCase().includes(q),
+        );
+    return of(results).pipe(delay(150));
+  }
+
   searchFlights(criteria: SearchCriteria): Observable<Flight[]> {
+    if (this.config.useRealApi) {
+      return this.http.get<Flight[]>(`${this.config.baseUrl}/flights/search`, {
+        params: {
+          from: criteria.originCode,
+          to: criteria.destinationCode,
+          date: criteria.departureDate,
+          cabin: criteria.cabinClass,
+        },
+      });
+    }
     const targetDate = new Date(criteria.departureDate);
     const matches = FLIGHTS.filter((f) => {
       const sameRoute =
@@ -63,6 +105,12 @@ export class FlightService {
   }
 
   getFlight(id: string): Observable<Flight | undefined> {
+    if (this.config.useRealApi) {
+      return this.http.get<Flight>(`${this.config.baseUrl}/flights/${id}`).pipe(
+        map((f) => f ?? undefined),
+        catchError(() => of(undefined)),
+      );
+    }
     return of(FLIGHTS.find((f) => f.id === id)).pipe(delay(200));
   }
 

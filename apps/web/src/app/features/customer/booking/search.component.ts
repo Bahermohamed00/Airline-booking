@@ -1,8 +1,11 @@
 import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
-import { AIRPORTS } from '../../../core/mock/mock-data';
-import type { CabinClass } from '../../../core/models/domain.model';
+import { Observable, Subject, of } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, switchMap } from 'rxjs/operators';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FlightService } from '../../../core/services/flight.service';
+import type { Airport, CabinClass } from '../../../core/models/domain.model';
 import type { SearchCriteria, TripType } from '../../../core/models/booking-flow.model';
 import { NaSegmented, SegmentOption } from '../../../shared/ui/segmented.component';
 import { NaAutocomplete, AutocompleteOption } from '../../../shared/ui/autocomplete.component';
@@ -22,6 +25,14 @@ interface PopularRoute {
 function toDateInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toOption(a: Airport): AutocompleteOption {
+  return {
+    value: a.iataCode,
+    label: `${a.iataCode} — ${a.name}`,
+    hint: `${a.city}, ${a.country}`,
+  };
 }
 
 @Component({
@@ -75,8 +86,12 @@ function toDateInput(d: Date): string {
               #fromField
               label="From"
               placeholder="City or airport"
-              [options]="airportOptions"
-              (selected)="origin.set($event.value)"
+              [options]="originOptions()"
+              [serverSide]="true"
+              [loading]="fromLoading()"
+              (query)="onFromQuery($event)"
+              (focused)="onFromFocused()"
+              (selected)="onFromSelected($event)"
             />
             <button type="button" class="swap" (click)="swapAirports()" aria-label="Swap origin and destination">
               <span aria-hidden="true">⇄</span>
@@ -84,11 +99,20 @@ function toDateInput(d: Date): string {
             <na-autocomplete
               #toField
               label="To"
-              placeholder="City or airport"
-              [options]="airportOptions"
-              (selected)="destination.set($event.value)"
+              [placeholder]="origin() ? 'City or airport' : 'Select origin first'"
+              [options]="destinationOptions()"
+              [serverSide]="true"
+              [loading]="toLoading()"
+              [disabled]="!origin()"
+              (query)="onToQuery($event)"
+              (focused)="onToFocused()"
+              (selected)="onToSelected($event)"
             />
           </div>
+
+          @if (airportsError()) {
+            <na-alert tone="danger" title="Couldn't load airports" icon="⚠">{{ airportsError() }}</na-alert>
+          }
 
           <div class="search-card__dates">
             <div class="na-field">
@@ -304,6 +328,7 @@ function toDateInput(d: Date): string {
 })
 export class SearchPage {
   private readonly router = inject(Router);
+  private readonly flights = inject(FlightService);
 
   private readonly fromField = viewChild('fromField', { read: NaAutocomplete });
   private readonly toField = viewChild('toField', { read: NaAutocomplete });
@@ -314,13 +339,53 @@ export class SearchPage {
     { value: 'MULTI_CITY', label: 'Multi-city' },
   ];
 
-  protected readonly airportOptions: AutocompleteOption[] = AIRPORTS.filter((a) => a.status === 'ACTIVE').map(
-    (a) => ({
-      value: a.iataCode,
-      label: `${a.iataCode} — ${a.name}`,
-      hint: `${a.city}, ${a.country}`,
-    }),
-  );
+  protected readonly originOptions = signal<AutocompleteOption[]>([]);
+  protected readonly destinationOptions = signal<AutocompleteOption[]>([]);
+  protected readonly fromLoading = signal(false);
+  protected readonly toLoading = signal(false);
+  protected readonly airportsError = signal<string | null>(null);
+
+  private readonly fromQuery$ = new Subject<string>();
+  private readonly toQuery$ = new Subject<string>();
+
+  constructor() {
+    this.fromQuery$
+      .pipe(
+        debounceTime(250),
+        distinctUntilChanged(),
+        switchMap((q) => {
+          this.fromLoading.set(true);
+          return this.flights.searchAirports(q).pipe(catchError(() => this.onAirportsError()));
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe((airports) => {
+        this.fromLoading.set(false);
+        this.originOptions.set(airports.map(toOption));
+      });
+
+    this.toQuery$
+      .pipe(
+        debounceTime(250),
+        distinctUntilChanged(),
+        switchMap((q) => {
+          const origin = this.origin();
+          if (!origin) return of([] as Airport[]);
+          this.toLoading.set(true);
+          return this.flights.searchDestinations(origin, q).pipe(catchError(() => this.onAirportsError()));
+        }),
+        takeUntilDestroyed(),
+      )
+      .subscribe((airports) => {
+        this.toLoading.set(false);
+        this.destinationOptions.set(airports.map(toOption));
+      });
+  }
+
+  private onAirportsError(): Observable<Airport[]> {
+    this.airportsError.set('Airport search is unavailable right now. Please try again.');
+    return of([]);
+  }
 
   protected readonly passengerGroups = [
     { key: 'adults' as const, label: 'Adults (12+)', min: 1, max: 9 },
@@ -364,6 +429,57 @@ export class SearchPage {
     });
   }
 
+  protected onFromQuery(q: string): void {
+    this.fromQuery$.next(q);
+  }
+
+  protected onToQuery(q: string): void {
+    this.toQuery$.next(q);
+  }
+
+  protected onFromFocused(): void {
+    this.fromQuery$.next('');
+  }
+
+  protected onToFocused(): void {
+    this.loadDestinations();
+  }
+
+  protected onFromSelected(option: AutocompleteOption): void {
+    this.airportsError.set(null);
+    this.origin.set(option.value);
+    // Origin changed: any previously chosen destination may no longer be
+    // reachable, so reset the To field and reload valid destinations.
+    this.destination.set('');
+    this.destinationOptions.set([]);
+    const to = this.toField();
+    if (to) to.text.set('');
+    this.loadDestinations();
+  }
+
+  protected onToSelected(option: AutocompleteOption): void {
+    this.destination.set(option.value);
+  }
+
+  private loadDestinations(): void {
+    const origin = this.origin();
+    if (!origin) {
+      this.destinationOptions.set([]);
+      return;
+    }
+    this.toLoading.set(true);
+    this.flights.searchDestinations(origin).subscribe({
+      next: (airports) => {
+        this.toLoading.set(false);
+        this.destinationOptions.set(airports.map(toOption));
+      },
+      error: () => {
+        this.toLoading.set(false);
+        this.airportsError.set('Airport search is unavailable right now. Please try again.');
+      },
+    });
+  }
+
   protected swapAirports(): void {
     const from = this.fromField();
     const to = this.toField();
@@ -375,6 +491,8 @@ export class SearchPage {
     const origin = this.origin();
     this.origin.set(this.destination());
     this.destination.set(origin);
+    this.destinationOptions.set([]);
+    this.loadDestinations();
   }
 
   protected submit(): void {

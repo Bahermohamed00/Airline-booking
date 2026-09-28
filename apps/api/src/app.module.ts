@@ -11,6 +11,8 @@ import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { RolesModule } from './roles/roles.module.js';
+import { FlightsModule } from './flights/flights.module.js';
+import { OffersModule } from './offers/offers.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -38,6 +40,8 @@ const skipThrottleInTest = (): boolean => isTest && process.env['E2E_THROTTLE'] 
     AuthModule,
     UsersModule,
     RolesModule,
+    FlightsModule,
+    OffersModule,
   ],
   controllers: [AppController],
   providers: [

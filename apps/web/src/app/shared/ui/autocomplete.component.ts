@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 
 export interface AutocompleteOption {
   value: string;
@@ -25,7 +25,7 @@ export interface AutocompleteOption {
         [value]="text()"
         [disabled]="disabled()"
         (input)="onInput($event)"
-        (focus)="open.set(true)"
+        (focus)="onFocus()"
       />
       @if (open() && filtered().length) {
         <ul class="ac__list" [id]="inputId() + '-list'" role="listbox">
@@ -37,6 +37,10 @@ export interface AutocompleteOption {
               </button>
             </li>
           }
+        </ul>
+      } @else if (open() && !loading() && text().trim()) {
+        <ul class="ac__list" [id]="inputId() + '-list'" role="listbox">
+          <li class="ac__empty" role="option" aria-disabled="true">No matches found</li>
         </ul>
       }
     </div>
@@ -57,6 +61,11 @@ export interface AutocompleteOption {
     .ac__option:hover, .ac__option:focus-visible { background: var(--na-blue-100); }
     .ac__value { font-weight: var(--na-font-medium); }
     .ac__hint { color: var(--na-ink-500); font-size: var(--na-text-xs); }
+    .ac__empty {
+      padding: var(--na-space-2) var(--na-space-3); min-height: 44px;
+      display: flex; align-items: center;
+      color: var(--na-ink-500); font-size: var(--na-text-sm);
+    }
   `,
 })
 export class NaAutocomplete {
@@ -65,22 +74,32 @@ export class NaAutocomplete {
   readonly placeholder = input('');
   readonly options = input<AutocompleteOption[]>([]);
   readonly disabled = input(false);
+  /** When true, options arrive pre-filtered from the server and are shown as-is. */
+  readonly serverSide = input(false);
+  readonly loading = input(false);
   readonly selected = output<AutocompleteOption>();
   readonly query = output<string>();
+  readonly focused = output<void>();
 
   readonly text = signal('');
   readonly open = signal(false);
-  readonly filtered = signal<AutocompleteOption[]>([]);
+  readonly filtered = computed(() => {
+    const opts = this.options();
+    if (this.serverSide()) return opts;
+    const q = this.text().toLowerCase();
+    return opts.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+  });
 
   onInput(event: Event): void {
     const value = (event.target as HTMLInputElement).value;
     this.text.set(value);
     this.query.emit(value);
-    const q = value.toLowerCase();
-    this.filtered.set(
-      this.options().filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)),
-    );
     this.open.set(true);
+  }
+
+  onFocus(): void {
+    this.open.set(true);
+    this.focused.emit();
   }
 
   pick(option: AutocompleteOption): void {

@@ -1,4 +1,4 @@
-import { PrismaClient, CabinClass, UserStatus, AircraftStatus, AirportStatus, RouteStatus, FlightStatus, BookingStatus, PaymentStatus, LoyaltyTier, Role, Permission, User, Aircraft, Airport, Route, Flight, Fare } from '@prisma/client';
+import { PrismaClient, CabinClass, UserStatus, AircraftStatus, AirportStatus, RouteStatus, FlightStatus, BookingStatus, PaymentStatus, LoyaltyTier, OfferStatus, Role, Permission, User, Aircraft, Airport, Route, Flight, Fare } from '@prisma/client';
 import { hash as argonHash } from '@node-rs/argon2';
 
 const prisma = new PrismaClient();
@@ -359,6 +359,63 @@ async function seedFlights(routes: Route[], aircraft: Aircraft[]): Promise<Fligh
   return flights;
 }
 
+async function seedOffers(): Promise<number> {
+  const existing = await prisma.offer.count();
+  if (existing > 0) {
+    return existing;
+  }
+
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // One offer per route, on the earliest upcoming flight that has fares.
+  const flights = await prisma.flight.findMany({
+    where: { departureTime: { gt: new Date(now) }, status: FlightStatus.SCHEDULED },
+    include: { route: { include: { originAirport: true, destinationAirport: true } }, fares: true },
+    orderBy: { departureTime: 'asc' },
+  });
+
+  const byRoute = new Map<string, typeof flights[number]>();
+  for (const f of flights) {
+    if (!byRoute.has(f.routeId)) byRoute.set(f.routeId, f);
+  }
+  const picks = [...byRoute.values()];
+  if (picks.length === 0) return 0;
+
+  const cityPair = (f: typeof flights[number]) =>
+    `${f.route.originAirport.city} → ${f.route.destinationAirport.city}`;
+
+  let created = 0;
+  for (let i = 0; i < picks.length; i++) {
+    const flight = picks[i];
+    const cabin = i % 4 === 3 ? CabinClass.BUSINESS : CabinClass.ECONOMY;
+    const fare = flight.fares.find((f) => f.cabinClass === cabin);
+    if (!fare || fare.availableCount <= 0) continue;
+
+    const discount = [15, 20, 25, 30][i % 4];
+    // Vary windows: first offer ends in 2 days (urgency badge), one expired,
+    // one inactive — the API must only ever return the active, in-window ones.
+    const window =
+      i === 0 ? { startsAt: new Date(now - DAY), endsAt: new Date(now + 2 * DAY), status: OfferStatus.ACTIVE }
+      : i === 1 ? { startsAt: new Date(now - 10 * DAY), endsAt: new Date(now - 1 * DAY), status: OfferStatus.ACTIVE }
+      : i === 2 ? { startsAt: new Date(now - DAY), endsAt: new Date(now + 14 * DAY), status: OfferStatus.INACTIVE }
+      : { startsAt: new Date(now - DAY), endsAt: new Date(now + (10 + i * 3) * DAY), status: OfferStatus.ACTIVE };
+
+    await prisma.offer.create({
+      data: {
+        flightId: flight.id,
+        cabinClass: cabin,
+        title: `${cityPair(flight)} ${cabin === CabinClass.BUSINESS ? 'Business' : 'Economy'} deal`,
+        description: `Save ${discount}% on ${flight.flightNumber} from ${cityPair(flight)}. Limited seats at this fare.`,
+        discountPercentage: discount,
+        ...window,
+      },
+    });
+    created++;
+  }
+  return created;
+}
+
 async function seedDemoBooking(customer: User): Promise<void> {
   const existing = await prisma.booking.findFirst({ where: { userId: customer.id } });
   if (existing) return;
@@ -446,12 +503,13 @@ async function main(): Promise<void> {
   await seedSeats(aircraft);
   const routes = await seedRoutes(airports);
   await seedFlights(routes, aircraft);
+  const offers = await seedOffers();
   await seedDemoBooking(customer);
   await seedLoyalty(customer);
   await seedSystemSettings();
 
   // eslint-disable-next-line no-console
-  console.log(`Seeded: ${permissions.length} permissions, ${roles.length} roles, ${airports.length} airports, ${aircraft.length} aircraft, ${routes.length} routes`);
+  console.log(`Seeded: ${permissions.length} permissions, ${roles.length} roles, ${airports.length} airports, ${aircraft.length} aircraft, ${routes.length} routes, ${offers} offers`);
   // eslint-disable-next-line no-console
   console.log(`Users: admin=${admin.email} / customer=${customer.email}`);
 }

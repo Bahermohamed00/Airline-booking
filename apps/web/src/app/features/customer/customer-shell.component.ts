@@ -16,6 +16,7 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
       </a>
       <nav class="nav" aria-label="Main">
         <a routerLink="/search" routerLinkActive="nav__link--active" class="nav__link">Flight Search</a>
+        <a routerLink="/offers" routerLinkActive="nav__link--active" class="nav__link">Offers</a>
         <a routerLink="/bookings" routerLinkActive="nav__link--active" class="nav__link">Manage Booking</a>
         <a routerLink="/checkin" routerLinkActive="nav__link--active" class="nav__link">Check-in</a>
         <a routerLink="/status" routerLinkActive="nav__link--active" class="nav__link">Flight Status</a>
