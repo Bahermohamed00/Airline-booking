@@ -144,6 +144,16 @@ naming, `Decimal` prices → numbers, null `fareRules` → `DEFAULT_FARE_RULES`.
 
 ## Change log
 
+- **2026-09-29 — Monorepo phase 2: shared types.** `@airline/shared` now holds
+  all 21 Prisma-mirror enums (rewritten as const-object + derived union type,
+  so string literals stay assignable in Angular) and 25 API-contract interfaces
+  (`models.ts`: Airport/Route/Flight/Fare/FlightOffer/User/…). `JwtPayload`
+  corrected to the real signed shape (`sub`, `email`, `sid`, `type`) and
+  `jwt.strategy.ts` now imports it. Web `domain.model.ts` is a barrel
+  re-exporting from `@airline/shared`; the 4 intentionally divergent interfaces
+  (Booking, ExtraService, Payment, AuditLog + BookingExtra by dependency) stay
+  web-only with audit comments. New `apps/api/src/common/shared-enums.spec.ts`
+  asserts enum parity with Prisma in both directions (values + name sets).
 - **2026-09-29 — Workspace/shared-package wiring (infrastructure only).**
   Root scripts: added `shared:build`, `dev:api`/`dev:web`/`build`/`test`
   aliases; `api:*` scripts now build `@airline/shared` first so fresh clones
