@@ -3,7 +3,7 @@
 export const environment = {
   production: true,
   useRealApi: true,
-  apiBaseUrl: 'http://localhost:3000/api',
+  apiBaseUrl: '/api',
   /** Seat-hold window used by checkout (BR-13), in minutes. */
   seatHoldMinutes: 15,
   /** Brand/display constants. */

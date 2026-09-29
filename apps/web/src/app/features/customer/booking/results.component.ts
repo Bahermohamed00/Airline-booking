@@ -5,6 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FlightService, applyFilters, applySort, flightDurationLabel } from '../../../core/services/flight.service';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
 import { formatMoney } from '../../../core/services/pricing.service';
+import { cabinLabel } from '../../../shared/utils/cabin-label';
 import type { Fare, Flight, CabinClass } from '../../../core/models/domain.model';
 import type { DraftLeg, ResultFilters, ResultSort, SearchCriteria, SearchLeg, TripType } from '../../../core/models/booking-flow.model';
 import { NaButton } from '../../../shared/ui/button.component';
@@ -34,13 +35,6 @@ interface ResultSection {
 interface LegPick {
   flight: Flight;
   fare: Fare;
-}
-
-function cabinLabel(c: CabinClass): string {
-  return c
-    .split('_')
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(' ');
 }
 
 @Component({

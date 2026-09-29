@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError, Subject } from 'rxjs';
 import { AdminAuditPage } from './admin-audit.component';
-import { AuditService, type AuditLogPage, type AuditLogItem } from '../../../core/services/audit.service';
+import { AuditService, type AuditLogPage, type AuditLogItem } from '../services/audit.service';
 
 function item(partial: Partial<AuditLogItem>): AuditLogItem {
   return {

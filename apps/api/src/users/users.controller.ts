@@ -1,8 +1,8 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Inject, ParseUUIDPipe, HttpCode, HttpStatus } from '@nestjs/common';
 import { UsersService } from './users.service.js';
-import { JwtAuthGuard } from '../auth/auth.guard.js';
-import { RolesGuard } from '../auth/roles.guard.js';
-import { PermissionsGuard } from '../auth/permissions.guard.js';
+import { JwtAuthGuard } from '../auth/guards/auth.guard.js';
+import { RolesGuard } from '../auth/guards/roles.guard.js';
+import { PermissionsGuard } from '../auth/guards/permissions.guard.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
 import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator.js';

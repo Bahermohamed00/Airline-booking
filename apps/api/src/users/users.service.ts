@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { PasswordService } from '../auth/password.service.js';
+import { PasswordService } from '../auth/services/password.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { CreateUserDto } from './dto/create-user.dto.js';

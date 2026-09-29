@@ -1,6 +1,6 @@
 import { IsEmail, IsEnum, IsOptional, IsString, IsUUID, MinLength, MaxLength } from 'class-validator';
 import { UserStatus } from '@prisma/client';
-import { NormalizeEmail, TrimString } from '../../auth/dto/transforms.js';
+import { NormalizeEmail, TrimString } from '../../common/dto-transforms.js';
 
 export class CreateUserDto {
   @NormalizeEmail()

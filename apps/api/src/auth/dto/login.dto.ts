@@ -1,5 +1,5 @@
 import { IsEmail, IsString, IsOptional } from 'class-validator';
-import { NormalizeEmail } from './transforms.js';
+import { NormalizeEmail } from '../../common/dto-transforms.js';
 
 export class LoginDto {
   @NormalizeEmail()

@@ -2,16 +2,30 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from './auth.service.js';
-import { PasswordService } from './password.service.js';
-import { SessionService } from './session.service.js';
-import { TokenService } from './token.service.js';
+import {
+  AuthService,
+  type AuthTokens,
+  type LoginResult,
+} from './auth.service.js';
+import { PasswordService } from './services/password.service.js';
+import { SessionService } from './services/session.service.js';
+import { TokenService } from './services/token.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { MailService } from '../mail/mail.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
-import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+
+function expectTokenResult(result: LoginResult): asserts result is AuthTokens {
+  if (!('accessToken' in result)) {
+    throw new Error('Expected a successful login response');
+  }
+}
 
 const createMockPrisma = () => ({
   user: {
@@ -47,7 +61,9 @@ const createMockPrisma = () => ({
   auditLog: {
     create: vi.fn(),
   },
-  $transaction: vi.fn((cb: (tx: unknown) => Promise<unknown>) => cb(createMockPrisma())),
+  $transaction: vi.fn((cb: (tx: unknown) => Promise<unknown>) =>
+    cb(createMockPrisma()),
+  ),
 });
 
 describe('AuthService', () => {
@@ -79,8 +95,12 @@ describe('AuthService', () => {
         {
           provide: ConfigService,
           useValue: {
-            getOrThrow: vi.fn((key: string) => (key === 'JWT_SECRET' ? 'secret' : '')),
-            get: vi.fn((key: string, def: string) => (key === 'JWT_EXPIRES_IN' ? '10m' : def)),
+            getOrThrow: vi.fn((key: string) =>
+              key === 'JWT_SECRET' ? 'secret' : '',
+            ),
+            get: vi.fn((key: string, def: string) =>
+              key === 'JWT_EXPIRES_IN' ? '10m' : def,
+            ),
           },
         },
         {
@@ -89,7 +109,10 @@ describe('AuthService', () => {
         },
         {
           provide: MailService,
-          useValue: { sendVerificationEmail: vi.fn().mockResolvedValue(undefined), sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined) },
+          useValue: {
+            sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
+            sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
@@ -122,7 +145,10 @@ describe('AuthService', () => {
       lastName: 'User',
     };
 
-    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: dto.email });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: dto.email,
+    });
 
     await expect(service.register(dto)).rejects.toThrow(ConflictException);
   });
@@ -147,8 +173,12 @@ describe('AuthService', () => {
     });
     prisma.user.update.mockResolvedValue({});
 
-    const result = await service.login({ email: 'test@example.com', password: 'Password123!' });
+    const result = await service.login({
+      email: 'test@example.com',
+      password: 'Password123!',
+    });
 
+    expectTokenResult(result);
     expect(result.accessToken).toBeDefined();
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
@@ -159,11 +189,17 @@ describe('AuthService', () => {
   it('should audit LOGIN_FAILED for an unknown email', async () => {
     prisma.user.findUnique.mockResolvedValue(null);
 
-    await expect(service.login({ email: 'ghost@example.com', password: 'Password123!' }, '203.0.113.7')).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      service.login(
+        { email: 'ghost@example.com', password: 'Password123!' },
+        '203.0.113.7',
+      ),
+    ).rejects.toThrow(UnauthorizedException);
     expect(audit.log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'LOGIN_FAILED', ipAddress: '203.0.113.7' }),
+      expect.objectContaining({
+        action: 'LOGIN_FAILED',
+        ipAddress: '203.0.113.7',
+      }),
     );
   });
 
@@ -179,11 +215,15 @@ describe('AuthService', () => {
       userRoles: [],
     });
 
-    await expect(service.login({ email: 'test@example.com', password: 'WrongPassword!' })).rejects.toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      service.login({ email: 'test@example.com', password: 'WrongPassword!' }),
+    ).rejects.toThrow(UnauthorizedException);
     expect(audit.log).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'LOGIN_FAILED', actorId: 'user-1', targetId: 'user-1' }),
+      expect.objectContaining({
+        action: 'LOGIN_FAILED',
+        actorId: 'user-1',
+        targetId: 'user-1',
+      }),
     );
   });
 
@@ -200,15 +240,25 @@ describe('AuthService', () => {
     });
     prisma.user.update.mockResolvedValue({});
 
-    const result = await service.login({ email: 'test@example.com', password: 'Password123!' });
+    const result = await service.login({
+      email: 'test@example.com',
+      password: 'Password123!',
+    });
 
+    expectTokenResult(result);
     expect(result.expiresIn).toBe(600); // mocked JWT_EXPIRES_IN is 10m
   });
 
   it('should answer 404 when revoking an already-revoked session', async () => {
-    prisma.session.findUnique.mockResolvedValue({ id: 's-9', userId: 'user-1', revokedAt: new Date() });
+    prisma.session.findUnique.mockResolvedValue({
+      id: 's-9',
+      userId: 'user-1',
+      revokedAt: new Date(),
+    });
 
-    await expect(service.revokeSession('s-9')).rejects.toThrow(NotFoundException);
+    await expect(service.revokeSession('s-9')).rejects.toThrow(
+      NotFoundException,
+    );
     expect(prisma.session.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ import { BookingDraftService } from '../../../core/services/booking-draft.servic
 import { BookingService } from '../../../core/services/booking.service';
 import { PaymentService } from '../../../core/services/domain-services';
 import { PricingService, formatMoney } from '../../../core/services/pricing.service';
-import { FLIGHT_STATUS_MAP } from '../../../core/status-maps';
+import { FLIGHT_STATUS_MAP } from '../../../shared/utils/status-maps';
 import type { BookingDraft, DraftLeg } from '../../../core/models/booking-flow.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';

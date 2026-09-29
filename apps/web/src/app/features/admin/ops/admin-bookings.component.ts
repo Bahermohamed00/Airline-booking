@@ -3,10 +3,10 @@ import { FormsModule } from '@angular/forms';
 import { BookingService } from '../../../core/services/booking.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
+import { HasPermissionDirective } from '../../../shared/directives/has-permission.directive';
 import {
   BOOKING_STATUS_MAP, PAYMENT_STATUS_MAP, REFUND_STATUS_MAP, statusLabel,
-} from '../../../core/status-maps';
+} from '../../../shared/utils/status-maps';
 import { AUDIT_LOGS, NOTIFICATIONS } from '../../../core/mock/mock-data';
 import type { Booking, BookingStatus } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';

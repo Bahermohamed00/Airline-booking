@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { LoyaltyService } from '../../../core/services/domain-services';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
-import { TIER_LABELS } from '../../../core/status-maps';
+import { HasPermissionDirective } from '../../../shared/directives/has-permission.directive';
+import { TIER_LABELS } from '../../../shared/utils/status-maps';
 import type { LoyaltyAccount, LoyaltyTransaction, LoyaltyTransactionType } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';

@@ -12,13 +12,7 @@ import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { NaTimeline, TimelineEvent } from '../../../shared/ui/timeline.component';
-
-function cabinLabel(c: CabinClass): string {
-  return c
-    .split('_')
-    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
-    .join(' ');
-}
+import { cabinLabel } from '../../../shared/utils/cabin-label';
 
 @Component({
   selector: 'na-flight-details-page',

@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
 import type { Role } from '../../../core/models/domain.model';
-import { RolesService } from '../../../core/services/roles.service';
+import { RolesService } from '../services/roles.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import type { StatusTone } from '../../core/status-maps';
+import type { StatusTone } from '../utils/status-maps';
 import { NaSkeleton } from './skeleton.component';
 import { NaEmptyState } from './empty-state.component';
 import { NaBadge } from './badge.component';

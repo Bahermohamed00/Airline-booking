@@ -45,11 +45,26 @@ function toOption(a: Airport): AutocompleteOption {
   selector: 'na-search-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgOptimizedImage, NaSegmented, NaAutocomplete, NaButton, NaAlert, NaQuantityStepper, NaRouteLine],
+  imports: [
+    NgOptimizedImage,
+    NaSegmented,
+    NaAutocomplete,
+    NaButton,
+    NaAlert,
+    NaQuantityStepper,
+    NaRouteLine,
+  ],
   template: `
     <section class="hero">
       <div class="hero__bg" aria-hidden="true">
-        <img ngSrc="assets/img/hero-wing.jpg" fill priority sizes="100vw" alt="" class="hero__img" />
+        <img
+          ngSrc="assets/img/hero-wing.jpg"
+          fill
+          priority
+          sizes="100vw"
+          alt=""
+          class="hero__img"
+        />
         <div class="hero__scrim"></div>
       </div>
 
@@ -57,7 +72,8 @@ function toOption(a: Airport): AutocompleteOption {
         <p class="hero__eyebrow">Book flights</p>
         <h1 class="hero__title">Find your next journey</h1>
         <p class="hero__sub">
-          Search the NovaAir network — honest fares, considered cabins, real booking flows on demo data.
+          Search the NovaAir network — honest fares, considered cabins, real booking flows on demo
+          data.
         </p>
 
         <div class="na-card search-card" role="search" aria-label="Flight search">
@@ -88,38 +104,45 @@ function toOption(a: Airport): AutocompleteOption {
           </div>
 
           @if (tripType() !== 'MULTI_CITY') {
-          <div class="search-card__route">
-            <na-autocomplete
-              #fromField
-              label="From"
-              placeholder="City or airport"
-              [options]="originOptions()"
-              [serverSide]="true"
-              [loading]="fromLoading()"
-              (query)="onFromQuery($event)"
-              (focused)="onFromFocused()"
-              (selected)="onFromSelected($event)"
-            />
-            <button type="button" class="swap" (click)="swapAirports()" aria-label="Swap origin and destination">
-              <span aria-hidden="true">⇄</span>
-            </button>
-            <na-autocomplete
-              #toField
-              label="To"
-              [placeholder]="origin() ? 'City or airport' : 'Select origin first'"
-              [options]="destinationOptions()"
-              [serverSide]="true"
-              [loading]="toLoading()"
-              [disabled]="!origin()"
-              (query)="onToQuery($event)"
-              (focused)="onToFocused()"
-              (selected)="onToSelected($event)"
-            />
-          </div>
+            <div class="search-card__route">
+              <na-autocomplete
+                #fromField
+                label="From"
+                placeholder="City or airport"
+                [options]="originOptions()"
+                [serverSide]="true"
+                [loading]="fromLoading()"
+                (query)="onFromQuery($event)"
+                (focused)="onFromFocused()"
+                (selected)="onFromSelected($event)"
+              />
+              <button
+                type="button"
+                class="swap"
+                (click)="swapAirports()"
+                aria-label="Swap origin and destination"
+              >
+                <span aria-hidden="true">⇄</span>
+              </button>
+              <na-autocomplete
+                #toField
+                label="To"
+                [placeholder]="origin() ? 'City or airport' : 'Select origin first'"
+                [options]="destinationOptions()"
+                [serverSide]="true"
+                [loading]="toLoading()"
+                [disabled]="!origin()"
+                (query)="onToQuery($event)"
+                (focused)="onToFocused()"
+                (selected)="onToSelected($event)"
+              />
+            </div>
 
-          @if (airportsError()) {
-            <na-alert tone="danger" title="Couldn't load airports" icon="⚠">{{ airportsError() }}</na-alert>
-          }
+            @if (airportsError()) {
+              <na-alert tone="danger" title="Couldn't load airports" icon="⚠">{{
+                airportsError()
+              }}</na-alert>
+            }
 
             <div class="search-card__dates">
               <div class="na-field">
@@ -183,13 +206,22 @@ function toOption(a: Airport): AutocompleteOption {
                       />
                     </div>
                     @if (i === 2) {
-                      <button type="button" class="mc-leg__remove" (click)="removeLeg()" aria-label="Remove third leg">×</button>
+                      <button
+                        type="button"
+                        class="mc-leg__remove"
+                        (click)="removeLeg()"
+                        aria-label="Remove third leg"
+                      >
+                        ×
+                      </button>
                     }
                   </div>
                 </div>
               }
               @if (legs().length < 3) {
-                <na-button variant="ghost" size="sm" (clicked)="addLeg()">+ Add a third leg</na-button>
+                <na-button variant="ghost" size="sm" (clicked)="addLeg()"
+                  >+ Add a third leg</na-button
+                >
               }
             </div>
           }
@@ -215,7 +247,9 @@ function toOption(a: Airport): AutocompleteOption {
 
           <div class="search-card__footer">
             <div class="na-field search-card__promo">
-              <label class="na-label" for="promo">Promo code <span class="na-hint">(optional)</span></label>
+              <label class="na-label" for="promo"
+                >Promo code <span class="na-hint">(optional)</span></label
+              >
               <input
                 id="promo"
                 class="na-input"
@@ -264,8 +298,15 @@ function toOption(a: Airport): AutocompleteOption {
         </div>
       </section>
 
-      <na-alert tone="info" icon="ℹ" title="Travel advisory" [dismissible]="advisoryDismissed()" (dismissed)="advisoryDismissed.set(true)">
-        Demo notice: some routes operate with reduced frequency this week. Arrive at the airport at least 2 hours before departure.
+      <na-alert
+        tone="info"
+        icon="ℹ"
+        title="Travel advisory"
+        [dismissible]="advisoryDismissed()"
+        (dismissed)="advisoryDismissed.set(true)"
+      >
+        Demo notice: some routes operate with reduced frequency this week. Arrive at the airport at
+        least 2 hours before departure.
       </na-alert>
     </div>
   `,
@@ -273,21 +314,40 @@ function toOption(a: Airport): AutocompleteOption {
     /* Hero is a photographic dark zone in BOTH themes: its text uses the fixed
        brand cream (--na-cream and its alpha family), never the flipping ink tokens. */
     .hero {
-      position: relative; overflow: hidden;
+      position: relative;
+      overflow: hidden;
       background: var(--na-brown-900);
       padding: var(--na-space-16) 0;
     }
-    .hero__bg { position: absolute; inset: 0; pointer-events: none; }
-    .hero__img { object-fit: cover; object-position: center 30%; }
-    .hero__scrim {
-      position: absolute; inset: 0;
-      background: linear-gradient(180deg, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.5) 45%, rgba(0, 0, 0, 0.7) 100%);
+    .hero__bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
     }
-    .hero__inner { position: relative; z-index: 1; }
+    .hero__img {
+      object-fit: cover;
+      object-position: center 30%;
+    }
+    .hero__scrim {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0.66) 0%,
+        rgba(0, 0, 0, 0.5) 45%,
+        rgba(0, 0, 0, 0.7) 100%
+      );
+    }
+    .hero__inner {
+      position: relative;
+      z-index: 1;
+    }
     .hero__eyebrow {
       color: rgba(225, 220, 201, 0.66);
-      font-size: var(--na-text-xs); font-weight: var(--na-font-semibold);
-      text-transform: uppercase; letter-spacing: 0.24em;
+      font-size: var(--na-text-xs);
+      font-weight: var(--na-font-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.24em;
       margin-bottom: var(--na-space-4);
     }
     .hero__title {
@@ -298,104 +358,301 @@ function toOption(a: Airport): AutocompleteOption {
     }
     .hero__sub {
       color: rgba(225, 220, 201, 0.8);
-      font-size: var(--na-text-lg); max-width: 56ch;
+      font-size: var(--na-text-lg);
+      max-width: 56ch;
       margin-bottom: var(--na-space-10);
     }
     .search-card {
       padding: var(--na-space-8);
       box-shadow: var(--na-shadow-lg);
-      display: grid; gap: var(--na-space-6);
+      display: grid;
+      gap: var(--na-space-6);
       color: var(--na-ink-900);
     }
-    .search-card .na-field { margin-bottom: 0; }
+    .search-card .na-field {
+      margin-bottom: 0;
+    }
     .search-card .na-label {
-      font-size: var(--na-text-xs); font-weight: var(--na-font-semibold);
-      text-transform: uppercase; letter-spacing: 0.08em; color: var(--na-ink-500);
+      font-size: var(--na-text-xs);
+      font-weight: var(--na-font-semibold);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--na-ink-500);
     }
     .search-card .na-label .na-hint {
-      text-transform: none; letter-spacing: 0; font-weight: var(--na-font-regular);
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: var(--na-font-regular);
     }
-    .search-card .na-input, .search-card .na-select { min-height: 48px; }
+    .search-card .na-input,
+    .search-card .na-select {
+      min-height: 48px;
+    }
     .search-card__top {
-      display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--na-space-4) var(--na-space-6);
-      background: var(--na-surface-sunken); border: 1px solid var(--na-border);
-      border-radius: var(--na-radius-lg); padding: var(--na-space-4);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: var(--na-space-4) var(--na-space-6);
+      background: var(--na-surface-sunken);
+      border: 1px solid var(--na-border);
+      border-radius: var(--na-radius-lg);
+      padding: var(--na-space-4);
     }
-    .search-card__cabin { flex: 0 1 220px; min-width: 180px; margin-left: auto; }
-    .search-card__route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: var(--na-space-3); }
+    .search-card__cabin {
+      flex: 0 1 220px;
+      min-width: 180px;
+      margin-left: auto;
+    }
+    .search-card__route {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: end;
+      gap: var(--na-space-3);
+    }
     .swap {
-      width: 40px; height: 40px; margin-bottom: var(--na-space-1);
-      display: inline-flex; align-items: center; justify-content: center;
-      border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-full);
-      background: var(--na-surface-sunken); color: var(--na-ink-900);
-      transition: transform var(--na-motion-base) var(--na-ease), border-color var(--na-motion-fast) var(--na-ease);
+      width: 40px;
+      height: 40px;
+      margin-bottom: var(--na-space-1);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--na-border-strong);
+      border-radius: var(--na-radius-full);
+      background: var(--na-surface-sunken);
+      color: var(--na-ink-900);
+      transition:
+        transform var(--na-motion-base) var(--na-ease),
+        border-color var(--na-motion-fast) var(--na-ease);
     }
-    .swap span { font-size: var(--na-text-lg); line-height: 1; }
-    .swap:hover { transform: rotate(180deg); border-color: var(--na-navy-300); }
-    .search-card__dates { display: flex; flex-wrap: wrap; gap: var(--na-space-4); }
-    .search-card__dates .na-field { flex: 1 1 180px; max-width: 260px; }
-    .mc-legs { display: grid; gap: var(--na-space-3); justify-items: start; }
-    .mc-leg { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: var(--na-space-3); align-items: start; }
+    .swap span {
+      font-size: var(--na-text-lg);
+      line-height: 1;
+    }
+    .swap:hover {
+      transform: rotate(180deg);
+      border-color: var(--na-navy-300);
+    }
+    .search-card__dates {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--na-space-4);
+    }
+    .search-card__dates .na-field {
+      flex: 1 1 180px;
+      max-width: 260px;
+    }
+    .mc-legs {
+      display: grid;
+      gap: var(--na-space-3);
+      justify-items: start;
+    }
+    .mc-leg {
+      width: 100%;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: var(--na-space-3);
+      align-items: start;
+    }
     .mc-leg__badge {
-      margin-top: var(--na-space-8); padding: var(--na-space-1) var(--na-space-3);
-      background: var(--na-surface-sunken); border: 1px solid var(--na-border); border-radius: var(--na-radius-full);
-      font-size: var(--na-text-xs); font-weight: var(--na-font-semibold); color: var(--na-ink-500); white-space: nowrap;
+      margin-top: var(--na-space-8);
+      padding: var(--na-space-1) var(--na-space-3);
+      background: var(--na-surface-sunken);
+      border: 1px solid var(--na-border);
+      border-radius: var(--na-radius-full);
+      font-size: var(--na-text-xs);
+      font-weight: var(--na-font-semibold);
+      color: var(--na-ink-500);
+      white-space: nowrap;
     }
-    .mc-leg__fields { display: grid; grid-template-columns: 1fr 1fr minmax(150px, 200px) auto; gap: var(--na-space-3); align-items: end; }
-    .mc-leg__fields .na-field { margin-bottom: 0; }
+    .mc-leg__fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr minmax(150px, 200px) auto;
+      gap: var(--na-space-3);
+      align-items: end;
+    }
+    .mc-leg__fields .na-field {
+      margin-bottom: 0;
+    }
     .mc-leg__remove {
-      width: 40px; height: 40px; margin-bottom: var(--na-space-1);
-      display: inline-flex; align-items: center; justify-content: center;
-      border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-full);
-      background: var(--na-surface-sunken); color: var(--na-ink-700); font-size: var(--na-text-lg); line-height: 1;
+      width: 40px;
+      height: 40px;
+      margin-bottom: var(--na-space-1);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--na-border-strong);
+      border-radius: var(--na-radius-full);
+      background: var(--na-surface-sunken);
+      color: var(--na-ink-700);
+      font-size: var(--na-text-lg);
+      line-height: 1;
     }
-    .mc-leg__remove:hover { border-color: var(--na-danger); color: var(--na-danger); }
-    .pax { border: none; padding: 0; margin: 0; }
-    .pax legend { padding: 0; margin-bottom: var(--na-space-3); }
-    .pax__row { display: flex; flex-wrap: wrap; gap: var(--na-space-4) var(--na-space-6); }
-    .search-card__footer { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--na-space-4); }
-    .search-card__promo { flex: 0 1 260px; }
-    .search-card__footer na-button { flex-shrink: 0; }
-    .below { padding-top: var(--na-space-10); padding-bottom: var(--na-space-12); display: grid; gap: var(--na-space-10); }
-    .below h2 { margin-bottom: var(--na-space-5); }
-    .recent { list-style: none; display: flex; flex-wrap: wrap; gap: var(--na-space-3); padding: 0; margin: 0; }
+    .mc-leg__remove:hover {
+      border-color: var(--na-danger);
+      color: var(--na-danger);
+    }
+    .pax {
+      border: none;
+      padding: 0;
+      margin: 0;
+    }
+    .pax legend {
+      padding: 0;
+      margin-bottom: var(--na-space-3);
+    }
+    .pax__row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--na-space-4) var(--na-space-6);
+    }
+    .search-card__footer {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: var(--na-space-4);
+    }
+    .search-card__promo {
+      flex: 0 1 260px;
+    }
+    .search-card__footer na-button {
+      flex-shrink: 0;
+    }
+    .below {
+      padding-top: var(--na-space-10);
+      padding-bottom: var(--na-space-12);
+      display: grid;
+      gap: var(--na-space-10);
+    }
+    .below h2 {
+      margin-bottom: var(--na-space-5);
+    }
+    .recent {
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--na-space-3);
+      padding: 0;
+      margin: 0;
+    }
     .recent__chip {
-      border: 1px solid var(--na-border-strong); background: var(--na-surface-raised);
-      border-radius: var(--na-radius-full); padding: var(--na-space-2) var(--na-space-4); min-height: 44px;
-      font-weight: var(--na-font-medium); color: var(--na-ink-700);
-      transition: border-color var(--na-motion-fast) var(--na-ease), background var(--na-motion-fast) var(--na-ease);
+      border: 1px solid var(--na-border-strong);
+      background: var(--na-surface-raised);
+      border-radius: var(--na-radius-full);
+      padding: var(--na-space-2) var(--na-space-4);
+      min-height: 44px;
+      font-weight: var(--na-font-medium);
+      color: var(--na-ink-700);
+      transition:
+        border-color var(--na-motion-fast) var(--na-ease),
+        background var(--na-motion-fast) var(--na-ease);
     }
-    .recent__chip:hover { border-color: var(--na-navy-300); background: var(--na-surface-sunken); }
-    .popular { display: grid; gap: var(--na-space-4); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .recent__chip:hover {
+      border-color: var(--na-navy-300);
+      background: var(--na-surface-sunken);
+    }
+    .popular {
+      display: grid;
+      gap: var(--na-space-4);
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
     .popular__card {
-      display: flex; flex-direction: column; gap: var(--na-space-2); text-align: left;
-      padding: var(--na-space-5); cursor: pointer; font: inherit; color: var(--na-ink-900);
-      transition: transform var(--na-motion-fast) var(--na-ease), box-shadow var(--na-motion-fast) var(--na-ease);
+      display: flex;
+      flex-direction: column;
+      gap: var(--na-space-2);
+      text-align: left;
+      padding: var(--na-space-5);
+      cursor: pointer;
+      font: inherit;
+      color: var(--na-ink-900);
+      transition:
+        transform var(--na-motion-fast) var(--na-ease),
+        box-shadow var(--na-motion-fast) var(--na-ease);
     }
-    .popular__card:hover { transform: translateY(-2px); box-shadow: var(--na-shadow-md); }
-    .popular__route { display: block; }
-    .popular__label { color: var(--na-ink-500); font-size: var(--na-text-sm); }
-    .popular__cta { color: var(--na-blue-600); font-size: var(--na-text-sm); font-weight: var(--na-font-semibold); margin-top: var(--na-space-3); }
+    .popular__card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--na-shadow-md);
+    }
+    .popular__route {
+      display: block;
+    }
+    .popular__label {
+      color: var(--na-ink-500);
+      font-size: var(--na-text-sm);
+    }
+    .popular__cta {
+      color: var(--na-blue-600);
+      font-size: var(--na-text-sm);
+      font-weight: var(--na-font-semibold);
+      margin-top: var(--na-space-3);
+    }
     @media (max-width: 639px) {
-      .hero { padding: var(--na-space-10) 0 var(--na-space-12); }
-      .hero__sub { margin-bottom: var(--na-space-8); }
-      .search-card { padding: var(--na-space-5); gap: var(--na-space-5); }
-      .search-card__top { flex-direction: column; align-items: stretch; }
-      .search-card__trip { min-width: 0; }
-      .search-card__trip na-segmented { display: block; overflow-x: auto; }
-      .search-card__cabin { flex: 1 1 auto; min-width: 0; margin-left: 0; }
-      .search-card__route { grid-template-columns: 1fr; }
-      .swap { justify-self: center; margin-bottom: 0; transform: rotate(90deg); }
-      .swap:hover { transform: rotate(270deg); }
-      .search-card__dates { flex-direction: column; }
-      .search-card__dates .na-field { max-width: none; }
-      .mc-leg { grid-template-columns: 1fr; }
-      .mc-leg__badge { margin-top: 0; justify-self: start; }
-      .mc-leg__fields { grid-template-columns: 1fr; }
-      .mc-leg__remove { justify-self: end; margin-bottom: 0; }
-      .search-card__footer { flex-direction: column; align-items: stretch; }
-      .search-card__promo { flex: 1 1 auto; }
-      .search-card__footer na-button { display: contents; }
+      .hero {
+        padding: var(--na-space-10) 0 var(--na-space-12);
+      }
+      .hero__sub {
+        margin-bottom: var(--na-space-8);
+      }
+      .search-card {
+        padding: var(--na-space-5);
+        gap: var(--na-space-5);
+      }
+      .search-card__top {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .search-card__trip {
+        min-width: 0;
+      }
+      .search-card__trip na-segmented {
+        display: block;
+        overflow-x: auto;
+      }
+      .search-card__cabin {
+        flex: 1 1 auto;
+        min-width: 0;
+        margin-left: 0;
+      }
+      .search-card__route {
+        grid-template-columns: 1fr;
+      }
+      .swap {
+        justify-self: center;
+        margin-bottom: 0;
+        transform: rotate(90deg);
+      }
+      .swap:hover {
+        transform: rotate(270deg);
+      }
+      .search-card__dates {
+        flex-direction: column;
+      }
+      .search-card__dates .na-field {
+        max-width: none;
+      }
+      .mc-leg {
+        grid-template-columns: 1fr;
+      }
+      .mc-leg__badge {
+        margin-top: 0;
+        justify-self: start;
+      }
+      .mc-leg__fields {
+        grid-template-columns: 1fr;
+      }
+      .mc-leg__remove {
+        justify-self: end;
+        margin-bottom: 0;
+      }
+      .search-card__footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .search-card__promo {
+        flex: 1 1 auto;
+      }
+      .search-card__footer na-button {
+        display: contents;
+      }
     }
   `,
 })
@@ -445,7 +702,9 @@ export class SearchPage {
           const origin = this.origin();
           if (!origin) return of([] as Airport[]);
           this.toLoading.set(true);
-          return this.flights.searchDestinations(origin, q).pipe(catchError(() => this.onAirportsError()));
+          return this.flights
+            .searchDestinations(origin, q)
+            .pipe(catchError(() => this.onAirportsError()));
         }),
         takeUntilDestroyed(),
       )
@@ -573,7 +832,9 @@ export class SearchPage {
   }
 
   protected setLegAirport(index: number, key: 'origin' | 'destination', value: string): void {
-    this.legs.update((list) => list.map((leg, i) => (i === index ? { ...leg, [key]: value } : leg)));
+    this.legs.update((list) =>
+      list.map((leg, i) => (i === index ? { ...leg, [key]: value } : leg)),
+    );
   }
 
   protected setLegDate(index: number, value: string): void {
@@ -584,7 +845,10 @@ export class SearchPage {
     this.legs.update((list) =>
       list.length >= 3
         ? list
-        : [...list, { origin: '', destination: '', date: toDateInput(new Date(Date.now() + 7 * 86400000)) }],
+        : [
+            ...list,
+            { origin: '', destination: '', date: toDateInput(new Date(Date.now() + 7 * 86400000)) },
+          ],
     );
   }
 
@@ -596,8 +860,10 @@ export class SearchPage {
     const legs = this.legs();
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i];
-      if (!leg.origin || !leg.destination) return `Please choose an origin and a destination for leg ${i + 1}.`;
-      if (leg.origin === leg.destination) return `Origin and destination must be different on leg ${i + 1}.`;
+      if (!leg.origin || !leg.destination)
+        return `Please choose an origin and a destination for leg ${i + 1}.`;
+      if (leg.origin === leg.destination)
+        return `Origin and destination must be different on leg ${i + 1}.`;
       if (!leg.date) return `Please pick a date for leg ${i + 1}.`;
       if (i > 0 && leg.date < legs[i - 1].date) return 'Legs must be in chronological order.';
     }
@@ -622,7 +888,11 @@ export class SearchPage {
         passengers: this.counts(),
         cabinClass: this.cabinClass(),
         promoCode: this.promoCode().trim() || null,
-        legs: legs.map((l) => ({ originCode: l.origin, destinationCode: l.destination, departureDate: l.date })),
+        legs: legs.map((l) => ({
+          originCode: l.origin,
+          destinationCode: l.destination,
+          departureDate: l.date,
+        })),
       };
       this.remember(criteria);
       this.goToResults(criteria);
@@ -698,13 +968,23 @@ export class SearchPage {
   }
 
   protected prettyDate(iso: string): string {
-    return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(iso));
+    return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(
+      new Date(iso),
+    );
   }
 
   private remember(c: SearchCriteria): void {
-    const list = [c, ...this.recentSearches().filter(
-      (r) => !(r.originCode === c.originCode && r.destinationCode === c.destinationCode && r.departureDate === c.departureDate),
-    )].slice(0, 3);
+    const list = [
+      c,
+      ...this.recentSearches().filter(
+        (r) =>
+          !(
+            r.originCode === c.originCode &&
+            r.destinationCode === c.destinationCode &&
+            r.departureDate === c.departureDate
+          ),
+      ),
+    ].slice(0, 3);
     this.recentSearches.set(list);
     try {
       localStorage.setItem(RECENT_KEY, JSON.stringify(list));

@@ -3,7 +3,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": []
+    "types": [],
+    "paths": {
+      "@airline/shared": ["../../packages/shared/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.spec.ts"]

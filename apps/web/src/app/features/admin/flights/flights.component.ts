@@ -1,9 +1,9 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { flightDurationLabel } from '../../../core/services/flight.service';
-import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
+import { AdminCatalogService } from '../services/admin-catalog.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import { FLIGHT_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { FLIGHT_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
 import type { Aircraft, Flight, FlightStatus, Route } from '../../../core/models/domain.model';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';

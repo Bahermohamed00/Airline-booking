@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
+import { HasPermissionDirective } from '../../../shared/directives/has-permission.directive';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { BOOKINGS, FLIGHTS } from '../../../core/mock/mock-data';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';

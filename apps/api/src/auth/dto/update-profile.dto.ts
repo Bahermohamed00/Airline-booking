@@ -1,5 +1,5 @@
 import { IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
-import { TrimString } from './transforms.js';
+import { TrimString } from '../../common/dto-transforms.js';
 
 /** Self-service profile update. Email change is intentionally not supported (deferred). */
 export class UpdateProfileDto {

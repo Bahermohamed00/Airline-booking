@@ -1,8 +1,8 @@
 import { Controller, Get, Inject, Query, UseGuards } from '@nestjs/common';
 import { AuditService, type AuditQueryResult } from './audit.service.js';
 import { AuditQueryDto } from './dto/audit-query.dto.js';
-import { JwtAuthGuard } from '../auth/auth.guard.js';
-import { PermissionsGuard } from '../auth/permissions.guard.js';
+import { JwtAuthGuard } from '../auth/guards/auth.guard.js';
+import { PermissionsGuard } from '../auth/guards/permissions.guard.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
 
 /**

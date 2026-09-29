@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { OffersService, type OfferFilter } from '../../../core/services/offers.service';
+import { OffersService, type OfferFilter } from './services/offers.service';
 import { FlightService } from '../../../core/services/flight.service';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
 import { formatMoney } from '../../../core/services/pricing.service';
@@ -14,6 +14,7 @@ import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { NaRouteLine } from '../../../shared/ui/route-line.component';
+import { cabinLabel } from '../../../shared/utils/cabin-label';
 
 const CABIN_OPTIONS: SegmentOption[] = [
   { value: '', label: 'All cabins' },
@@ -28,15 +29,6 @@ const SCOPE_OPTIONS: SegmentOption[] = [
   { value: 'domestic', label: 'Domestic' },
   { value: 'international', label: 'International' },
 ];
-
-function cabinLabel(c: CabinClass): string {
-  switch (c) {
-    case 'ECONOMY': return 'Economy';
-    case 'PREMIUM_ECONOMY': return 'Premium Economy';
-    case 'BUSINESS': return 'Business';
-    case 'FIRST': return 'First';
-  }
-}
 
 function timeLabel(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));

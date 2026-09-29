@@ -2,11 +2,19 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { hashToken } from '../src/auth/token-crypto.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase, refreshCookieOf, rawTokenOf, decodePayload, captureLogs } from './test-utils.js';
+import { hashToken } from '../src/auth/utils/token-crypto.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+  refreshCookieOf,
+  rawTokenOf,
+  decodePayload,
+  captureLogs,
+} from './test-utils.js';
 
 const TEST_USER = {
   email: 'refresh@test.com',
@@ -75,7 +83,10 @@ describe('Auth refresh flow (e2e)', () => {
     const secondCookie = refreshCookieOf(refreshRes);
     expect(secondCookie).not.toBe(firstCookie);
 
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', firstCookie).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', firstCookie)
+      .expect(401);
   });
 
   it('reuse of a rotated token revokes the whole session, including a fresh access token', async () => {
@@ -90,13 +101,22 @@ describe('Auth refresh flow (e2e)', () => {
     const freshAccessToken = refreshRes.body.accessToken as string;
 
     // Attacker replays the stolen old token
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', firstCookie).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', firstCookie)
+      .expect(401);
 
     // The legitimate follow-up token is now dead too (session revoked)
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', secondCookie).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', secondCookie)
+      .expect(401);
 
     // And even the freshly minted access token is rejected because its session is revoked
-    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${freshAccessToken}`).expect(401);
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${freshAccessToken}`)
+      .expect(401);
   });
 
   it('refresh without a cookie or with a garbage cookie returns 401', async () => {
@@ -119,7 +139,9 @@ describe('Auth refresh flow (e2e)', () => {
     const cookieB = refreshCookieOf(refreshRes);
     expect(refreshRes.body.refreshToken).toBeUndefined(); // refresh tokens only ever travel via cookie
 
-    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: TEST_USER.email } });
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { email: TEST_USER.email },
+    });
     const sessions = await prismaTestClient.session.findMany({
       where: { userId: user.id },
       include: { refreshTokens: true },
@@ -137,7 +159,14 @@ describe('Auth refresh flow (e2e)', () => {
 
     // The new access token keeps the same minimal claims and the same sid
     const payload = decodePayload(refreshRes.body.accessToken);
-    expect(Object.keys(payload).sort()).toEqual(['email', 'exp', 'iat', 'sid', 'sub', 'type']);
+    expect(Object.keys(payload).sort()).toEqual([
+      'email',
+      'exp',
+      'iat',
+      'sid',
+      'sub',
+      'type',
+    ]);
     expect(payload['type']).toBe('access');
     expect(payload['sid']).toBe(session.id);
     expect((payload['exp'] as number) - (payload['iat'] as number)).toBe(900); // .env JWT_EXPIRES_IN=15m
@@ -153,10 +182,15 @@ describe('Auth refresh flow (e2e)', () => {
     const cookieB = refreshCookieOf(refreshRes);
 
     // Replay the stolen original token
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookieA).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', cookieA)
+      .expect(401);
 
     const session = await prismaTestClient.session.findFirstOrThrow();
-    const audit = await prismaTestClient.auditLog.findFirstOrThrow({ where: { action: 'TOKEN_REUSE_DETECTED' } });
+    const audit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'TOKEN_REUSE_DETECTED' },
+    });
     expect(audit.targetType).toBe('Session');
     expect(audit.targetId).toBe(session.id);
     const auditBlob = JSON.stringify(audit.metadata) + (audit.targetId ?? '');
@@ -177,18 +211,29 @@ describe('Auth refresh flow (e2e)', () => {
     const cookieA2 = refreshCookieOf(rotated);
 
     // Replay the stolen original token of session A
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookieA).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', cookieA)
+      .expect(401);
 
     // Session A's whole family is dead
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookieA2).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', cookieA2)
+      .expect(401);
     const sessionA = await prismaTestClient.session.findFirstOrThrow({
-      where: { refreshTokens: { some: { tokenHash: hashToken(rawTokenOf(cookieA)) } } },
+      where: {
+        refreshTokens: { some: { tokenHash: hashToken(rawTokenOf(cookieA)) } },
+      },
     });
     expect(sessionA.revokedAt).not.toBeNull();
     expect(sessionA.revokeReason).toBe('reuse_detected');
 
     // Session B (same user) is unaffected
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookieB).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', cookieB)
+      .expect(200);
     await request(app.getHttpServer())
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${second.body.accessToken}`)
@@ -196,7 +241,12 @@ describe('Auth refresh flow (e2e)', () => {
   });
 
   it("one user's token reuse does not affect another user's session", async () => {
-    await registerVerifiedUser(app, { email: 'other@test.com', password: 'Password123!', firstName: 'Other', lastName: 'User' });
+    await registerVerifiedUser(app, {
+      email: 'other@test.com',
+      password: 'Password123!',
+      firstName: 'Other',
+      lastName: 'User',
+    });
 
     const mine = await login();
     const others = await request(app.getHttpServer())
@@ -206,11 +256,20 @@ describe('Auth refresh flow (e2e)', () => {
     const otherCookie = refreshCookieOf(others);
 
     const myCookie = refreshCookieOf(mine);
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', myCookie).expect(200);
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', myCookie).expect(401); // replay
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', myCookie)
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', myCookie)
+      .expect(401); // replay
 
     // The other user's session still refreshes and authenticates
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', otherCookie).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', otherCookie)
+      .expect(200);
     await request(app.getHttpServer())
       .get('/api/auth/me')
       .set('Authorization', `Bearer ${others.body.accessToken}`)
@@ -225,7 +284,10 @@ describe('Auth refresh flow (e2e)', () => {
       data: { expiresAt: new Date(Date.now() - 1000) },
     });
 
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookie).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', cookie)
+      .expect(401);
 
     const session = await prismaTestClient.session.findFirstOrThrow();
     expect(session.revokedAt).toBeNull();
@@ -241,17 +303,32 @@ describe('Auth refresh flow (e2e)', () => {
       .set('Cookie', refreshCookieOf(first))
       .expect(200);
 
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', refreshCookieOf(first)).expect(401);
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', refreshCookieOf(second)).expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', refreshCookieOf(first))
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', refreshCookieOf(second))
+      .expect(401);
   });
 
-  it.each(['DEACTIVATED', 'SUSPENDED'] as const)('rejects refresh when the user is %s', async (status) => {
-    const cookie = refreshCookieOf(await login());
+  it.each(['DEACTIVATED', 'SUSPENDED'] as const)(
+    'rejects refresh when the user is %s',
+    async (status) => {
+      const cookie = refreshCookieOf(await login());
 
-    await prismaTestClient.user.update({ where: { email: TEST_USER.email }, data: { status } });
+      await prismaTestClient.user.update({
+        where: { email: TEST_USER.email },
+        data: { status },
+      });
 
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookie).expect(401);
-  });
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', cookie)
+        .expect(401);
+    },
+  );
 
   it('never logs raw tokens during refresh or reuse handling', async () => {
     const loginRes = await login();
@@ -267,10 +344,18 @@ describe('Auth refresh flow (e2e)', () => {
         .expect(200);
       cookieB = refreshCookieOf(refreshRes);
       accessB = refreshRes.body.accessToken as string;
-      await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookieA).expect(401);
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', cookieA)
+        .expect(401);
     });
 
-    for (const secret of [rawTokenOf(cookieA), rawTokenOf(cookieB), accessA, accessB]) {
+    for (const secret of [
+      rawTokenOf(cookieA),
+      rawTokenOf(cookieB),
+      accessA,
+      accessB,
+    ]) {
       expect(output).not.toContain(secret);
     }
   });

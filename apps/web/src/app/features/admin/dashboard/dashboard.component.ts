@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { AdminService } from '../../../core/services/domain-services';
 import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
-import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
+import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
+import { HasPermissionDirective } from '../../../shared/directives/has-permission.directive';
 import type { Booking, Flight } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaBadge } from '../../../shared/ui/badge.component';

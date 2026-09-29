@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { PAYMENT_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { PAYMENT_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { BOOKINGS } from '../../../core/mock/mock-data';
 import type { PaymentStatus } from '../../../core/models/domain.model';

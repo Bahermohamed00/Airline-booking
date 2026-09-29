@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { configureSecurity } from '../src/app.setup.js';
@@ -49,7 +49,9 @@ describe('Security headers & CORS (e2e)', () => {
       .set('Origin', 'http://localhost:4200')
       .set('Access-Control-Request-Method', 'POST');
 
-    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:4200');
+    expect(res.headers['access-control-allow-origin']).toBe(
+      'http://localhost:4200',
+    );
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
 

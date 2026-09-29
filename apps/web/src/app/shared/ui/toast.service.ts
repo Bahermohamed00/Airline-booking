@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import type { StatusTone } from '../../core/status-maps';
+import type { StatusTone } from '../utils/status-maps';
 
 export interface Toast {
   id: number;

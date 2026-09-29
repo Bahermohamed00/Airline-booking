@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { CheckInService } from '../../../core/services/domain-services';
 import { BookingService } from '../../../core/services/booking.service';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
 import type { Booking } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';

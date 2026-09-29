@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
-import { CustomerShell } from './features/customer/customer-shell.component';
-import { AdminShell } from './features/admin/admin-shell.component';
+import { CustomerShell } from './layouts/customer-shell.component';
+import { AdminShell } from './layouts/admin-shell.component';
 import { authGuard, guestGuard, staffGuard, permissionGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
@@ -59,21 +59,21 @@ export const routes: Routes = [
       { path: 'booking/extras', loadComponent: () => import('./features/customer/booking/extras.component').then((m) => m.ExtrasPage) },
       { path: 'booking/review', loadComponent: () => import('./features/customer/booking/review.component').then((m) => m.ReviewPage) },
       { path: 'booking/confirmation', loadComponent: () => import('./features/customer/booking/confirmation.component').then((m) => m.ConfirmationPage) },
-      { path: 'login', loadComponent: () => import('./features/customer/login.component').then((m) => m.LoginPage), canActivate: [guestGuard] },
-      { path: 'register', loadComponent: () => import('./features/customer/register.component').then((m) => m.RegisterPage), canActivate: [guestGuard] },
-      { path: 'forgot-password', loadComponent: () => import('./features/customer/forgot-password.component').then((m) => m.ForgotPasswordPage), canActivate: [guestGuard] },
-      { path: 'reset-password', loadComponent: () => import('./features/customer/reset-password.component').then((m) => m.ResetPasswordPage), canActivate: [guestGuard] },
-      { path: 'verify-email', loadComponent: () => import('./features/customer/verify-email.component').then((m) => m.VerifyEmailPage) },
-      { path: 'bookings', loadComponent: () => import('./features/customer/my-bookings.component').then((m) => m.MyBookingsPage), canActivate: [authGuard] },
-      { path: 'bookings/:id', loadComponent: () => import('./features/customer/manage-booking.component').then((m) => m.ManageBookingPage), canActivate: [authGuard] },
-      { path: 'manage', loadComponent: () => import('./features/customer/manage-lookup.component').then((m) => m.ManageLookupPage) },
-      { path: 'checkin', loadComponent: () => import('./features/customer/checkin.component').then((m) => m.CheckInPage) },
-      { path: 'checkin/:bookingId/pass', loadComponent: () => import('./features/customer/boarding-pass.component').then((m) => m.BoardingPassPage) },
-      { path: 'status', loadComponent: () => import('./features/customer/flight-status.component').then((m) => m.FlightStatusPage) },
-      { path: 'baggage', loadComponent: () => import('./features/customer/baggage.component').then((m) => m.BaggagePage) },
-      { path: 'loyalty', loadComponent: () => import('./features/customer/loyalty.component').then((m) => m.LoyaltyPage), canActivate: [authGuard] },
-      { path: 'profile', loadComponent: () => import('./features/customer/profile.component').then((m) => m.ProfilePage), canActivate: [authGuard] },
-      { path: 'profile/:section', loadComponent: () => import('./features/customer/profile.component').then((m) => m.ProfilePage), canActivate: [authGuard] },
+      { path: 'login', loadComponent: () => import('./features/customer/auth/login.component').then((m) => m.LoginPage), canActivate: [guestGuard] },
+      { path: 'register', loadComponent: () => import('./features/customer/auth/register.component').then((m) => m.RegisterPage), canActivate: [guestGuard] },
+      { path: 'forgot-password', loadComponent: () => import('./features/customer/auth/forgot-password.component').then((m) => m.ForgotPasswordPage), canActivate: [guestGuard] },
+      { path: 'reset-password', loadComponent: () => import('./features/customer/auth/reset-password.component').then((m) => m.ResetPasswordPage), canActivate: [guestGuard] },
+      { path: 'verify-email', loadComponent: () => import('./features/customer/auth/verify-email.component').then((m) => m.VerifyEmailPage) },
+      { path: 'bookings', loadComponent: () => import('./features/customer/account/my-bookings.component').then((m) => m.MyBookingsPage), canActivate: [authGuard] },
+      { path: 'bookings/:id', loadComponent: () => import('./features/customer/trips/manage-booking.component').then((m) => m.ManageBookingPage), canActivate: [authGuard] },
+      { path: 'manage', loadComponent: () => import('./features/customer/trips/manage-lookup.component').then((m) => m.ManageLookupPage) },
+      { path: 'checkin', loadComponent: () => import('./features/customer/trips/checkin.component').then((m) => m.CheckInPage) },
+      { path: 'checkin/:bookingId/pass', loadComponent: () => import('./features/customer/trips/boarding-pass.component').then((m) => m.BoardingPassPage) },
+      { path: 'status', loadComponent: () => import('./features/customer/trips/flight-status.component').then((m) => m.FlightStatusPage) },
+      { path: 'baggage', loadComponent: () => import('./features/customer/trips/baggage.component').then((m) => m.BaggagePage) },
+      { path: 'loyalty', loadComponent: () => import('./features/customer/account/loyalty.component').then((m) => m.LoyaltyPage), canActivate: [authGuard] },
+      { path: 'profile', loadComponent: () => import('./features/customer/account/profile.component').then((m) => m.ProfilePage), canActivate: [authGuard] },
+      { path: 'profile/:section', loadComponent: () => import('./features/customer/account/profile.component').then((m) => m.ProfilePage), canActivate: [authGuard] },
       { path: 'help', loadComponent: () => import('./features/customer/help.component').then((m) => m.HelpPage) },
       { path: '', pathMatch: 'full', redirectTo: 'search' },
     ],

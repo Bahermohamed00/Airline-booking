@@ -2,11 +2,15 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { randomUUID } from 'crypto';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+} from './test-utils.js';
 
 const PASSWORD = 'Password123!';
 
@@ -41,7 +45,11 @@ describe('Staff account creation (e2e)', () => {
       create: { resource: 'users', action: 'read' },
     });
 
-    const role = async (name: string, isSuperAdmin: boolean, permissionIds: string[] = []) => {
+    const role = async (
+      name: string,
+      isSuperAdmin: boolean,
+      permissionIds: string[] = [],
+    ) => {
       const r = await prismaTestClient.role.upsert({
         where: { name },
         update: { isSuperAdmin },
@@ -61,7 +69,11 @@ describe('Staff account creation (e2e)', () => {
     const administrator = await role('Administrator', false, [usersRead.id]);
     const support = await role('Support Staff', false, [usersRead.id]);
 
-    roleIds = { 'Super Admin': superAdmin.id, Administrator: administrator.id, 'Support Staff': support.id };
+    roleIds = {
+      'Super Admin': superAdmin.id,
+      Administrator: administrator.id,
+      'Support Staff': support.id,
+    };
   });
 
   afterAll(async () => {
@@ -70,18 +82,32 @@ describe('Staff account creation (e2e)', () => {
   });
 
   async function loginAs(email: string, roleName?: string): Promise<string> {
-    await registerVerifiedUser(app, { email, password: PASSWORD, firstName: 'Staff', lastName: 'Actor' });
+    await registerVerifiedUser(app, {
+      email,
+      password: PASSWORD,
+      firstName: 'Staff',
+      lastName: 'Actor',
+    });
     if (roleName) {
-      const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email } });
-      await prismaTestClient.userRole.create({ data: { userId: user.id, roleId: roleIds[roleName]! } });
+      const user = await prismaTestClient.user.findUniqueOrThrow({
+        where: { email },
+      });
+      await prismaTestClient.userRole.create({
+        data: { userId: user.id, roleId: roleIds[roleName]! },
+      });
     }
-    const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password: PASSWORD });
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email, password: PASSWORD });
     expect(login.status).toBe(200);
     return login.body.accessToken as string;
   }
 
   function createStaff(token: string, body: Record<string, unknown>) {
-    return request(app.getHttpServer()).post('/api/users').set('Authorization', `Bearer ${token}`).send(body);
+    return request(app.getHttpServer())
+      .post('/api/users')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
   }
 
   const validBody = () => ({
@@ -104,7 +130,9 @@ describe('Staff account creation (e2e)', () => {
     expect(dbUser.id).toBe(res.body.id);
     expect(dbUser.status).toBe('ACTIVE');
     expect(dbUser.emailVerified).toBe(false);
-    expect(dbUser.userRoles.map((ur) => ur.role.name)).toEqual(['Support Staff']);
+    expect(dbUser.userRoles.map((ur) => ur.role.name)).toEqual([
+      'Support Staff',
+    ]);
   });
 
   it('stores an Argon2id hash and never exposes the password or hash anywhere', async () => {
@@ -116,7 +144,9 @@ describe('Staff account creation (e2e)', () => {
     expect(raw).not.toContain('passwordHash');
     expect(raw).not.toContain('StaffPassword123!');
 
-    const dbUser = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'new.staff@matrix.test' } });
+    const dbUser = await prismaTestClient.user.findUniqueOrThrow({
+      where: { email: 'new.staff@matrix.test' },
+    });
     expect(dbUser.passwordHash.startsWith('$argon2id$')).toBe(true);
     expect(dbUser.passwordHash).not.toContain('StaffPassword123!');
   });
@@ -143,21 +173,38 @@ describe('Staff account creation (e2e)', () => {
     await createStaff(token, validBody()).expect(201);
 
     await createStaff(token, validBody()).expect(409);
-    expect(await prismaTestClient.user.count({ where: { email: 'new.staff@matrix.test' } })).toBe(1);
+    expect(
+      await prismaTestClient.user.count({
+        where: { email: 'new.staff@matrix.test' },
+      }),
+    ).toBe(1);
   });
 
   it('unknown role id returns 400 and creates nothing', async () => {
     const token = await loginAs('root-badrole@staff.test', 'Super Admin');
 
-    await createStaff(token, { ...validBody(), roleIds: [randomUUID()] }).expect(400);
-    expect(await prismaTestClient.user.findUnique({ where: { email: 'new.staff@matrix.test' } })).toBeNull();
+    await createStaff(token, {
+      ...validBody(),
+      roleIds: [randomUUID()],
+    }).expect(400);
+    expect(
+      await prismaTestClient.user.findUnique({
+        where: { email: 'new.staff@matrix.test' },
+      }),
+    ).toBeNull();
   });
 
   it('passwords shorter than 12 characters are rejected with 400', async () => {
     const token = await loginAs('root-short@staff.test', 'Super Admin');
 
-    await createStaff(token, { ...validBody(), password: 'Short1!' }).expect(400);
-    expect(await prismaTestClient.user.findUnique({ where: { email: 'new.staff@matrix.test' } })).toBeNull();
+    await createStaff(token, { ...validBody(), password: 'Short1!' }).expect(
+      400,
+    );
+    expect(
+      await prismaTestClient.user.findUnique({
+        where: { email: 'new.staff@matrix.test' },
+      }),
+    ).toBeNull();
   });
 
   it('email is normalized to lowercase and names are trimmed', async () => {
@@ -176,18 +223,42 @@ describe('Staff account creation (e2e)', () => {
   });
 
   it('non-Super-Admins cannot create users through this endpoint', async () => {
-    const adminToken = await loginAs('admin-create@staff.test', 'Administrator');
+    const adminToken = await loginAs(
+      'admin-create@staff.test',
+      'Administrator',
+    );
     await createStaff(adminToken, validBody()).expect(403);
 
-    const supportToken = await loginAs('support-create@staff.test', 'Support Staff');
-    await createStaff(supportToken, { ...validBody(), email: 'by-support@staff.test' }).expect(403);
+    const supportToken = await loginAs(
+      'support-create@staff.test',
+      'Support Staff',
+    );
+    await createStaff(supportToken, {
+      ...validBody(),
+      email: 'by-support@staff.test',
+    }).expect(403);
 
     const customerToken = await loginAs('customer-create@staff.test');
-    await createStaff(customerToken, { ...validBody(), email: 'by-customer@staff.test' }).expect(403);
+    await createStaff(customerToken, {
+      ...validBody(),
+      email: 'by-customer@staff.test',
+    }).expect(403);
 
-    expect(await prismaTestClient.user.findUnique({ where: { email: 'new.staff@matrix.test' } })).toBeNull();
-    expect(await prismaTestClient.user.findUnique({ where: { email: 'by-support@staff.test' } })).toBeNull();
-    expect(await prismaTestClient.user.findUnique({ where: { email: 'by-customer@staff.test' } })).toBeNull();
+    expect(
+      await prismaTestClient.user.findUnique({
+        where: { email: 'new.staff@matrix.test' },
+      }),
+    ).toBeNull();
+    expect(
+      await prismaTestClient.user.findUnique({
+        where: { email: 'by-support@staff.test' },
+      }),
+    ).toBeNull();
+    expect(
+      await prismaTestClient.user.findUnique({
+        where: { email: 'by-customer@staff.test' },
+      }),
+    ).toBeNull();
   });
 
   it('USER_CREATED audit records the assigned role ids but never secrets', async () => {
@@ -210,7 +281,10 @@ describe('Staff account creation (e2e)', () => {
   it('a Super Admin may assign the Super Admin role; the invariant tests still guard removal', async () => {
     const token = await loginAs('root-sa@staff.test', 'Super Admin');
 
-    const res = await createStaff(token, { ...validBody(), roleIds: [roleIds['Super Admin']!] }).expect(201);
+    const res = await createStaff(token, {
+      ...validBody(),
+      roleIds: [roleIds['Super Admin']!],
+    }).expect(201);
 
     const dbUser = await prismaTestClient.user.findUniqueOrThrow({
       where: { id: res.body.id },
@@ -225,7 +299,9 @@ describe('Staff account creation (e2e)', () => {
       .delete(`/api/users/${res.body.id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
-    const creator = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'root-sa@staff.test' } });
+    const creator = await prismaTestClient.user.findUniqueOrThrow({
+      where: { email: 'root-sa@staff.test' },
+    });
     await request(app.getHttpServer())
       .delete(`/api/users/${creator.id}`)
       .set('Authorization', `Bearer ${token}`)

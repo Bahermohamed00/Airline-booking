@@ -1,5 +1,5 @@
 import { IsEmail, IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
-import { NormalizeEmail, TrimString } from './transforms.js';
+import { NormalizeEmail, TrimString } from '../../common/dto-transforms.js';
 
 export class RegisterDto {
   @NormalizeEmail()
