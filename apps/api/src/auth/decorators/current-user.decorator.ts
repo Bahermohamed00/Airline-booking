@@ -4,8 +4,13 @@ import { Request } from 'express';
 export interface AuthUser {
   userId: string;
   email: string;
+  firstName: string;
+  lastName: string;
+  emailVerified: boolean;
+  mfaEnabled: boolean;
   roles: string[];
   permissions: string[];
+  sessionId: string;
 }
 
 export const CurrentUser = createParamDecorator(

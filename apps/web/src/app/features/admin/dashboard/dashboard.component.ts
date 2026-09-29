@@ -90,7 +90,7 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
             <div class="na-card kpi kpi--accent">
               <p class="kpi__label">Revenue</p>
               <p class="kpi__value">{{ formatMoney(k.revenue, k.currency) }}</p>
-              <p class="kpi__hint">+8.1% vs previous period</p>
+              <p class="kpi__hint">{{ revenueDeltaHint() }}</p>
             </div>
           </ng-container>
         </section>
@@ -238,12 +238,12 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
     .kpi { padding: var(--na-space-4); }
     .kpi--accent { border-top: 3px solid var(--na-cta); }
     .kpi__label { font-size: var(--na-text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--na-ink-500); font-weight: var(--na-font-semibold); }
-    .kpi__value { font-size: var(--na-text-2xl); font-weight: var(--na-font-bold); color: var(--na-navy-700); margin-top: var(--na-space-1); }
+    .kpi__value { font-size: var(--na-text-2xl); font-weight: var(--na-font-bold); color: var(--na-ink-900); margin-top: var(--na-space-1); }
     .kpi__hint { font-size: var(--na-text-xs); color: var(--na-ink-500); margin-top: var(--na-space-1); }
     .trends { display: grid; grid-template-columns: 1fr 1fr; gap: var(--na-space-4); }
     .chart-card { padding: var(--na-space-5); }
     .chart-card__sub { font-size: var(--na-text-sm); color: var(--na-ink-500); margin: var(--na-space-1) 0 var(--na-space-4); }
-    .chart { height: 160px; }
+    .chart { height: 160px; border-bottom: 1px solid var(--na-border); }
     .chart svg { width: 100%; height: 100%; display: block; }
     .bar--cta { fill: var(--na-cta); }
     .bar--navy { fill: var(--na-navy-500); }
@@ -262,14 +262,20 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
     .recent ul { list-style: none; margin: var(--na-space-3) 0 0; padding: 0; display: flex; flex-direction: column; }
     .recent li { display: flex; align-items: center; gap: var(--na-space-3); padding: var(--na-space-2) 0; border-bottom: 1px solid var(--na-border); font-size: var(--na-text-sm); }
     .recent li:last-child { border-bottom: none; }
-    .recent__amount { margin-left: auto; font-weight: var(--na-font-semibold); color: var(--na-navy-700); }
+    .recent__amount { margin-left: auto; font-weight: var(--na-font-semibold); color: var(--na-ink-900); }
     .alerts { display: flex; flex-direction: column; gap: var(--na-space-3); }
     @media (max-width: 900px) {
       .trends, .columns { grid-template-columns: 1fr; }
+      // Grid children default to min-content width; let the ops card shrink so
+      // its table uses the wrap's internal horizontal scroll instead of growing the page.
+      .columns > *, .ops { min-width: 0; }
     }
     @media (max-width: 639px) {
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .kpi { min-width: 0; }
       .kpi__value { font-size: var(--na-text-xl); }
+      .ops, .recent, .chart-card { padding: var(--na-space-4); }
+      .ops td, .ops th { padding: var(--na-space-2); }
     }
   `,
 })
@@ -295,6 +301,18 @@ export class DashboardPage {
 
   readonly canViewRevenue = computed(() => this.auth.hasPermission('payments:read'));
 
+  readonly revenueDeltaHint = computed(() => {
+    const values = this.kpis()?.revenueTrend ?? [];
+    const points = this.range() === '7d' ? values.slice(-7) : values;
+    if (points.length < 2) return 'Awaiting trend data';
+    const mid = Math.floor(points.length / 2);
+    const previous = points.slice(0, mid).reduce((sum, v) => sum + v, 0);
+    const current = points.slice(mid).reduce((sum, v) => sum + v, 0);
+    if (previous <= 0) return 'Awaiting trend data';
+    const delta = ((current - previous) / previous) * 100;
+    return `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% vs previous period`;
+  });
+
   readonly revenueBars = computed<ChartBar[]>(() => this.buildBars(this.kpis()?.revenueTrend ?? [], 'Revenue', this.kpis()?.currency ?? 'EUR', true));
   readonly bookingBars = computed<ChartBar[]>(() => this.buildBars(this.kpis()?.trend ?? [], 'Bookings', '', false));
 
@@ -312,7 +330,7 @@ export class DashboardPage {
       { key: 'flights', label: 'Total flights', value: String(k.totalFlights), hint: 'Next 7 days scheduled' },
       { key: 'bookings', label: 'Bookings', value: String(k.totalBookings), hint: `${k.confirmedBookings} confirmed` },
       { key: 'passengers', label: 'Passengers', value: String(k.passengers), hint: 'Across active bookings' },
-      { key: 'occupancy', label: 'Occupancy', value: `${k.occupancyPercent}%`, hint: '+2.3 pts vs last week', accent: true },
+      { key: 'occupancy', label: 'Occupancy', value: `${k.occupancyPercent}%`, hint: 'Average load factor (estimated)', accent: true },
       { key: 'delayed', label: 'Delayed', value: String(k.delayedCount), hint: 'Needs monitoring' },
       { key: 'cancelled', label: 'Cancelled', value: String(k.cancelledCount), hint: 'Rebooking may be required' },
       { key: 'refunds', label: 'Pending refunds', value: String(k.pendingRefunds), hint: 'Awaiting approval' },

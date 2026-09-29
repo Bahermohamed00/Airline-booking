@@ -34,13 +34,13 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
     .btn--lg { padding: 0.8rem 1.6rem; font-size: var(--na-text-lg); }
     .btn--cta { background: var(--na-cta); color: var(--na-cta-contrast); }
     .btn--cta:hover:not(:disabled) { background: var(--na-cta-hover); }
-    .btn--primary { background: var(--na-blue-600); color: #fff; }
+    .btn--primary { background: var(--na-blue-600); color: var(--na-on-accent); }
     .btn--primary:hover:not(:disabled) { background: var(--na-blue-500); }
-    .btn--secondary { background: transparent; color: var(--na-navy-700); border-color: var(--na-border-strong); }
-    .btn--secondary:hover:not(:disabled) { border-color: var(--na-navy-400); background: var(--na-surface-sunken); }
+    .btn--secondary { background: transparent; color: var(--na-ink-900); border-color: var(--na-border-strong); }
+    .btn--secondary:hover:not(:disabled) { border-color: var(--na-navy-300); background: var(--na-surface-sunken); }
     .btn--ghost { background: transparent; color: var(--na-blue-600); }
     .btn--ghost:hover:not(:disabled) { background: var(--na-blue-100); }
-    .btn--danger { background: var(--na-danger); color: #fff; }
+    .btn--danger { background: var(--na-danger-solid); color: #fff; }
     .btn--danger:hover:not(:disabled) { filter: brightness(0.92); }
     .btn:disabled { opacity: 0.55; }
     .btn__spinner {

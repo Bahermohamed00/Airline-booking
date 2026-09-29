@@ -8,17 +8,20 @@ import type { ExtraSelection } from '../../../core/models/booking-flow.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
+import { NaAlert } from '../../../shared/ui/alert.component';
+import { NaQuantityStepper } from '../../../shared/ui/quantity-stepper.component';
 import { BOOKING_STEPS } from './passengers.component';
 
 @Component({
   selector: 'na-extras-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NaStepper, NaButton, NaSkeleton],
+  imports: [NaStepper, NaButton, NaSkeleton, NaAlert, NaQuantityStepper],
   template: `
     <div class="na-container page">
       <na-stepper [steps]="steps" [currentIndex]="3" />
       <h1>Baggage & extras</h1>
+      <p class="page__sub na-text-muted">Add bags and services to your trip — everything here is optional.</p>
 
       <div class="layout">
         <div class="main">
@@ -39,15 +42,14 @@ import { BOOKING_STEPS } from './passengers.component';
             <p class="na-text-muted na-text-small">Additional bags beyond your allowance — {{ money(65) }} per bag.</p>
             <ul class="bag-rows">
               @for (p of passengers(); track $index; let i = $index) {
-                <li class="bag-row">
-                  <span>{{ p.firstName || 'Passenger ' + (i + 1) }}</span>
-                  <div class="stepper" role="group" [attr.aria-label]="'Extra bags for ' + (p.firstName || 'passenger ' + (i + 1))">
-                    <button type="button" class="stepper__btn" [attr.aria-label]="'Remove a bag for ' + (p.firstName || 'passenger ' + (i + 1))"
-                      [disabled]="baggage()[i] <= 0" (click)="bumpBag(i, -1)">−</button>
-                    <span class="stepper__count" aria-live="polite">{{ baggage()[i] }}</span>
-                    <button type="button" class="stepper__btn" [attr.aria-label]="'Add a bag for ' + (p.firstName || 'passenger ' + (i + 1))"
-                      [disabled]="baggage()[i] >= 3" (click)="bumpBag(i, 1)">+</button>
-                  </div>
+                <li>
+                  <na-quantity-stepper
+                    [label]="'Extra bags for ' + (p.firstName || 'Passenger ' + (i + 1))"
+                    [value]="baggage()[i]"
+                    [min]="0"
+                    [max]="3"
+                    (valueChange)="setBags(i, $event)"
+                  />
                 </li>
               }
             </ul>
@@ -55,8 +57,14 @@ import { BOOKING_STEPS } from './passengers.component';
 
           <section aria-labelledby="extras-h">
             <h2 id="extras-h">Add-on services</h2>
-            @if (extras() === null) {
+            @if (extrasError()) {
+              <na-alert tone="danger" icon="⚠" title="We couldn't load add-on services" [retryable]="true" (retry)="loadExtras()">
+                The extras catalogue is unavailable right now. You can retry, or continue without add-ons.
+              </na-alert>
+            } @else if (extras() === null) {
               <na-skeleton [rows]="[1, 2]" height="90px" />
+            } @else if (extras()!.length === 0) {
+              <p class="na-text-muted na-text-small">No add-on services are available for this flight — you can continue to review.</p>
             } @else {
               <div class="extra-cards">
                 @for (e of extras()!; track e.id) {
@@ -66,13 +74,13 @@ import { BOOKING_STEPS } from './passengers.component';
                       <p class="na-text-small na-text-muted">{{ e.description }}</p>
                       <p class="extra__price">{{ money(e.price) }}</p>
                     </div>
-                    <div class="stepper" role="group" [attr.aria-label]="'Quantity of ' + e.name">
-                      <button type="button" class="stepper__btn" [attr.aria-label]="'Remove one ' + e.name"
-                        [disabled]="qtyOf(e.id) <= 0" (click)="bumpExtra(e, -1)">−</button>
-                      <span class="stepper__count" aria-live="polite">{{ qtyOf(e.id) }}</span>
-                      <button type="button" class="stepper__btn" [attr.aria-label]="'Add one ' + e.name"
-                        [disabled]="qtyOf(e.id) >= 5" (click)="bumpExtra(e, 1)">+</button>
-                    </div>
+                    <na-quantity-stepper
+                      [label]="e.name"
+                      [value]="qtyOf(e.id)"
+                      [min]="0"
+                      [max]="5"
+                      (valueChange)="setQty(e, $event)"
+                    />
                   </article>
                 }
               </div>
@@ -105,36 +113,32 @@ import { BOOKING_STEPS } from './passengers.component';
   `,
   styles: `
     .page { padding-top: var(--na-space-6); padding-bottom: var(--na-space-12); }
-    h1 { margin-bottom: var(--na-space-5); }
+    h1 { margin-bottom: var(--na-space-1); }
+    .page__sub { margin-bottom: var(--na-space-5); }
     h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-3); }
     .layout { display: grid; grid-template-columns: 1fr 320px; gap: var(--na-space-5); align-items: start; }
     .main { display: grid; gap: var(--na-space-5); align-content: start; }
-    .panel, .allowance { padding: var(--na-space-5); }
+    .panel, .allowance { padding: var(--na-space-6); }
     .allowance ul { margin: 0; padding-left: var(--na-space-5); display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
-    .bag-rows { list-style: none; margin: var(--na-space-3) 0 0; padding: 0; display: grid; gap: var(--na-space-2); }
-    .bag-row { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-3); min-height: 44px; }
-    .stepper { display: inline-flex; align-items: center; gap: var(--na-space-2); }
-    .stepper__btn {
-      width: 40px; height: 40px; border-radius: var(--na-radius-md);
-      border: 1px solid var(--na-border-strong); background: var(--na-surface-raised);
-      font-size: var(--na-text-lg); font-weight: var(--na-font-semibold);
-    }
-    .stepper__btn:hover:not(:disabled) { border-color: var(--na-navy-400); background: var(--na-surface-sunken); }
-    .stepper__count { min-width: 2ch; text-align: center; font-weight: var(--na-font-semibold); }
+    .bag-rows { list-style: none; margin: var(--na-space-3) 0 0; padding: 0; display: grid; gap: var(--na-space-3); }
     .extra-cards { display: grid; gap: var(--na-space-3); margin-top: var(--na-space-3); }
-    .extra { padding: var(--na-space-4); display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4); }
+    .extra { padding: var(--na-space-6); display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4); }
     .extra__body h3 { font-size: var(--na-text-base); margin-bottom: var(--na-space-1); }
     .extra__price { font-weight: var(--na-font-bold); margin-top: var(--na-space-1); }
-    .side { padding: var(--na-space-5); position: sticky; top: var(--na-space-4); }
+    .side { padding: var(--na-space-6); position: sticky; top: var(--na-space-4); }
+    .side h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-4); }
     .side__table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); margin-bottom: var(--na-space-2); }
     .side__table td { padding: var(--na-space-1) 0; }
     .side__table td:last-child { text-align: right; font-weight: var(--na-font-medium); }
     .side__discount td { color: var(--na-success); }
-    .side__total td { border-top: 1px solid var(--na-border); padding-top: var(--na-space-2); font-size: var(--na-text-base); font-weight: var(--na-font-bold); }
+    .side__total td { border-top: 1px solid var(--na-border); padding-top: var(--na-space-2); font-size: var(--na-text-lg); font-weight: var(--na-font-bold); }
     .side__actions { display: grid; gap: var(--na-space-2); margin-top: var(--na-space-4); }
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
       .side { position: static; order: -1; }
+    }
+    @media (max-width: 639px) {
+      .extra { flex-direction: column; align-items: stretch; }
     }
   `,
 })
@@ -147,6 +151,7 @@ export class ExtrasPage {
   protected readonly steps = BOOKING_STEPS;
   protected readonly passengers = this.draft.passengers;
   protected readonly extras = signal<ExtraService[] | null>(null);
+  protected readonly extrasError = signal(false);
   protected readonly quantities = signal<Record<string, number>>({});
   protected readonly baggage = signal<number[]>([]);
 
@@ -182,11 +187,24 @@ export class ExtrasPage {
       return;
     }
     this.baggage.set([...d.baggagePieces]);
-    this.extrasApi.list().subscribe((list) => {
-      this.extras.set(list);
-      const initial: Record<string, number> = {};
-      for (const sel of d.extras) initial[sel.extra.id] = sel.quantity;
-      this.quantities.set(initial);
+    this.loadExtras();
+  }
+
+  protected loadExtras(): void {
+    const d = this.draft.draft();
+    if (!d) return;
+    this.extrasError.set(false);
+    this.extrasApi.list().subscribe({
+      next: (list) => {
+        this.extras.set(list);
+        const initial: Record<string, number> = {};
+        for (const sel of d.extras) initial[sel.extra.id] = sel.quantity;
+        this.quantities.set(initial);
+      },
+      error: () => {
+        this.extras.set(null);
+        this.extrasError.set(true);
+      },
     });
   }
 
@@ -194,17 +212,17 @@ export class ExtrasPage {
     return this.quantities()[extraId] ?? 0;
   }
 
-  protected bumpExtra(extra: ExtraService, delta: number): void {
+  protected setQty(extra: ExtraService, value: number): void {
     this.quantities.update((q) => ({
       ...q,
-      [extra.id]: Math.min(5, Math.max(0, (q[extra.id] ?? 0) + delta)),
+      [extra.id]: Math.min(5, Math.max(0, value)),
     }));
   }
 
-  protected bumpBag(index: number, delta: number): void {
+  protected setBags(index: number, value: number): void {
     this.baggage.update((bags) => {
       const next = [...bags];
-      next[index] = Math.min(3, Math.max(0, (next[index] ?? 0) + delta));
+      next[index] = Math.min(3, Math.max(0, value));
       return next;
     });
   }

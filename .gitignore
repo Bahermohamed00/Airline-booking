@@ -1,5 +1,6 @@
 # compiled output
 /dist
+apps/*/dist/
 /tmp
 /out-tsc
 # Only exists if Bazel was run
@@ -48,10 +49,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-
-# Docker volumes
-/docker-volumes
-/postgres-data
 
 # Logs
 logs

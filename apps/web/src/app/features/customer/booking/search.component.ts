@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
+import { NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
 import { AIRPORTS } from '../../../core/mock/mock-data';
 import type { CabinClass } from '../../../core/models/domain.model';
@@ -7,6 +8,8 @@ import { NaSegmented, SegmentOption } from '../../../shared/ui/segmented.compone
 import { NaAutocomplete, AutocompleteOption } from '../../../shared/ui/autocomplete.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
+import { NaQuantityStepper } from '../../../shared/ui/quantity-stepper.component';
+import { NaRouteLine } from '../../../shared/ui/route-line.component';
 
 const RECENT_KEY = 'na-recent-searches';
 
@@ -25,34 +28,69 @@ function toDateInput(d: Date): string {
   selector: 'na-search-page',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NaSegmented, NaAutocomplete, NaButton, NaAlert],
+  imports: [NgOptimizedImage, NaSegmented, NaAutocomplete, NaButton, NaAlert, NaQuantityStepper, NaRouteLine],
   template: `
     <section class="hero">
-      <div class="na-container">
-        <h1 class="hero__title">Where to next?</h1>
-        <p class="hero__sub">Book flights across the NovaAir network — demo data, real flows.</p>
+      <div class="hero__bg" aria-hidden="true">
+        <img ngSrc="assets/img/hero-wing.jpg" fill priority sizes="100vw" alt="" class="hero__img" />
+        <div class="hero__scrim"></div>
+      </div>
+
+      <div class="na-container hero__inner">
+        <p class="hero__eyebrow">Book flights</p>
+        <h1 class="hero__title">Find your next journey</h1>
+        <p class="hero__sub">
+          Search the NovaAir network — honest fares, considered cabins, real booking flows on demo data.
+        </p>
 
         <div class="na-card search-card" role="search" aria-label="Flight search">
-          <na-segmented
-            ariaLabel="Trip type"
-            [options]="tripOptions"
-            [value]="tripType()"
-            (valueChange)="setTripType($event)"
-          />
+          <div class="search-card__top">
+            <div class="na-field search-card__trip">
+              <span class="na-label">Trip type</span>
+              <na-segmented
+                ariaLabel="Trip type"
+                [options]="tripOptions"
+                [value]="tripType()"
+                (valueChange)="setTripType($event)"
+              />
+            </div>
+            <div class="na-field search-card__cabin">
+              <label class="na-label" for="cabin">Cabin class</label>
+              <select
+                id="cabin"
+                class="na-select"
+                [value]="cabinClass()"
+                (change)="cabinClass.set($any($event.target).value)"
+              >
+                <option value="ECONOMY">Economy</option>
+                <option value="PREMIUM_ECONOMY">Premium Economy</option>
+                <option value="BUSINESS">Business</option>
+                <option value="FIRST">First</option>
+              </select>
+            </div>
+          </div>
 
-          <div class="search-grid">
+          <div class="search-card__route">
             <na-autocomplete
+              #fromField
               label="From"
               placeholder="City or airport"
               [options]="airportOptions"
               (selected)="origin.set($event.value)"
             />
+            <button type="button" class="swap" (click)="swapAirports()" aria-label="Swap origin and destination">
+              <span aria-hidden="true">⇄</span>
+            </button>
             <na-autocomplete
+              #toField
               label="To"
               placeholder="City or airport"
               [options]="airportOptions"
               (selected)="destination.set($event.value)"
             />
+          </div>
+
+          <div class="search-card__dates">
             <div class="na-field">
               <label class="na-label" for="depart">Departure</label>
               <input
@@ -77,59 +115,20 @@ function toDateInput(d: Date): string {
                 />
               </div>
             }
-            <div class="na-field">
-              <label class="na-label" for="cabin">Cabin class</label>
-              <select
-                id="cabin"
-                class="na-select"
-                [value]="cabinClass()"
-                (change)="cabinClass.set($any($event.target).value)"
-              >
-                <option value="ECONOMY">Economy</option>
-                <option value="PREMIUM_ECONOMY">Premium Economy</option>
-                <option value="BUSINESS">Business</option>
-                <option value="FIRST">First</option>
-              </select>
-            </div>
           </div>
 
           <fieldset class="pax">
             <legend class="na-label">Passengers</legend>
             <div class="pax__row">
               @for (g of passengerGroups; track g.key) {
-                <div class="pax__group">
-                  <span class="pax__label" [id]="'pax-label-' + g.key">{{ g.label }}</span>
-                  <div class="pax__stepper" role="group" [attr.aria-labelledby]="'pax-label-' + g.key">
-                    <button
-                      type="button"
-                      class="pax__btn"
-                      [attr.aria-label]="'Decrease ' + g.label"
-                      [disabled]="counts()[g.key] <= g.min"
-                      (click)="bump(g.key, -1)"
-                    >−</button>
-                    <span class="pax__count" aria-live="polite">{{ counts()[g.key] }}</span>
-                    <button
-                      type="button"
-                      class="pax__btn"
-                      [attr.aria-label]="'Increase ' + g.label"
-                      [disabled]="counts()[g.key] >= g.max"
-                      (click)="bump(g.key, 1)"
-                    >+</button>
-                  </div>
-                </div>
-              }
-              <div class="na-field pax__promo">
-                <label class="na-label" for="promo">Promo code <span class="na-hint">(optional)</span></label>
-                <input
-                  id="promo"
-                  class="na-input"
-                  type="text"
-                  autocomplete="off"
-                  placeholder="e.g. NOVA10"
-                  [value]="promoCode()"
-                  (input)="promoCode.set($any($event.target).value)"
+                <na-quantity-stepper
+                  [label]="g.label"
+                  [value]="counts()[g.key]"
+                  [min]="g.min"
+                  [max]="g.max"
+                  (valueChange)="setCount(g.key, $event)"
                 />
-              </div>
+              }
             </div>
           </fieldset>
 
@@ -137,14 +136,22 @@ function toDateInput(d: Date): string {
             <na-alert tone="danger" title="Check your search" icon="⚠">{{ formError() }}</na-alert>
           }
 
-          <div class="search-card__actions">
+          <div class="search-card__footer">
+            <div class="na-field search-card__promo">
+              <label class="na-label" for="promo">Promo code <span class="na-hint">(optional)</span></label>
+              <input
+                id="promo"
+                class="na-input"
+                type="text"
+                autocomplete="off"
+                placeholder="e.g. NOVA10"
+                [value]="promoCode()"
+                (input)="promoCode.set($any($event.target).value)"
+              />
+            </div>
             <na-button variant="cta" size="lg" (clicked)="submit()">Search flights</na-button>
           </div>
         </div>
-
-        <na-alert tone="info" icon="ℹ" title="Travel advisory" [dismissible]="advisoryDismissed()" (dismissed)="advisoryDismissed.set(true)">
-          Demo notice: some routes operate with reduced frequency this week. Arrive at the airport at least 2 hours before departure.
-        </na-alert>
       </div>
     </section>
 
@@ -170,74 +177,136 @@ function toDateInput(d: Date): string {
         <div class="popular">
           @for (p of popularRoutes; track p.origin + p.destination) {
             <button type="button" class="na-card popular__card" (click)="searchPopular(p)">
-              <span class="popular__codes">{{ p.origin }} → {{ p.destination }}</span>
+              <span class="popular__route" aria-hidden="true">
+                <na-route-line [origin]="p.origin" [destination]="p.destination" />
+              </span>
               <span class="popular__label">{{ p.label }}</span>
               <span class="popular__cta" aria-hidden="true">Search →</span>
             </button>
           }
         </div>
       </section>
+
+      <na-alert tone="info" icon="ℹ" title="Travel advisory" [dismissible]="advisoryDismissed()" (dismissed)="advisoryDismissed.set(true)">
+        Demo notice: some routes operate with reduced frequency this week. Arrive at the airport at least 2 hours before departure.
+      </na-alert>
     </div>
   `,
   styles: `
+    /* Hero is a photographic dark zone in BOTH themes: its text uses the fixed
+       brand cream (--na-cream and its alpha family), never the flipping ink tokens. */
     .hero {
-      background: linear-gradient(160deg, var(--na-navy-800), var(--na-navy-600));
-      color: var(--na-cta-contrast);
-      padding: var(--na-space-12) 0 var(--na-space-16);
+      position: relative; overflow: hidden;
+      background: var(--na-brown-900);
+      padding: var(--na-space-16) 0;
     }
-    .hero__title { color: var(--na-cta-contrast); margin-bottom: var(--na-space-2); }
-    .hero__sub { color: var(--na-ink-100); margin-bottom: var(--na-space-8); }
-    .search-card { padding: var(--na-space-6); color: var(--na-ink-900); }
-    .search-grid {
-      display: grid; gap: var(--na-space-4); margin-top: var(--na-space-5);
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      align-items: end;
+    .hero__bg { position: absolute; inset: 0; pointer-events: none; }
+    .hero__img { object-fit: cover; object-position: center 30%; }
+    .hero__scrim {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.5) 45%, rgba(0, 0, 0, 0.7) 100%);
     }
-    .search-grid .na-field { margin-bottom: 0; }
-    .pax { border: none; padding: 0; margin: var(--na-space-5) 0 0; }
-    .pax__row { display: flex; flex-wrap: wrap; gap: var(--na-space-6); align-items: flex-end; margin-top: var(--na-space-2); }
-    .pax__group { display: flex; flex-direction: column; gap: var(--na-space-1); }
-    .pax__label { font-size: var(--na-text-sm); color: var(--na-ink-700); }
-    .pax__stepper { display: inline-flex; align-items: center; gap: var(--na-space-2); }
-    .pax__btn {
-      width: 40px; height: 40px; border-radius: var(--na-radius-md);
-      border: 1px solid var(--na-border-strong); background: var(--na-surface-raised);
-      font-size: var(--na-text-lg); font-weight: var(--na-font-semibold);
+    .hero__inner { position: relative; z-index: 1; }
+    .hero__eyebrow {
+      color: rgba(225, 220, 201, 0.66);
+      font-size: var(--na-text-xs); font-weight: var(--na-font-semibold);
+      text-transform: uppercase; letter-spacing: 0.24em;
+      margin-bottom: var(--na-space-4);
     }
-    .pax__btn:hover:not(:disabled) { border-color: var(--na-navy-400); background: var(--na-surface-sunken); }
-    .pax__count { min-width: 2ch; text-align: center; font-weight: var(--na-font-semibold); }
-    .pax__promo { min-width: 200px; margin-bottom: 0; }
-    .search-card__actions { margin-top: var(--na-space-6); display: flex; justify-content: flex-end; }
-    .hero na-alert { margin-top: var(--na-space-4); display: block; }
-    .below { padding-top: var(--na-space-8); padding-bottom: var(--na-space-12); display: grid; gap: var(--na-space-8); }
-    .below h2 { margin-bottom: var(--na-space-4); }
+    .hero__title {
+      color: var(--na-cream);
+      font-size: clamp(2.5rem, 5vw + 1rem, 4rem);
+      letter-spacing: -0.02em;
+      margin-bottom: var(--na-space-4);
+    }
+    .hero__sub {
+      color: rgba(225, 220, 201, 0.8);
+      font-size: var(--na-text-lg); max-width: 56ch;
+      margin-bottom: var(--na-space-10);
+    }
+    .search-card {
+      padding: var(--na-space-8);
+      box-shadow: var(--na-shadow-lg);
+      display: grid; gap: var(--na-space-6);
+      color: var(--na-ink-900);
+    }
+    .search-card .na-field { margin-bottom: 0; }
+    .search-card .na-label {
+      font-size: var(--na-text-xs); font-weight: var(--na-font-semibold);
+      text-transform: uppercase; letter-spacing: 0.08em; color: var(--na-ink-500);
+    }
+    .search-card .na-label .na-hint {
+      text-transform: none; letter-spacing: 0; font-weight: var(--na-font-regular);
+    }
+    .search-card .na-input, .search-card .na-select { min-height: 48px; }
+    .search-card__top {
+      display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--na-space-4) var(--na-space-6);
+      background: var(--na-surface-sunken); border: 1px solid var(--na-border);
+      border-radius: var(--na-radius-lg); padding: var(--na-space-4);
+    }
+    .search-card__cabin { flex: 0 1 220px; min-width: 180px; margin-left: auto; }
+    .search-card__route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: var(--na-space-3); }
+    .swap {
+      width: 40px; height: 40px; margin-bottom: var(--na-space-1);
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-full);
+      background: var(--na-surface-sunken); color: var(--na-ink-900);
+      transition: transform var(--na-motion-base) var(--na-ease), border-color var(--na-motion-fast) var(--na-ease);
+    }
+    .swap span { font-size: var(--na-text-lg); line-height: 1; }
+    .swap:hover { transform: rotate(180deg); border-color: var(--na-navy-300); }
+    .search-card__dates { display: flex; flex-wrap: wrap; gap: var(--na-space-4); }
+    .search-card__dates .na-field { flex: 1 1 180px; max-width: 260px; }
+    .pax { border: none; padding: 0; margin: 0; }
+    .pax legend { padding: 0; margin-bottom: var(--na-space-3); }
+    .pax__row { display: flex; flex-wrap: wrap; gap: var(--na-space-4) var(--na-space-6); }
+    .search-card__footer { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--na-space-4); }
+    .search-card__promo { flex: 0 1 260px; }
+    .search-card__footer na-button { flex-shrink: 0; }
+    .below { padding-top: var(--na-space-10); padding-bottom: var(--na-space-12); display: grid; gap: var(--na-space-10); }
+    .below h2 { margin-bottom: var(--na-space-5); }
     .recent { list-style: none; display: flex; flex-wrap: wrap; gap: var(--na-space-3); padding: 0; margin: 0; }
     .recent__chip {
       border: 1px solid var(--na-border-strong); background: var(--na-surface-raised);
-      border-radius: var(--na-radius-full); padding: 0.5rem 1rem; min-height: 44px;
+      border-radius: var(--na-radius-full); padding: var(--na-space-2) var(--na-space-4); min-height: 44px;
       font-weight: var(--na-font-medium); color: var(--na-ink-700);
+      transition: border-color var(--na-motion-fast) var(--na-ease), background var(--na-motion-fast) var(--na-ease);
     }
-    .recent__chip:hover { border-color: var(--na-navy-400); background: var(--na-surface-sunken); }
+    .recent__chip:hover { border-color: var(--na-navy-300); background: var(--na-surface-sunken); }
     .popular { display: grid; gap: var(--na-space-4); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
     .popular__card {
-      display: flex; flex-direction: column; gap: var(--na-space-1); text-align: left;
-      padding: var(--na-space-5); cursor: pointer; font: inherit;
-      transition: box-shadow var(--na-motion-fast) var(--na-ease);
+      display: flex; flex-direction: column; gap: var(--na-space-2); text-align: left;
+      padding: var(--na-space-5); cursor: pointer; font: inherit; color: var(--na-ink-900);
+      transition: transform var(--na-motion-fast) var(--na-ease), box-shadow var(--na-motion-fast) var(--na-ease);
     }
-    .popular__card:hover { box-shadow: var(--na-shadow-md); }
-    .popular__codes { font-weight: var(--na-font-bold); font-size: var(--na-text-lg); color: var(--na-navy-700); }
+    .popular__card:hover { transform: translateY(-2px); box-shadow: var(--na-shadow-md); }
+    .popular__route { display: block; }
     .popular__label { color: var(--na-ink-500); font-size: var(--na-text-sm); }
-    .popular__cta { color: var(--na-blue-600); font-size: var(--na-text-sm); font-weight: var(--na-font-semibold); margin-top: var(--na-space-2); }
+    .popular__cta { color: var(--na-blue-600); font-size: var(--na-text-sm); font-weight: var(--na-font-semibold); margin-top: var(--na-space-3); }
     @media (max-width: 639px) {
-      .hero { padding: var(--na-space-8) 0 var(--na-space-12); }
-      .search-card { padding: var(--na-space-4); }
-      .search-card__actions { justify-content: stretch; }
-      .search-card__actions na-button { width: 100%; }
+      .hero { padding: var(--na-space-10) 0 var(--na-space-12); }
+      .hero__sub { margin-bottom: var(--na-space-8); }
+      .search-card { padding: var(--na-space-5); gap: var(--na-space-5); }
+      .search-card__top { flex-direction: column; align-items: stretch; }
+      .search-card__trip { min-width: 0; }
+      .search-card__trip na-segmented { display: block; overflow-x: auto; }
+      .search-card__cabin { flex: 1 1 auto; min-width: 0; margin-left: 0; }
+      .search-card__route { grid-template-columns: 1fr; }
+      .swap { justify-self: center; margin-bottom: 0; transform: rotate(90deg); }
+      .swap:hover { transform: rotate(270deg); }
+      .search-card__dates { flex-direction: column; }
+      .search-card__dates .na-field { max-width: none; }
+      .search-card__footer { flex-direction: column; align-items: stretch; }
+      .search-card__promo { flex: 1 1 auto; }
+      .search-card__footer na-button { display: contents; }
     }
   `,
 })
 export class SearchPage {
   private readonly router = inject(Router);
+
+  private readonly fromField = viewChild('fromField', { read: NaAutocomplete });
+  private readonly toField = viewChild('toField', { read: NaAutocomplete });
 
   protected readonly tripOptions: SegmentOption[] = [
     { value: 'ONE_WAY', label: 'One way' },
@@ -285,14 +354,27 @@ export class SearchPage {
   protected readonly advisoryDismissed = signal(false);
   protected readonly recentSearches = signal<SearchCriteria[]>(this.loadRecent());
 
-  protected bump(key: 'adults' | 'children' | 'infants', delta: number): void {
+  protected setCount(key: 'adults' | 'children' | 'infants', value: number): void {
     const group = this.passengerGroups.find((g) => g.key === key)!;
     this.counts.update((c) => {
-      const next = Math.min(group.max, Math.max(group.min, c[key] + delta));
+      const next = Math.min(group.max, Math.max(group.min, value));
       const updated = { ...c, [key]: next };
       if (updated.infants > updated.adults) updated.infants = updated.adults;
       return updated;
     });
+  }
+
+  protected swapAirports(): void {
+    const from = this.fromField();
+    const to = this.toField();
+    if (from && to) {
+      const fromText = from.text();
+      from.text.set(to.text());
+      to.text.set(fromText);
+    }
+    const origin = this.origin();
+    this.origin.set(this.destination());
+    this.destination.set(origin);
   }
 
   protected submit(): void {

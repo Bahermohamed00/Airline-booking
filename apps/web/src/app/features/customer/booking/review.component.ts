@@ -22,6 +22,7 @@ import { BOOKING_STEPS } from './passengers.component';
     <div class="na-container page">
       <na-stepper [steps]="steps" [currentIndex]="4" />
       <h1>Review & pay</h1>
+      <p class="page__sub na-text-muted">Check your trip details, then confirm and pay securely.</p>
 
       @if (draft(); as d) {
         @if (holdWarning()) {
@@ -127,8 +128,8 @@ import { BOOKING_STEPS } from './passengers.component';
               <input id="consent" type="checkbox" [checked]="consent()" (change)="consent.set($any($event.target).checked)"
                 [attr.aria-invalid]="consentError()" aria-describedby="consent-hint" />
               <label for="consent" id="consent-hint">
-                I accept the <a href="#" (click)="$event.preventDefault()">Conditions of carriage</a> and
-                <a href="#" (click)="$event.preventDefault()">Privacy policy</a>.
+                I accept the conditions of carriage and privacy policy — see
+                <a routerLink="/help">Help & conditions</a>.
               </label>
             </div>
             @if (consentError()) {
@@ -161,11 +162,12 @@ import { BOOKING_STEPS } from './passengers.component';
   `,
   styles: `
     .page { padding-top: var(--na-space-6); padding-bottom: var(--na-space-12); }
-    h1 { margin-bottom: var(--na-space-5); }
+    h1 { margin-bottom: var(--na-space-1); }
+    .page__sub { margin-bottom: var(--na-space-5); }
     na-alert { display: block; margin-bottom: var(--na-space-4); }
     .layout { display: grid; grid-template-columns: 1fr 360px; gap: var(--na-space-5); align-items: start; }
     .main { display: grid; gap: var(--na-space-4); align-content: start; }
-    .panel { padding: var(--na-space-5); }
+    .panel { padding: var(--na-space-6); }
     .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--na-space-3); }
     .panel__head h2 { font-size: var(--na-text-xl); }
     .panel__head a { font-weight: var(--na-font-semibold); min-height: 44px; display: inline-flex; align-items: center; }
@@ -173,15 +175,15 @@ import { BOOKING_STEPS } from './passengers.component';
     .rows li { display: flex; justify-content: space-between; gap: var(--na-space-3); }
     .rules summary { cursor: pointer; font-weight: var(--na-font-semibold); min-height: 44px; display: flex; align-items: center; }
     .rules ul { margin: var(--na-space-3) 0 0; padding-left: var(--na-space-5); display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
-    .side { padding: var(--na-space-5); position: sticky; top: var(--na-space-4); }
+    .side { padding: var(--na-space-6); position: sticky; top: var(--na-space-4); }
     .side h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-4); }
-    .side__table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); }
+    .side__table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); margin-bottom: var(--na-space-2); }
     .side__table td { padding: var(--na-space-1) 0; }
     .side__table td:last-child { text-align: right; font-weight: var(--na-font-medium); }
     .side__discount td { color: var(--na-success); }
     .side__total td { border-top: 1px solid var(--na-border); padding-top: var(--na-space-2); font-size: var(--na-text-lg); font-weight: var(--na-font-bold); }
     .consent { display: flex; gap: var(--na-space-2); align-items: flex-start; margin: var(--na-space-5) 0 var(--na-space-2); }
-    .consent input { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; }
+    .consent input { width: 22px; height: 22px; flex-shrink: 0; margin-top: var(--na-space-1); }
     .consent label { font-size: var(--na-text-sm); }
     .pay { display: grid; gap: var(--na-space-3); margin-top: var(--na-space-4); border-top: 1px solid var(--na-border); padding-top: var(--na-space-4); }
     @media (max-width: 900px) {

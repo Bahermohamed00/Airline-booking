@@ -266,10 +266,11 @@ interface BookingRow {
     .filters .na-field { margin-bottom: 0; }
     .filters__search { flex: 1 1 320px; }
     .filters__status { flex: 0 0 220px; }
-    .backdrop { position: fixed; inset: 0; background: rgba(8, 17, 32, 0.5); z-index: 90; }
+    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 95;
-      width: min(560px, 100vw); background: var(--na-surface-raised);
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
+      width: min(480px, 100vw); background: var(--na-surface-raised);
+      border-left: 1px solid var(--na-border);
       box-shadow: var(--na-shadow-lg); display: flex; flex-direction: column;
       padding: var(--na-space-6); overflow-y: auto;
     }
@@ -307,17 +308,24 @@ export class AdminBookingsPage {
   readonly money = formatMoney;
 
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Bookings' },
   ];
 
-  readonly columns: TableColumn[] = [
+  readonly columns: TableColumn<BookingRow>[] = [
     { key: 'reference', label: 'Reference' },
     { key: 'contact', label: 'Contact', priority: 'low' },
     { key: 'flight', label: 'Flight' },
     { key: 'amount', label: 'Amount' },
     { key: 'bookedAt', label: 'Booked', priority: 'low' },
-    { key: 'status', label: 'Status' },
+    {
+      key: 'status',
+      label: 'Status',
+      badge: (r) => ({
+        text: r.status,
+        tone: Object.values(BOOKING_STATUS_MAP).find((v) => v.label === r.status)?.tone ?? 'neutral',
+      }),
+    },
   ];
 
   readonly tabs: TabItem[] = [

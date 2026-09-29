@@ -1,19 +1,18 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AUDIT_LOGS } from '../../../core/mock/mock-data';
-import type { AuditLog } from '../../../core/models/domain.model';
+import { AUDIT_EVENTS, AuditService, type AuditLogItem } from '../../../core/services/audit.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
+import { NaButton } from '../../../shared/ui/button.component';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+const ACTOR_TYPES = ['User', 'Staff', 'Guest', 'System'];
 
 @Component({
   selector: 'na-admin-audit',
-  standalone: true,
-  imports: [FormsModule, NaBreadcrumbs, NaAlert, NaSkeleton, NaEmptyState],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, NaBreadcrumbs, NaAlert, NaSkeleton, NaEmptyState, NaButton],
   template: `
     <section class="page">
       <na-breadcrumbs [items]="crumbs" />
@@ -27,34 +26,56 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
         exception workflows such as payment overrides (BR-14).
       </na-alert>
 
-      <div class="filters na-card">
+      <form class="filters na-card" (ngSubmit)="applyFilters()">
         <div class="na-field filters__field">
-          <label class="na-label" for="audit-actor">Actor</label>
-          <input
-            id="audit-actor"
-            class="na-input"
-            type="search"
-            placeholder="Filter by actor name"
-            [ngModel]="actorFilter()"
-            (ngModelChange)="actorFilter.set($event)"
-          />
+          <label class="na-label" for="f-event">Event</label>
+          <select id="f-event" class="na-input" [ngModel]="eventFilter()" (ngModelChange)="eventFilter.set($event)" name="event">
+            <option value="">All events</option>
+            @for (e of events; track e) {
+              <option [value]="e">{{ e }}</option>
+            }
+          </select>
         </div>
         <div class="na-field filters__field">
-          <label class="na-label" for="audit-action">Action</label>
-          <input
-            id="audit-action"
-            class="na-input"
-            type="search"
-            placeholder="e.g. REFUND_PROCESSED"
-            [ngModel]="actionFilter()"
-            (ngModelChange)="actionFilter.set($event)"
-          />
+          <label class="na-label" for="f-actor-type">Actor type</label>
+          <select id="f-actor-type" class="na-input" [ngModel]="actorTypeFilter()" (ngModelChange)="actorTypeFilter.set($event)" name="actorType">
+            <option value="">All types</option>
+            @for (t of actorTypes; track t) {
+              <option [value]="t">{{ t }}</option>
+            }
+          </select>
         </div>
-      </div>
+        <div class="na-field filters__field">
+          <label class="na-label" for="f-actor">Actor ID</label>
+          <input id="f-actor" class="na-input" type="search" placeholder="User UUID" [ngModel]="actorIdFilter()" (ngModelChange)="actorIdFilter.set($event)" name="actorId" />
+        </div>
+        <div class="na-field filters__field">
+          <label class="na-label" for="f-target">Target</label>
+          <input id="f-target" class="na-input" type="search" placeholder="Target identifier" [ngModel]="targetIdFilter()" (ngModelChange)="targetIdFilter.set($event)" name="targetId" />
+        </div>
+        <div class="na-field filters__field filters__field--date">
+          <label class="na-label" for="f-from">From</label>
+          <input id="f-from" class="na-input" type="date" [ngModel]="fromFilter()" (ngModelChange)="fromFilter.set($event)" name="from" />
+        </div>
+        <div class="na-field filters__field filters__field--date">
+          <label class="na-label" for="f-to">To</label>
+          <input id="f-to" class="na-input" type="date" [ngModel]="toFilter()" (ngModelChange)="toFilter.set($event)" name="to" />
+        </div>
+        <div class="na-field filters__field">
+          <label class="na-label" for="f-search">Search</label>
+          <input id="f-search" class="na-input" type="search" placeholder="Event, target, type, or IP" [ngModel]="searchFilter()" (ngModelChange)="searchFilter.set($event)" name="search" />
+        </div>
+        <div class="filters__actions">
+          <na-button variant="primary" type="submit" [loading]="loading()">Apply</na-button>
+          <na-button variant="secondary" type="button" (clicked)="resetFilters()">Reset</na-button>
+        </div>
+      </form>
 
-      @if (loading()) {
+      @if (error()) {
+        <na-alert tone="danger" title="Could not load audit logs" retryable (retry)="load()">Please try again.</na-alert>
+      } @else if (loading()) {
         <na-skeleton [rows]="[1, 2, 3, 4]" height="2.5rem" />
-      } @else if (filtered().length === 0) {
+      } @else if (logs().length === 0) {
         <na-empty-state icon="≡" title="No audit records" message="No entries match the current filters." />
       } @else {
         <div class="table-wrap">
@@ -62,15 +83,16 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
             <thead>
               <tr>
                 <th>Time</th>
+                <th>Event</th>
+                <th>Actor type</th>
                 <th>Actor</th>
-                <th>Action</th>
-                <th>Target type</th>
                 <th>Target</th>
+                <th>IP</th>
                 <th><span class="na-visually-hidden">Details</span></th>
               </tr>
             </thead>
             <tbody>
-              @for (log of filtered(); track log.id) {
+              @for (log of logs(); track log.id) {
                 <tr
                   tabindex="0"
                   class="row"
@@ -79,19 +101,24 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
                   [attr.aria-expanded]="expanded() === log.id"
                 >
                   <td data-label="Time">{{ fmtDate(log.createdAt) }}</td>
-                  <td data-label="Actor">{{ log.actorName }}</td>
-                  <td data-label="Action" class="na-text-mono">{{ log.action }}</td>
-                  <td data-label="Target type">{{ log.targetType }}</td>
-                  <td data-label="Target" class="na-text-mono" [title]="log.targetId ?? ''">{{ truncate(log.targetId) }}</td>
+                  <td data-label="Event" class="na-text-mono">{{ log.event }}</td>
+                  <td data-label="Actor type">{{ log.actorType }}</td>
+                  <td data-label="Actor" class="na-text-mono" [title]="log.actorId ?? ''">{{ truncate(log.actorId) }}</td>
+                  <td data-label="Target" class="na-text-mono" [title]="log.targetType + ' ' + (log.targetId ?? '')">{{ log.targetType }}·{{ truncate(log.targetId) }}</td>
+                  <td data-label="IP" class="na-text-mono">{{ log.ipAddress ?? '—' }}</td>
                   <td data-label="Details" class="row__chevron" aria-hidden="true">{{ expanded() === log.id ? '▾' : '▸' }}</td>
                 </tr>
                 @if (expanded() === log.id) {
                   <tr class="detail-row">
-                    <td colspan="6">
+                    <td colspan="7">
                       <div class="detail">
-                        <p class="na-text-small"><strong>Actor type:</strong> {{ log.actorType }} · <strong>Record ID:</strong> <span class="na-text-mono">{{ log.id }}</span></p>
-                        <h3 class="detail__title">Metadata</h3>
-                        <pre class="detail__json">{{ metadataJson(log) }}</pre>
+                        <p class="na-text-small"><strong>Record ID:</strong> <span class="na-text-mono">{{ log.id }}</span></p>
+                        <h3 class="detail__title">Metadata (sanitized)</h3>
+                        @if (hasMetadata(log)) {
+                          <pre class="detail__json">{{ metadataJson(log) }}</pre>
+                        } @else {
+                          <p class="na-text-muted na-text-small">No additional metadata recorded for this event.</p>
+                        }
                       </div>
                     </td>
                   </tr>
@@ -100,6 +127,12 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
             </tbody>
           </table>
         </div>
+
+        <nav class="pagination" aria-label="Audit pages">
+          <na-button variant="secondary" size="sm" [disabled]="page() <= 1" (clicked)="prev()">← Previous</na-button>
+          <span class="pagination__info">Page {{ page() }} of {{ totalPages() }} · {{ total() }} records</span>
+          <na-button variant="secondary" size="sm" [disabled]="page() >= totalPages()" (clicked)="next()">Next →</na-button>
+        </nav>
       }
     </section>
   `,
@@ -110,7 +143,8 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
     .page__sub { color: var(--na-ink-500); margin-top: var(--na-space-1); }
     na-alert { display: block; margin-bottom: var(--na-space-4); }
     .filters { display: flex; gap: var(--na-space-4); padding: var(--na-space-4); margin-bottom: var(--na-space-5); flex-wrap: wrap; }
-    .filters__field { margin-bottom: 0; flex: 1 1 240px; }
+    .filters__field { margin-bottom: 0; flex: 1 1 180px; }
+    .filters__actions { display: flex; gap: var(--na-space-2); align-items: flex-end; }
     .table-wrap { overflow-x: auto; border: 1px solid var(--na-border); border-radius: var(--na-radius-lg); background: var(--na-surface-raised); }
     table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); }
     th { text-align: left; padding: var(--na-space-3) var(--na-space-4); font-size: var(--na-text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--na-ink-500); border-bottom: 1px solid var(--na-border); background: var(--na-surface-sunken); white-space: nowrap; }
@@ -127,38 +161,99 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
       border-radius: var(--na-radius-md); font-family: var(--na-font-mono); font-size: var(--na-text-xs);
       overflow-x: auto; white-space: pre-wrap; word-break: break-all;
     }
+    .pagination { display: flex; align-items: center; gap: var(--na-space-4); justify-content: center; margin-top: var(--na-space-5); }
+    .pagination__info { color: var(--na-ink-500); font-size: var(--na-text-sm); }
     @media (max-width: 639px) {
       .filters__field { flex: 1 1 100%; }
     }
   `,
 })
-export class AdminAuditPage {
+export class AdminAuditPage implements OnInit {
+  private readonly audit = inject(AuditService);
+
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Audit Log' },
   ];
 
+  readonly events = AUDIT_EVENTS;
+  readonly actorTypes = ACTOR_TYPES;
+  readonly limit = 20;
+
+  readonly logs = signal<AuditLogItem[]>([]);
   readonly loading = signal(true);
-  readonly logs = signal<AuditLog[]>([]);
-  readonly actorFilter = signal('');
-  readonly actionFilter = signal('');
+  readonly error = signal(false);
+  readonly page = signal(1);
+  readonly total = signal(0);
+  readonly totalPages = signal(1);
   readonly expanded = signal<string | null>(null);
 
-  readonly filtered = computed(() => {
-    const actor = this.actorFilter().trim().toLowerCase();
-    const action = this.actionFilter().trim().toLowerCase();
-    return this.logs().filter(
-      (log) =>
-        (!actor || log.actorName.toLowerCase().includes(actor)) &&
-        (!action || log.action.toLowerCase().includes(action)),
-    );
-  });
+  readonly eventFilter = signal('');
+  readonly actorTypeFilter = signal('');
+  readonly actorIdFilter = signal('');
+  readonly targetIdFilter = signal('');
+  readonly fromFilter = signal('');
+  readonly toFilter = signal('');
+  readonly searchFilter = signal('');
 
-  constructor() {
-    setTimeout(() => {
-      this.logs.set([...AUDIT_LOGS].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-      this.loading.set(false);
-    }, 300);
+  ngOnInit(): void {
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.error.set(false);
+    this.audit
+      .listLogs({
+        page: this.page(),
+        limit: this.limit,
+        event: this.eventFilter() || undefined,
+        actorType: this.actorTypeFilter() || undefined,
+        actorId: this.actorIdFilter() || undefined,
+        targetId: this.targetIdFilter() || undefined,
+        from: this.fromFilter() || undefined,
+        to: this.toFilter() || undefined,
+        search: this.searchFilter() || undefined,
+      })
+      .subscribe({
+        next: (res) => {
+          this.logs.set(res.items);
+          this.total.set(res.total);
+          this.totalPages.set(res.totalPages);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.loading.set(false);
+          this.error.set(true);
+        },
+      });
+  }
+
+  applyFilters(): void {
+    this.page.set(1);
+    this.load();
+  }
+
+  resetFilters(): void {
+    for (const s of [this.eventFilter, this.actorTypeFilter, this.actorIdFilter, this.targetIdFilter, this.fromFilter, this.toFilter, this.searchFilter]) {
+      s.set('');
+    }
+    this.page.set(1);
+    this.load();
+  }
+
+  prev(): void {
+    if (this.page() > 1) {
+      this.page.update((p) => p - 1);
+      this.load();
+    }
+  }
+
+  next(): void {
+    if (this.page() < this.totalPages()) {
+      this.page.update((p) => p + 1);
+      this.load();
+    }
   }
 
   fmtDate(iso: string): string {
@@ -170,8 +265,12 @@ export class AdminAuditPage {
     return id.length > 12 ? `${id.slice(0, 8)}…` : id;
   }
 
-  metadataJson(log: AuditLog): string {
-    return JSON.stringify(log.metadata ?? {}, null, 2);
+  hasMetadata(log: AuditLogItem): boolean {
+    return Object.keys(log.metadata).length > 0;
+  }
+
+  metadataJson(log: AuditLogItem): string {
+    return JSON.stringify(log.metadata, null, 2);
   }
 
   toggle(id: string): void {

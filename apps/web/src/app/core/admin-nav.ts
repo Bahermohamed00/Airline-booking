@@ -24,17 +24,8 @@ export const ADMIN_NAV: AdminNavItem[] = [
   { route: '/admin/checkin', label: 'Check-in', icon: '✓', permission: 'checkin:manage' },
   { route: '/admin/loyalty', label: 'Loyalty', icon: '★', permission: 'loyalty:manage' },
   { route: '/admin/notifications', label: 'Notifications', icon: '✉', permission: 'notifications:manage' },
+  { route: '/admin/offers', label: 'Offers', icon: '◈', permission: 'offers:manage' },
   { route: '/admin/reports', label: 'Reports & Analytics', icon: '◨', permission: 'reports:read' },
   { route: '/admin/audit', label: 'Audit Log', icon: '≡', permission: 'audit:read' },
   { route: '/admin/settings', label: 'System Settings', icon: '⚙', permission: 'settings:manage' },
 ];
-
-/** Permissions granted to every staff role for the demo shell; super_admin
- *  bypasses all checks in AuthService.hasPermission. */
-export const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
-  'Super Admin': ['super_admin'],
-  'Flight Manager': ['dashboard:read', 'flights:read', 'flights:manage', 'airports:manage', 'aircraft:manage', 'routes:manage'],
-  'Booking Manager': ['dashboard:read', 'bookings:read', 'bookings:manage', 'users:read'],
-  'Finance Staff': ['dashboard:read', 'payments:read', 'payments:refund', 'reports:read'],
-  'Support Staff': ['dashboard:read', 'users:read', 'bookings:read', 'baggage:manage', 'checkin:manage'],
-};

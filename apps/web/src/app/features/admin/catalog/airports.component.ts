@@ -185,10 +185,11 @@ const TIMEZONES = [
     .page { display: flex; flex-direction: column; gap: var(--na-space-5); }
     .page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); flex-wrap: wrap; }
     .subtitle { color: var(--na-ink-500); margin-top: var(--na-space-1); }
-    .backdrop { position: fixed; inset: 0; background: rgba(8, 17, 32, 0.5); z-index: 100; }
+    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 101;
-      width: min(460px, 100vw); background: var(--na-surface-raised);
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
+      width: min(480px, 100vw); background: var(--na-surface-raised);
+      border-left: 1px solid var(--na-border);
       box-shadow: var(--na-shadow-lg); display: flex; flex-direction: column;
     }
     .drawer__head {
@@ -212,13 +213,17 @@ const TIMEZONES = [
 export class AirportsPage {
   private readonly toast = inject(ToastService);
 
-  readonly columns: TableColumn[] = [
+  readonly columns: TableColumn<AirportRow>[] = [
     { key: 'iataCode', label: 'IATA' },
     { key: 'name', label: 'Name' },
     { key: 'city', label: 'City' },
     { key: 'country', label: 'Country', priority: 'low' },
     { key: 'timezone', label: 'Timezone', priority: 'low' },
-    { key: 'status', label: 'Status' },
+    {
+      key: 'status',
+      label: 'Status',
+      badge: (r) => ({ text: r.status, tone: r.status === 'Active' ? 'success' : 'neutral' }),
+    },
   ];
   readonly timezones = TIMEZONES;
 

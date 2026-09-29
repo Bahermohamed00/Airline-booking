@@ -29,8 +29,11 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
     <section class="page">
       <na-breadcrumbs [items]="crumbs" />
       <header class="page__head">
-        <h1>Notifications</h1>
-        <p class="page__sub">Outbound customer communications across all channels.</p>
+        <div>
+          <h1>Notifications</h1>
+          <p class="page__sub">Outbound customer communications across all channels.</p>
+        </div>
+        <na-button variant="cta" (clicked)="drawerOpen.set(true)">Send notification</na-button>
       </header>
 
       <na-alert tone="info" icon="✉">
@@ -38,10 +41,6 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
         <strong>Pending</strong>, then move to <strong>Sent</strong> and <strong>Delivered</strong> — or
         <strong>Failed</strong> with automatic retries.
       </na-alert>
-
-      <div class="toolbar">
-        <na-button variant="cta" (clicked)="drawerOpen.set(true)">Send notification</na-button>
-      </div>
 
       @if (loading()) {
         <na-skeleton [rows]="[1, 2, 3]" height="2.5rem" />
@@ -142,18 +141,18 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
   styles: `
     :host { display: block; }
     .page { max-width: var(--na-admin-max); }
-    .page__head { margin-bottom: var(--na-space-6); }
+    .page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); flex-wrap: wrap; margin-bottom: var(--na-space-6); }
     .page__sub { color: var(--na-ink-500); margin-top: var(--na-space-1); }
     na-alert { display: block; margin-bottom: var(--na-space-4); }
-    .toolbar { display: flex; justify-content: flex-end; margin-bottom: var(--na-space-4); }
     .table-wrap { overflow-x: auto; border: 1px solid var(--na-border); border-radius: var(--na-radius-lg); background: var(--na-surface-raised); }
     table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); }
     th { text-align: left; padding: var(--na-space-3) var(--na-space-4); font-size: var(--na-text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--na-ink-500); border-bottom: 1px solid var(--na-border); background: var(--na-surface-sunken); white-space: nowrap; }
     td { padding: var(--na-space-3) var(--na-space-4); border-bottom: 1px solid var(--na-border); }
-    .backdrop { position: fixed; inset: 0; background: rgba(8, 17, 32, 0.5); z-index: 90; }
+    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 95;
-      width: min(440px, 100vw); background: var(--na-surface-raised);
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
+      width: min(480px, 100vw); background: var(--na-surface-raised);
+      border-left: 1px solid var(--na-border);
       box-shadow: var(--na-shadow-lg); padding: var(--na-space-6); overflow-y: auto;
     }
     .drawer__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--na-space-5); }
@@ -177,7 +176,7 @@ export class AdminNotificationsPage {
   readonly statusLabel = statusLabel;
 
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Notifications' },
   ];
 

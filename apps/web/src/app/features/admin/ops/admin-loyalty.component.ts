@@ -164,7 +164,7 @@ export class AdminLoyaltyPage {
   private readonly toast = inject(ToastService);
 
   readonly crumbs = [
-    { label: 'Admin', link: '/admin/dashboard' },
+    { label: 'Overview', link: '/admin/dashboard' },
     { label: 'Loyalty' },
   ];
 

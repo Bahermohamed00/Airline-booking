@@ -1,47 +1,20 @@
-// NovaAir design tokens — original aviation-inspired visual system.
-// Color, type, spacing, radius, elevation, motion. No Lufthansa assets.
+// NovaAir design tokens — premium aviation system with dual themes.
+// Dark: #000000 / #1F150C / #412D15 / #E1DCC9.
+// Light: a warm cream/brown theme derived from the same brand palette
+// (not an inversion). Theme is applied via <html data-theme="dark|light">.
 
+// ---- Shared constants (identical in both themes) ----
 :root {
-  // ---- Foundation palette ----
-  --na-navy-900: #081120;
-  --na-navy-800: #0a1428;
-  --na-navy-700: #0f1e38;
-  --na-navy-600: #16294a;
-  --na-navy-500: #20355c;
-  --na-navy-400: #33476e;
-  --na-navy-300: #55688c;
+  --na-cream: #e1dcc9;         // brand cream (fixed)
+  --na-brown-900: #1f150c;     // brand dark brown (fixed)
+  --na-brown-700: #412d15;     // brand secondary brown (fixed)
 
-  --na-ink-900: #101825;
-  --na-ink-700: #2a3648;
-  --na-ink-500: #55637a;
-  --na-ink-300: #8b98ad;
-  --na-ink-100: #d5dce7;
-
-  --na-surface: #f7f6f2;        // warm off-white
-  --na-surface-raised: #ffffff;
-  --na-surface-sunken: #efeee8;
-  --na-border: #dfe3ea;
-  --na-border-strong: #c3cbd8;
-
-  // ---- Brand accents ----
-  --na-blue-600: #1c5d99;       // restrained aviation blue
-  --na-blue-500: #2a72b4;
-  --na-blue-100: #dbeaf6;
-  --na-cta: #e8762c;            // single bright action color (amber-orange)
-  --na-cta-hover: #d0641d;
-  --na-cta-contrast: #fffaf4;
-
-  // ---- Semantic status colors ----
-  --na-success: #1f7a4d;
-  --na-success-bg: #e2f3e9;
-  --na-warning: #a05f04;
-  --na-warning-bg: #fdf0da;
-  --na-danger: #b3261e;
-  --na-danger-bg: #fbe4e2;
-  --na-info: #1c5d99;
-  --na-info-bg: #e1edf7;
+  --na-navy-500: #5a4226;      // muted brown accents work on both themes
+  --na-navy-400: #77613f;
+  --na-navy-300: #a08d6d;
 
   // ---- Typography ----
+  --na-font-display: Georgia, 'Times New Roman', serif;
   --na-font-family: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --na-font-mono: 'Cascadia Code', 'SF Mono', Consolas, monospace;
   --na-text-xs: 0.75rem;
@@ -77,18 +50,10 @@
   --na-radius-xl: 16px;
   --na-radius-full: 999px;
 
-  // ---- Elevation (restrained) ----
-  --na-shadow-sm: 0 1px 2px rgba(10, 20, 40, 0.08);
-  --na-shadow-md: 0 4px 12px rgba(10, 20, 40, 0.10);
-  --na-shadow-lg: 0 12px 32px rgba(10, 20, 40, 0.14);
-
   // ---- Motion ----
   --na-motion-fast: 120ms;
   --na-motion-base: 200ms;
   --na-ease: cubic-bezier(0.2, 0.6, 0.3, 1);
-
-  // ---- Focus ----
-  --na-focus-ring: 0 0 0 3px rgba(28, 93, 153, 0.35);
 
   // ---- Layout ----
   --na-shell-max: 1200px;
@@ -97,8 +62,119 @@
   --na-sidebar-w: 264px;
   --na-sidebar-w-collapsed: 72px;
 
-  // ---- Breakpoints (reference; media queries below) ----
+  // ---- Breakpoints (reference) ----
   // mobile < 640px, tablet 640–1023px, desktop >= 1024px
+}
+
+// ---- Dark theme (default) ----
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --na-navy-900: #000000;        // deepest background
+  --na-navy-800: #1f150c;        // topbar / sidebar / dark cards
+  --na-navy-700: #2a1d10;        // raised dark surface
+  --na-navy-600: #412d15;        // hover / active on dark chrome
+
+  --na-ink-900: #e1dcc9;         // primary text
+  --na-ink-700: rgba(225, 220, 201, 0.78);
+  --na-ink-500: rgba(225, 220, 201, 0.64);
+  --na-ink-300: rgba(225, 220, 201, 0.45);
+  --na-ink-100: rgba(225, 220, 201, 0.75);
+
+  --na-surface: #000000;         // page background
+  --na-surface-raised: #1f150c;  // cards
+  --na-surface-sunken: #130d07;  // recessed panels, inputs
+  --na-border: rgba(225, 220, 201, 0.12);
+  --na-border-strong: rgba(225, 220, 201, 0.22);
+
+  --na-blue-600: #e1dcc9;        // primary action / links
+  --na-blue-500: #ffffff;        // primary hover
+  --na-blue-100: rgba(225, 220, 201, 0.12);
+  --na-on-accent: #1f150c;       // text/icons on primary
+  --na-cta: #e1dcc9;
+  --na-cta-hover: #ffffff;
+  --na-cta-contrast: #1f150c;
+
+  --na-success: #6fcf97;
+  --na-success-bg: rgba(111, 207, 151, 0.14);
+  --na-on-success: #0b1510;
+  --na-warning: #e8b45a;
+  --na-warning-bg: rgba(232, 180, 90, 0.14);
+  --na-danger: #e07a6a;
+  --na-danger-bg: rgba(224, 122, 106, 0.14);
+  --na-danger-solid: #a64438;
+  --na-info: #e1dcc9;
+  --na-info-bg: rgba(225, 220, 201, 0.1);
+
+  --na-overlay: rgba(0, 0, 0, 0.62);
+
+  --na-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --na-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --na-shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.55);
+
+  --na-focus-ring: 0 0 0 3px rgba(225, 220, 201, 0.35);
+}
+
+// ---- Light theme (warm, brand-derived) ----
+[data-theme='light'] {
+  color-scheme: light;
+
+  --na-navy-900: #e9e2d0;        // deepest warm background
+  --na-navy-800: #fffdf7;        // chrome: topbar / sidebar / cards-on-dark
+  --na-navy-700: #f7f2e6;        // raised light surface
+  --na-navy-600: #ece5d3;        // hover / active on light chrome
+
+  --na-ink-900: #1f150c;         // primary text
+  --na-ink-700: rgba(31, 21, 12, 0.78);
+  --na-ink-500: rgba(31, 21, 12, 0.62);
+  --na-ink-300: rgba(31, 21, 12, 0.45);
+  --na-ink-100: rgba(31, 21, 12, 0.72);
+
+  --na-surface: #f5f1e6;         // warm cream page background
+  --na-surface-raised: #fffdf7;  // warm white cards
+  --na-surface-sunken: #ede7d6;  // recessed panels, inputs
+  --na-border: rgba(65, 45, 21, 0.14);
+  --na-border-strong: rgba(65, 45, 21, 0.28);
+
+  --na-blue-600: #412d15;        // primary action / links (deep brown)
+  --na-blue-500: #1f150c;        // primary hover
+  --na-blue-100: rgba(65, 45, 21, 0.08);
+  --na-on-accent: #f3eddc;       // text/icons on primary
+  --na-cta: #412d15;
+  --na-cta-hover: #1f150c;
+  --na-cta-contrast: #f3eddc;
+
+  --na-success: #267a4e;
+  --na-success-bg: rgba(38, 122, 78, 0.12);
+  --na-on-success: #ffffff;
+  --na-warning: #8f6508;
+  --na-warning-bg: rgba(143, 101, 8, 0.14);
+  --na-danger: #b23c30;
+  --na-danger-bg: rgba(178, 60, 48, 0.12);
+  --na-danger-solid: #b23c30;
+  --na-info: #5a4226;
+  --na-info-bg: rgba(90, 66, 38, 0.1);
+
+  --na-overlay: rgba(31, 21, 12, 0.45);
+
+  --na-shadow-sm: 0 1px 2px rgba(31, 21, 12, 0.07);
+  --na-shadow-md: 0 4px 14px rgba(31, 21, 12, 0.1);
+  --na-shadow-lg: 0 14px 36px rgba(31, 21, 12, 0.14);
+
+  --na-focus-ring: 0 0 0 3px rgba(65, 45, 21, 0.35);
+}
+
+// ---- Semantic aliases (preferred for new components) ----
+:root,
+[data-theme='dark'] {
+  --na-bg: var(--na-surface);
+  --na-surface-elevated: var(--na-navy-700);
+  --na-text: var(--na-ink-900);
+  --na-text-muted: var(--na-ink-500);
+  --na-primary: var(--na-blue-600);
+  --na-primary-contrast: var(--na-on-accent);
+  --na-accent: var(--na-navy-400);
 }
 
 @media (prefers-reduced-motion: reduce) {

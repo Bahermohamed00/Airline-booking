@@ -15,10 +15,10 @@ export class UsersController {
   constructor(@Inject(UsersService) private readonly usersService: UsersService) {}
 
   @Post()
-  @Roles('Super Admin', 'Administrator')
+  @Roles('Super Admin')
   @Permissions({ resource: 'users', action: 'create' })
   create(@Body() dto: CreateUserDto, @CurrentUser() user: AuthUser) {
-    return this.usersService.create(dto, user.userId);
+    return this.usersService.create(dto, user);
   }
 
   @Get()
@@ -42,7 +42,7 @@ export class UsersController {
   @Roles('Super Admin', 'Administrator')
   @Permissions({ resource: 'users', action: 'update' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: AuthUser) {
-    return this.usersService.update(id, dto, user.userId);
+    return this.usersService.update(id, dto, user);
   }
 
   @Delete(':id')
@@ -50,6 +50,6 @@ export class UsersController {
   @Roles('Super Admin', 'Administrator')
   @Permissions({ resource: 'users', action: 'delete' })
   async remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
-    await this.usersService.remove(id, user.userId);
+    await this.usersService.remove(id, user);
   }
 }

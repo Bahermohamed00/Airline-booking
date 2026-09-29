@@ -4,28 +4,30 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { BookingService } from '../../core/services/booking.service';
 import { CheckInService } from '../../core/services/domain-services';
 import { AuthService } from '../../core/services/auth.service';
+import { BOOKING_STATUS_MAP, statusLabel } from '../../core/status-maps';
 import type { Booking } from '../../core/models/domain.model';
 import { NaButton } from '../../shared/ui/button.component';
 import { NaAlert } from '../../shared/ui/alert.component';
 import { NaBadge } from '../../shared/ui/badge.component';
-import { NaSkeleton } from '../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../shared/ui/empty-state.component';
+import { NaRouteLine } from '../../shared/ui/route-line.component';
 
 @Component({
   selector: 'app-checkin',
   standalone: true,
-  imports: [ReactiveFormsModule, NaButton, NaAlert, NaBadge, NaSkeleton, NaEmptyState],
+  imports: [ReactiveFormsModule, NaButton, NaAlert, NaBadge, NaEmptyState, NaRouteLine],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="na-container page">
-      <header class="page__head">
-        <h1>Online check-in</h1>
-        <p class="na-text-muted">Check in from 24 hours until 1 hour before departure.</p>
+      <header class="hero">
+        <h1>Check in for your flight</h1>
+        <p class="hero__sub">Save time at the airport — check in online and walk straight to security.</p>
       </header>
 
       <div class="layout">
-        <section class="na-card panel" aria-labelledby="lookup-h">
+        <section class="na-card lookup" aria-labelledby="lookup-h">
           <h2 id="lookup-h">Find a booking</h2>
+          <p class="lookup__sub">Enter your booking reference and contact email to retrieve your trip.</p>
           @if (lookupError()) {
             <na-alert tone="danger" title="Check-in lookup failed" dismissible (dismissed)="lookupError.set(null)">{{ lookupError() }}</na-alert>
           }
@@ -36,34 +38,40 @@ import { NaEmptyState } from '../../shared/ui/empty-state.component';
             </div>
             <div class="na-field">
               <label class="na-label" for="email">Contact email</label>
-              <input id="email" class="na-input" type="email" formControlName="email" autocomplete="email" />
+              <input id="email" class="na-input" type="email" formControlName="email" autocomplete="email" aria-describedby="email-hint" />
+              <p class="na-hint" id="email-hint">The email address you used when booking.</p>
             </div>
-            <na-button variant="primary" type="submit" [loading]="lookupLoading()" [disabled]="form.invalid">Continue</na-button>
+            <na-button variant="cta" size="lg" type="submit" [loading]="lookupLoading()" [disabled]="form.invalid">Find booking</na-button>
           </form>
         </section>
 
         @if (isLoggedIn()) {
-          <section class="na-card panel" aria-labelledby="eligible-h">
-            <h2 id="eligible-h">Your bookings</h2>
+          <section class="na-card mine" aria-labelledby="eligible-h">
+            <h2 id="eligible-h" class="mine__title">Your bookings</h2>
             @if (listError()) {
               <na-alert tone="danger" title="Could not load bookings" retryable (retry)="loadMine()">Please try again.</na-alert>
             } @else if (listLoading()) {
-              <na-skeleton [rows]="[1, 2]" height="3.5rem" />
+              <div class="mine__skel" role="status" aria-label="Loading your bookings">
+                @for (i of [1, 2]; track i) {
+                  <div class="mine__skelrow" aria-hidden="true">
+                    <span class="sk sk--route"></span>
+                    <span class="sk sk--meta"></span>
+                  </div>
+                }
+              </div>
             } @else if (mine().length === 0) {
-              <na-empty-state title="No bookings found" message="Book a flight first, then return here to check in." actionLabel="Search flights" (action)="router.navigate(['/search'])" />
+              <na-empty-state title="Nothing to check in to yet" message="When you have an upcoming flight it will appear here, ready for online check-in." actionLabel="Search flights" (action)="router.navigate(['/search'])" />
             } @else {
-              <ul class="mine">
+              <ul class="mine__list">
                 @for (b of mine(); track b.id) {
                   <li class="mine__row">
-                    <div>
-                      <p><span class="na-text-mono">{{ b.bookingReference }}</span> · {{ b.flight.flightNumber }} {{ b.flight.route.origin.iataCode }}→{{ b.flight.route.destination.iataCode }}</p>
-                      <p class="na-text-muted na-text-small">{{ fmt(b.flight.departureTime) }}</p>
+                    <div class="mine__info">
+                      <na-route-line size="md" [origin]="b.flight.route.origin.iataCode" [destination]="b.flight.route.destination.iataCode" />
+                      <p class="mine__meta na-text-muted na-text-small">
+                        {{ b.flight.flightNumber }} · {{ fmt(b.flight.departureTime) }} · <span class="na-text-mono">{{ b.bookingReference }}</span>
+                      </p>
                     </div>
-                    @if (eligibilityOf(b).eligible) {
-                      <na-button variant="cta" size="sm" (clicked)="select(b)">Check in</na-button>
-                    } @else {
-                      <na-button variant="secondary" size="sm" (clicked)="select(b)">View</na-button>
-                    }
+                    <na-button variant="secondary" size="sm" (clicked)="select(b)">Select</na-button>
                   </li>
                 }
               </ul>
@@ -78,31 +86,59 @@ import { NaEmptyState } from '../../shared/ui/empty-state.component';
             <h2 id="detail-h">Check in — <span class="na-text-mono">{{ b.bookingReference }}</span></h2>
             <na-button variant="ghost" size="sm" (clicked)="selected.set(null)">Close</na-button>
           </div>
-          <p class="na-text-muted">{{ b.flight.flightNumber }} · {{ b.flight.route.origin.iataCode }}→{{ b.flight.route.destination.iataCode }} · {{ fmt(b.flight.departureTime) }}</p>
 
-          @if (eligibilityOf(b).eligible) {
+          <div class="summary">
+            <na-route-line
+              size="lg"
+              [origin]="b.flight.route.origin.iataCode"
+              [destination]="b.flight.route.destination.iataCode"
+              [originCity]="b.flight.route.origin.city"
+              [destinationCity]="b.flight.route.destination.city"
+            />
+            <div class="summary__meta">
+              <p class="na-text-muted na-text-small">{{ b.flight.flightNumber }} · {{ fmt(b.flight.departureTime) }}</p>
+              <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, b.status).tone">
+                {{ statusLabel(BOOKING_STATUS_MAP, b.status).label }}
+              </na-badge>
+            </div>
+          </div>
+
+          @if (allCheckedIn(b)) {
+            <div class="success" role="status">
+              <span class="success__mark" aria-hidden="true">✓</span>
+              <h3 class="success__title">You're checked in</h3>
+              <p class="success__msg">Your boarding pass is ready.</p>
+              <na-button variant="cta" size="lg" (clicked)="goBoardingPass(b)">View boarding pass</na-button>
+            </div>
+          } @else if (eligibilityOf(b).eligible) {
+            <p class="chip" [class.chip--warn]="closingSoon(b)">
+              Check-in closes in <span class="chip__time">{{ countdown(eligibilityOf(b).closesAt!) }}</span>
+            </p>
             <ul class="pax-list">
               @for (bp of b.passengers; track bp.id; let i = $index) {
-                <li class="pax-card na-card">
-                  <div class="pax-card__info">
-                    <p class="pax-card__name">{{ bp.passenger.firstName }} {{ bp.passenger.lastName }}</p>
+                <li class="pax">
+                  <div class="pax__info">
+                    <p class="pax__name">{{ bp.passenger.firstName }} {{ bp.passenger.lastName }}</p>
                     <p class="na-text-muted na-text-small">
                       {{ bp.passengerType }} · Seat {{ seatOf(b, bp.id) ?? 'assigned at gate' }}
                       @if (bp.passenger.passportNumber) { · Doc {{ bp.passenger.passportNumber }} }
                     </p>
                   </div>
                   @if (alreadyDone(b, bp.id)) {
-                    <na-badge tone="success">Checked in</na-badge>
+                    <div class="pax__done">
+                      <na-badge tone="success">Checked in</na-badge>
+                      <na-button variant="secondary" size="sm" (clicked)="goBoardingPass(b)">Boarding pass</na-button>
+                    </div>
                   } @else {
-                    <div class="pax-card__confirm">
+                    <div class="pax__confirm">
                       <input
                         type="checkbox"
-                        class="pax-card__checkbox"
+                        class="pax__checkbox"
                         [id]="'doc-' + bp.id"
                         [checked]="docConfirmed().has(bp.id)"
                         (change)="toggleDoc(bp.id)"
                       />
-                      <label [for]="'doc-' + bp.id" class="na-label">
+                      <label [for]="'doc-' + bp.id" class="pax__label">
                         I confirm the travel document details for this passenger are correct.
                       </label>
                     </div>
@@ -131,25 +167,84 @@ import { NaEmptyState } from '../../shared/ui/empty-state.component';
     </div>
   `,
   styles: `
-    .page { padding: var(--na-space-8) 0 var(--na-space-16); }
-    .page__head { margin-bottom: var(--na-space-6); }
-    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: var(--na-space-4); }
-    .panel { padding: var(--na-space-5); align-self: start; }
-    .panel h2 { font-size: var(--na-text-lg); margin-bottom: var(--na-space-4); }
-    .mine { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-3); }
-    .mine__row { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-3); padding-bottom: var(--na-space-3); border-bottom: 1px solid var(--na-border); }
+    .page { padding: var(--na-space-10) 0 var(--na-space-16); }
+    .hero { margin-bottom: var(--na-space-8); }
+    .hero__sub { margin-top: var(--na-space-3); max-width: 46ch; color: var(--na-ink-500); font-size: var(--na-text-lg); }
+    .layout { display: grid; justify-items: center; gap: var(--na-space-6); }
+    .lookup { width: min(100%, 34rem); padding: var(--na-space-8); }
+    .lookup h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-2); }
+    .lookup__sub { margin-bottom: var(--na-space-5); font-size: var(--na-text-sm); color: var(--na-ink-500); }
+    .lookup na-alert { display: block; margin-bottom: var(--na-space-4); }
+    .lookup form na-button { display: flex; flex-direction: column; }
+    .mine { width: min(100%, 34rem); padding: var(--na-space-6); background: transparent; box-shadow: none; }
+    .mine__title { font-size: var(--na-text-lg); margin-bottom: var(--na-space-2); }
+    .mine__list { list-style: none; margin: var(--na-space-2) 0 0; padding: 0; }
+    .mine__row { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-3) var(--na-space-4); flex-wrap: wrap; padding: var(--na-space-4) 0; border-bottom: 1px solid var(--na-border); }
+    .mine__row:first-child { padding-top: var(--na-space-2); }
     .mine__row:last-child { border-bottom: none; padding-bottom: 0; }
-    .detail { margin-top: var(--na-space-6); padding: var(--na-space-5); }
-    .detail__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--na-space-2); }
-    .detail__head h2 { font-size: var(--na-text-lg); }
-    .pax-list { list-style: none; margin: var(--na-space-4) 0 0; padding: 0; display: grid; gap: var(--na-space-4); }
-    .pax-card { padding: var(--na-space-4); display: grid; gap: var(--na-space-3); }
-    .pax-card__name { font-weight: var(--na-font-semibold); }
-    .pax-card__confirm { display: flex; gap: var(--na-space-3); align-items: flex-start; }
-    .pax-card__checkbox { width: 20px; height: 20px; margin-top: 2px; flex-shrink: 0; }
+    .mine__info { min-width: 0; }
+    .mine__meta { margin-top: var(--na-space-1); }
+    .mine__skelrow { display: grid; gap: var(--na-space-2); padding: var(--na-space-4) 0; border-bottom: 1px solid var(--na-border); }
+    .mine__skelrow:last-child { border-bottom: none; }
+    .sk {
+      display: block; border-radius: var(--na-radius-md);
+      background: linear-gradient(90deg, var(--na-surface-sunken) 25%, var(--na-border) 50%, var(--na-surface-sunken) 75%);
+      background-size: 200% 100%;
+      animation: na-checkin-shimmer 1.4s infinite;
+    }
+    .sk--route { height: 1.5rem; width: min(55%, 14rem); }
+    .sk--meta { height: 0.875rem; width: min(80%, 20rem); }
+    @keyframes na-checkin-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .detail { margin-top: var(--na-space-6); padding: var(--na-space-8); }
+    .detail__head { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4); margin-bottom: var(--na-space-6); }
+    .detail__head h2 { font-size: var(--na-text-xl); }
+    .summary {
+      display: flex; flex-direction: column; align-items: center; gap: var(--na-space-3); text-align: center;
+      padding-bottom: var(--na-space-6); margin-bottom: var(--na-space-5); border-bottom: 1px solid var(--na-border);
+    }
+    .summary__meta { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--na-space-2) var(--na-space-3); }
+    .success {
+      display: flex; flex-direction: column; align-items: center; text-align: center;
+      gap: var(--na-space-3); padding: var(--na-space-4) var(--na-space-4) var(--na-space-6);
+    }
+    .success__mark {
+      width: 4rem; height: 4rem; border-radius: 50%; flex: none;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--na-success-bg); color: var(--na-success); border: 1px solid var(--na-success);
+      font-size: 1.75rem; font-weight: var(--na-font-bold); margin-bottom: var(--na-space-2);
+    }
+    .success__title { font-family: var(--na-font-display); font-size: var(--na-text-2xl); font-weight: var(--na-font-bold); }
+    .success__msg { color: var(--na-ink-500); margin-bottom: var(--na-space-3); }
+    .chip {
+      display: inline-flex; align-items: center; gap: var(--na-space-2);
+      margin: 0 0 var(--na-space-2); padding: var(--na-space-2) var(--na-space-3);
+      background: var(--na-surface-sunken); border: 1px solid var(--na-border); border-radius: var(--na-radius-full);
+      font-size: var(--na-text-sm); color: var(--na-ink-700);
+    }
+    .chip__time { font-family: var(--na-font-mono); font-size: var(--na-text-sm); }
+    .chip--warn { background: var(--na-warning-bg); border-color: transparent; color: var(--na-warning); font-weight: var(--na-font-medium); }
+    .pax-list { list-style: none; margin: var(--na-space-2) 0 0; padding: 0; }
+    .pax { display: flex; align-items: center; justify-content: space-between; gap: var(--na-space-3) var(--na-space-4); flex-wrap: wrap; padding: var(--na-space-4) 0; }
+    .pax + .pax { border-top: 1px solid var(--na-border); }
+    .pax__info { flex: 1 1 220px; min-width: 0; }
+    .pax__name { font-weight: var(--na-font-semibold); }
+    .pax__confirm { display: flex; gap: var(--na-space-3); align-items: flex-start; flex: 1 1 280px; }
+    .pax__checkbox { width: 20px; height: 20px; margin-top: 2px; flex-shrink: 0; accent-color: var(--na-blue-600); }
+    .pax__label { font-size: var(--na-text-sm); color: var(--na-ink-700); }
+    .pax__done { display: flex; align-items: center; gap: var(--na-space-3); }
     .detail na-alert { display: block; margin-top: var(--na-space-4); }
     @media (max-width: 639px) {
-      .layout { grid-template-columns: 1fr; }
+      .page { padding-top: var(--na-space-6); }
+      .hero { margin-bottom: var(--na-space-6); }
+      .lookup, .detail, .mine { padding: var(--na-space-5) var(--na-space-4); }
+      .detail__head h2 { font-size: var(--na-text-lg); }
+      .pax na-button { flex: 1 1 100%; display: flex; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sk { animation: none; }
     }
   `,
 })
@@ -161,6 +256,9 @@ export class CheckInPage implements OnDestroy {
   readonly router = inject(Router);
 
   readonly isLoggedIn = this.auth.isLoggedIn;
+
+  readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
+  readonly statusLabel = statusLabel;
 
   readonly listLoading = signal(false);
   readonly listError = signal(false);
@@ -238,6 +336,11 @@ export class CheckInPage implements OnDestroy {
     return !!opensAt && new Date(opensAt).getTime() > this.now();
   }
 
+  closingSoon(booking: Booking): boolean {
+    const closesAt = this.eligibilityOf(booking).closesAt;
+    return !!closesAt && new Date(closesAt).getTime() - this.now() < 2 * 60 * 60 * 1000;
+  }
+
   countdown(opensAtIso: string): string {
     const ms = Math.max(0, new Date(opensAtIso).getTime() - this.now());
     const totalMin = Math.floor(ms / 60000);
@@ -250,6 +353,10 @@ export class CheckInPage implements OnDestroy {
     return this.checkInService
       .alreadyCheckedIn(booking.id)
       .some((c) => c.bookingPassengerId === bookingPassengerId && c.status === 'COMPLETED');
+  }
+
+  allCheckedIn(booking: Booking): boolean {
+    return booking.passengers.length > 0 && booking.passengers.every((bp) => this.alreadyDone(booking, bp.id));
   }
 
   toggleDoc(bookingPassengerId: string): void {
@@ -274,6 +381,10 @@ export class CheckInPage implements OnDestroy {
         this.lookupError.set(err?.message ?? 'Check-in failed. Please try again.');
       },
     });
+  }
+
+  goBoardingPass(booking: Booking): void {
+    this.router.navigate(['/checkin', booking.id, 'pass']);
   }
 
   seatOf(booking: Booking, bookingPassengerId: string): string | null {

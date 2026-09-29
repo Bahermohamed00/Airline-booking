@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
+import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
 
 @Component({
   selector: 'app-customer-shell',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, NaThemeToggle],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="topbar">
@@ -15,6 +16,7 @@ import { AuthService } from '../../core/services/auth.service';
       </a>
       <nav class="nav" aria-label="Main">
         <a routerLink="/search" routerLinkActive="nav__link--active" class="nav__link">Flight Search</a>
+        <a routerLink="/offers" routerLinkActive="nav__link--active" class="nav__link">Offers</a>
         <a routerLink="/bookings" routerLinkActive="nav__link--active" class="nav__link">Manage Booking</a>
         <a routerLink="/checkin" routerLinkActive="nav__link--active" class="nav__link">Check-in</a>
         <a routerLink="/status" routerLinkActive="nav__link--active" class="nav__link">Flight Status</a>
@@ -22,6 +24,7 @@ import { AuthService } from '../../core/services/auth.service';
         <a routerLink="/loyalty" routerLinkActive="nav__link--active" class="nav__link">Loyalty</a>
       </nav>
       <div class="topbar__right">
+        <na-theme-toggle />
         <a routerLink="/help" class="nav__link">Help</a>
         @if (auth.isLoggedIn()) {
           <div class="account">
@@ -33,6 +36,7 @@ import { AuthService } from '../../core/services/auth.service';
                 <a routerLink="/profile" role="menuitem" (click)="accountOpen.set(false)">Profile</a>
                 <a routerLink="/profile/passengers" role="menuitem" (click)="accountOpen.set(false)">Saved passengers</a>
                 <a routerLink="/profile/security" role="menuitem" (click)="accountOpen.set(false)">Security & MFA</a>
+                <a routerLink="/profile/sessions" role="menuitem" (click)="accountOpen.set(false)">Sessions & devices</a>
                 <a routerLink="/profile/notifications" role="menuitem" (click)="accountOpen.set(false)">Notification preferences</a>
                 <button type="button" role="menuitem" (click)="signOut()">Sign out</button>
               </div>
@@ -54,6 +58,7 @@ import { AuthService } from '../../core/services/auth.service';
 
     <nav class="mobile-nav" aria-label="Mobile">
       <a routerLink="/search" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Search</a>
+      <a routerLink="/offers" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Offers</a>
       <a routerLink="/bookings" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Bookings</a>
       <a routerLink="/checkin" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Check-in</a>
       <a routerLink="/status" routerLinkActive="mobile-nav__link--active" class="mobile-nav__link">Status</a>
@@ -65,20 +70,21 @@ import { AuthService } from '../../core/services/auth.service';
       position: sticky; top: 0; z-index: 60;
       display: flex; align-items: center; gap: var(--na-space-6);
       height: var(--na-topbar-h); padding: 0 var(--na-space-6);
-      background: var(--na-navy-800); color: #fff;
+      background: var(--na-navy-800); color: var(--na-ink-900);
+      border-bottom: 1px solid var(--na-border);
     }
-    .brand { display: flex; align-items: center; gap: var(--na-space-2); color: #fff; font-weight: var(--na-font-bold); font-size: var(--na-text-lg); }
+    .brand { display: flex; align-items: center; gap: var(--na-space-2); color: var(--na-ink-900); font-family: var(--na-font-display); font-weight: var(--na-font-bold); font-size: var(--na-text-lg); }
     .brand:hover { text-decoration: none; }
-    .brand__mark { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--na-cta); border-radius: var(--na-radius-md); font-size: 1rem; }
+    .brand__mark { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: var(--na-cta); color: var(--na-cta-contrast); border-radius: var(--na-radius-md); font-size: 1rem; }
     .nav { display: flex; gap: var(--na-space-1); flex: 1; }
     .nav__link { color: var(--na-ink-100); padding: 0.5rem 0.75rem; border-radius: var(--na-radius-md); font-size: var(--na-text-sm); font-weight: var(--na-font-medium); white-space: nowrap; }
     .nav__link:hover { background: var(--na-navy-600); text-decoration: none; }
-    .nav__link--active { background: var(--na-navy-600); color: #fff; }
+    .nav__link--active { background: var(--na-navy-600); color: var(--na-ink-900); }
     .nav__link--cta { background: var(--na-cta); color: var(--na-cta-contrast); font-weight: var(--na-font-semibold); }
     .nav__link--cta:hover { background: var(--na-cta-hover); }
     .topbar__right { display: flex; align-items: center; gap: var(--na-space-3); }
     .account { position: relative; }
-    .account__btn { background: var(--na-navy-600); color: #fff; border: none; border-radius: var(--na-radius-md); padding: 0.5rem 0.9rem; font-weight: var(--na-font-medium); min-height: 40px; }
+    .account__btn { background: var(--na-navy-600); color: var(--na-ink-900); border: none; border-radius: var(--na-radius-md); padding: 0.5rem 0.9rem; font-weight: var(--na-font-medium); min-height: 40px; }
     .account__menu {
       position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px;
       background: var(--na-surface-raised); border: 1px solid var(--na-border); border-radius: var(--na-radius-md);
@@ -100,9 +106,19 @@ import { AuthService } from '../../core/services/auth.service';
         display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
         background: var(--na-navy-800); border-top: 1px solid var(--na-navy-600);
       }
-      .mobile-nav__link { flex: 1; color: var(--na-ink-100); text-align: center; padding: var(--na-space-3) 0 calc(var(--na-space-3) + env(safe-area-inset-bottom)); font-size: var(--na-text-xs); font-weight: var(--na-font-medium); }
-      .mobile-nav__link--active { color: #fff; background: var(--na-navy-600); }
+      .mobile-nav__link { flex: 1; min-width: 0; color: var(--na-ink-100); text-align: center; white-space: nowrap; padding: var(--na-space-3) var(--na-space-1) calc(var(--na-space-3) + env(safe-area-inset-bottom)); font-size: var(--na-text-xs); font-weight: var(--na-font-medium); }
+      .mobile-nav__link--active { color: var(--na-ink-900); background: var(--na-navy-600); }
       .main { padding-bottom: calc(var(--na-space-16) + 64px); }
+    }
+    @media (max-width: 380px) {
+      // Six tabs must stay legible on a 320px viewport.
+      .mobile-nav__link { font-size: 0.6875rem; padding-left: 0; padding-right: 0; }
+    }
+    @media (max-width: 420px) {
+      .topbar { gap: var(--na-space-2); padding: 0 var(--na-space-3); }
+      // Help stays reachable via the footer; keep the bar inside 320px viewports.
+      .topbar__right > .nav__link:not(.nav__link--cta) { display: none; }
+      .account__btn { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }
   `,
 })

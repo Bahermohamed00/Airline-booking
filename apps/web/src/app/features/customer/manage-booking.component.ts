@@ -210,7 +210,7 @@ import { ToastService } from '../../shared/ui/toast.service';
     .head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); margin-bottom: var(--na-space-6); flex-wrap: wrap; }
     .head h1 { font-size: var(--na-text-2xl); }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--na-space-4); margin-top: var(--na-space-4); }
-    .section { padding: var(--na-space-5); }
+    .section { padding: var(--na-space-6); }
     .section h2 { font-size: var(--na-text-lg); margin-bottom: var(--na-space-4); }
     .sub-h { font-size: var(--na-text-base); margin: var(--na-space-4) 0 var(--na-space-2); }
     .itin__flight { display: flex; align-items: center; gap: var(--na-space-3); margin-bottom: var(--na-space-4); }

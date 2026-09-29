@@ -24,8 +24,6 @@ model User {
   mfaSecret      String?   @map("mfa_secret") @db.VarChar(255)
   mfaEnabled     Boolean   @default(false) @map("mfa_enabled")
   mfaBackupCodes String?   @map("mfa_backup_codes") @db.Text
-  resetToken     String?   @map("reset_token") @db.VarChar(255)
-  resetTokenExpiresAt DateTime? @map("reset_token_expires_at") @db.Timestamptz(6)
   status         UserStatus @default(ACTIVE)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -37,6 +35,9 @@ model User {
   notifications  Notification[]
   auditLogs      AuditLog[]
   seatHolds      SeatHold[]
+  sessions       Session[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
 
   @@map("users")
 }
@@ -100,6 +101,70 @@ model RolePermission {
   @@map("role_permissions")
 }
 
+// ---------- Auth sessions & tokens ----------
+
+model Session {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  userAgent    String?   @map("user_agent") @db.VarChar(500)
+  ipAddress    String?   @map("ip_address") @db.VarChar(45)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt   DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokeReason String?   @map("revoke_reason") @db.VarChar(50)
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  sessionId    String    @map("session_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  rotatedAt    DateTime? @map("rotated_at") @db.Timestamptz(6)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
 // ---------- Passengers ----------
 
 model Passenger {
@@ -159,6 +224,7 @@ model Route {
   originAirport      Airport   @relation("RouteOrigin", fields: [originAirportId], references: [id], onDelete: Restrict)
   destinationAirport Airport   @relation("RouteDestination", fields: [destinationAirportId], references: [id], onDelete: Restrict)
   flights            Flight[]
+  scheduleRules      ScheduleRule[]
 
   @@unique([originAirportId, destinationAirportId])
   @@map("routes")
@@ -182,6 +248,7 @@ model Aircraft {
 
   seats   Seat[]
   flights Flight[]
+  scheduleRules ScheduleRule[]
 
   @@map("aircraft")
 }
@@ -226,15 +293,18 @@ model SeatHold {
   flightId  String      @map("flight_id") @db.Uuid
   seatId    String      @map("seat_id") @db.Uuid
   userId    String?     @map("user_id") @db.Uuid
+  bookingId String?     @map("booking_id") @db.Uuid
   sessionId String?     @map("session_id") @db.VarChar(255)
   status    SeatHoldStatus @default(ACTIVE)
   expiresAt DateTime    @map("expires_at") @db.Timestamptz(6)
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  flight Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
-  seat   Seat   @relation(fields: [seatId], references: [id], onDelete: Cascade)
-  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  flight  Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  seat    Seat     @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
+  @@index([bookingId])
   @@index([status, expiresAt])
   @@index([flightId, seatId])
   @@map("seat_holds")
@@ -254,6 +324,10 @@ model Flight {
   flightNumber   String      @map("flight_number") @db.VarChar(20)
   routeId        String      @map("route_id") @db.Uuid
   aircraftId     String      @map("aircraft_id") @db.Uuid
+  scheduleRuleId String?     @map("schedule_rule_id") @db.Uuid
+  // Origin-local calendar date this flight operates on; with scheduleRuleId it
+  // forms the idempotency key for rule-based generation.
+  operatingDate  DateTime?   @map("operating_date") @db.Date
   departureTime  DateTime    @map("departure_time") @db.Timestamptz(6)
   arrivalTime    DateTime    @map("arrival_time") @db.Timestamptz(6)
   status         FlightStatus @default(SCHEDULED)
@@ -263,13 +337,85 @@ model Flight {
 
   route        Route          @relation(fields: [routeId], references: [id], onDelete: Restrict)
   aircraft     Aircraft       @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  scheduleRule ScheduleRule?  @relation(fields: [scheduleRuleId], references: [id], onDelete: SetNull)
   segments     FlightSegment[]
   fares        Fare[]
   seatHolds    SeatHold[]
 
+  @@unique([scheduleRuleId, operatingDate])
+  @@index([operatingDate])
   @@index([departureTime])
   @@index([status])
   @@map("flights")
+}
+
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+
+  @@map("weekday")
+}
+
+enum ScheduleRuleStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("schedule_rule_status")
+}
+
+enum OfferStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  EXPIRED
+
+  @@map("offer_status")
+}
+
+model Offer {
+  id          String      @id @default(uuid()) @db.Uuid
+  // Marketing/catalog data only — deliberately no relation to fares/bookings.
+  title       String      @unique @db.VarChar(120)
+  description String      @db.VarChar(600)
+  badge       String?     @db.VarChar(60)
+  destination String?     @db.VarChar(120)
+  offerValue  String?     @map("offer_value") @db.VarChar(60)
+  terms       String?     @db.VarChar(600)
+  imageUrl    String?     @map("image_url") @db.VarChar(500)
+  status      OfferStatus @default(DRAFT)
+  validFrom   DateTime    @map("valid_from") @db.Date
+  validUntil  DateTime    @map("valid_until") @db.Date
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, validFrom, validUntil])
+  @@map("offers")
+}
+
+model ScheduleRule {
+  id                 String             @id @default(uuid()) @db.Uuid
+  routeId            String             @map("route_id") @db.Uuid
+  aircraftId         String             @map("aircraft_id") @db.Uuid
+  flightNumber       String             @unique @map("flight_number") @db.VarChar(20)
+  // Wall-clock departure at the origin airport, "HH:mm" 24h.
+  departureTimeLocal String             @map("departure_time_local") @db.VarChar(5)
+  operatingDays      Weekday[]          @map("operating_days")
+  effectiveFrom      DateTime           @map("effective_from") @db.Date
+  effectiveTo        DateTime           @map("effective_to") @db.Date
+  status             ScheduleRuleStatus @default(ACTIVE) @map("status")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  route    Route    @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  aircraft Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  flights  Flight[]
+
+  @@map("schedule_rules")
 }
 
 enum FlightStatus {
@@ -347,6 +493,7 @@ model Booking {
   refunds          Refund[]
   notifications    Notification[]
   auditLogs        AuditLog[]
+  seatHolds        SeatHold[]
 
   @@index([userId, bookedAt])
   @@map("bookings")
@@ -713,6 +860,8 @@ model AuditLog {
   @@index([actorType, action])
   @@index([targetType, targetId])
   @@index([createdAt])
+  @@index([action])
+  @@index([actorId])
   @@map("audit_logs")
 }
 

@@ -259,10 +259,11 @@ function toLocalInput(iso: string): string {
     .filters { display: flex; gap: var(--na-space-4); flex-wrap: wrap; align-items: flex-end; }
     .filters .na-field { margin-bottom: 0; }
     .filters__search { flex: 1 1 260px; }
-    .backdrop { position: fixed; inset: 0; background: rgba(8, 17, 32, 0.5); z-index: 100; }
+    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 101;
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
       width: min(480px, 100vw); background: var(--na-surface-raised);
+      border-left: 1px solid var(--na-border);
       box-shadow: var(--na-shadow-lg); display: flex; flex-direction: column;
     }
     .drawer__head {
@@ -296,12 +297,19 @@ export class FlightsPage {
   private readonly flightService = inject(FlightService);
   private readonly toast = inject(ToastService);
 
-  readonly columns: TableColumn[] = [
+  readonly columns: TableColumn<FlightRow>[] = [
     { key: 'flightNumber', label: 'Flight' },
     { key: 'route', label: 'Route' },
     { key: 'departure', label: 'Departure' },
     { key: 'aircraft', label: 'Aircraft', priority: 'low' },
-    { key: 'status', label: 'Status' },
+    {
+      key: 'status',
+      label: 'Status',
+      badge: (r) => ({
+        text: r.status,
+        tone: Object.values(FLIGHT_STATUS_MAP).find((v) => v.label === r.status)?.tone ?? 'neutral',
+      }),
+    },
     { key: 'capacity', label: 'Capacity', priority: 'low' },
   ];
   readonly statusOptions: FlightStatus[] = ['SCHEDULED', 'ACTIVE', 'DELAYED', 'CANCELLED', 'COMPLETED'];

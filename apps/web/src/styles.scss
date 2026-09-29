@@ -13,6 +13,7 @@ html {
   color: var(--na-ink-900);
   background: var(--na-surface);
   -webkit-font-smoothing: antialiased;
+  transition: background-color var(--na-motion-base) var(--na-ease), color var(--na-motion-base) var(--na-ease);
 }
 
 body {
@@ -25,6 +26,12 @@ h1, h2, h3, h4, h5, h6 {
   line-height: var(--na-leading-tight);
   font-weight: var(--na-font-semibold);
   color: var(--na-ink-900);
+}
+
+h1, h2 {
+  font-family: var(--na-font-display);
+  font-weight: var(--na-font-bold);
+  letter-spacing: -0.01em;
 }
 
 h1 { font-size: var(--na-text-3xl); }
@@ -57,6 +64,11 @@ input, select, textarea {
   outline: none;
   box-shadow: var(--na-focus-ring);
   border-radius: var(--na-radius-sm);
+}
+
+::selection {
+  background: rgba(225, 220, 201, 0.28);
+  color: var(--na-ink-900);
 }
 
 // Screen-reader-only utility
@@ -98,10 +110,13 @@ input, select, textarea {
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--na-border-strong);
   border-radius: var(--na-radius-md);
-  background: var(--na-surface-raised);
+  background: var(--na-surface-sunken);
+  color: var(--na-ink-900);
   min-height: 44px;
+  transition: border-color var(--na-motion-fast) var(--na-ease), background var(--na-motion-fast) var(--na-ease);
 }
 .na-input:hover, .na-select:hover { border-color: var(--na-navy-300); }
+.na-input:focus-visible, .na-select:focus-visible { border-color: var(--na-ink-900); background: var(--na-surface); }
 .na-input[aria-invalid='true'], .na-select[aria-invalid='true'] { border-color: var(--na-danger); }
 .na-input:disabled, .na-select:disabled { background: var(--na-surface-sunken); color: var(--na-ink-500); }
 .na-hint { font-size: var(--na-text-xs); color: var(--na-ink-500); }
@@ -109,6 +124,10 @@ input, select, textarea {
 
 @media (max-width: 639px) {
   .na-container { padding: 0 var(--na-space-3); }
+  // Page components set `.page { padding: <y> 0 <y> }`, whose component-scoped
+  // specificity strips the container's horizontal gutter on mobile.
+  // Restore the gutter inside the mobile breakpoint only; desktop is untouched.
+  .na-container.na-container.page { padding-left: var(--na-space-3); padding-right: var(--na-space-3); }
   h1 { font-size: var(--na-text-2xl); }
   h2 { font-size: var(--na-text-xl); }
 }

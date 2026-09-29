@@ -24,6 +24,10 @@ function icsDate(iso: string): string {
     <div class="na-container page">
       @if (loading()) {
         <na-skeleton [rows]="[1, 2]" height="120px" />
+      } @else if (lookupError()) {
+        <na-alert tone="danger" icon="⚠" title="We couldn't load your booking" [retryable]="true" (retry)="lookup()">
+          The booking service is unavailable right now. Your booking is safe — please try again in a moment.
+        </na-alert>
       } @else if (booking(); as b) {
         <section class="hero" aria-labelledby="done-h">
           <span class="hero__icon" aria-hidden="true">✓</span>
@@ -104,7 +108,7 @@ function icsDate(iso: string): string {
     }
     na-alert { display: block; margin-bottom: var(--na-space-6); }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--na-space-4); margin-bottom: var(--na-space-6); }
-    .panel { padding: var(--na-space-5); }
+    .panel { padding: var(--na-space-6); }
     .panel h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-3); }
     .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-2); }
     .rows li { display: flex; justify-content: space-between; gap: var(--na-space-3); }
@@ -127,11 +131,13 @@ export class ConfirmationPage {
 
   protected readonly booking = signal<Booking | null>(null);
   protected readonly loading = signal(true);
+  protected readonly lookupError = signal(false);
 
   protected readonly flightDurationLabel = flightDurationLabel;
 
+  private readonly ref = this.route.snapshot.queryParamMap.get('ref');
+
   constructor() {
-    const ref = this.route.snapshot.queryParamMap.get('ref');
     const confirmed = this.draft.draft()?.confirmedBooking ?? null;
     this.draft.clear();
 
@@ -140,16 +146,27 @@ export class ConfirmationPage {
       this.loading.set(false);
       return;
     }
-    if (!ref) {
+    if (!this.ref) {
       this.loading.set(false);
       return;
     }
+    this.lookup();
+  }
+
+  protected lookup(): void {
+    const ref = this.ref;
+    if (!ref) return;
+    this.loading.set(true);
+    this.lookupError.set(false);
     this.bookings.findByReference(ref).subscribe({
       next: (b) => {
         this.booking.set(b ?? null);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false),
+      error: () => {
+        this.loading.set(false);
+        this.lookupError.set(true);
+      },
     });
   }
 
