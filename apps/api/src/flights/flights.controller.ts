@@ -1,4 +1,11 @@
-import { Controller, Get, Inject, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Query,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { FlightsService } from './flights.service.js';
 import { Public } from '../auth/decorators/public.decorator.js';
@@ -6,12 +13,17 @@ import { AirportSearchQueryDto } from './dto/airport-search-query.dto.js';
 import { DestinationsQueryDto } from './dto/destinations-query.dto.js';
 import { FlightSearchQueryDto } from './dto/flight-search-query.dto.js';
 import { SearchFlightsDto, AirportQueryDto } from './dto/search-flights.dto.js';
-import { StatusByNumberDto, StatusByRouteDto } from './dto/flight-status.dto.js';
+import {
+  StatusByNumberDto,
+  StatusByRouteDto,
+} from './dto/flight-status.dto.js';
 
 @Public()
 @Controller()
 export class FlightsController {
-  constructor(@Inject(FlightsService) private readonly flights: FlightsService) {}
+  constructor(
+    @Inject(FlightsService) private readonly flights: FlightsService,
+  ) {}
 
   @Get('airports')
   @Throttle({ 'public-search': { limit: 30, ttl: 60 * 1000 } })

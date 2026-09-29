@@ -18,15 +18,16 @@ export class FlightService {
       });
     }
     const q = query.trim().toLowerCase();
-    const results = q.length === 0
-      ? AIRPORTS
-      : AIRPORTS.filter(
-          (a) =>
-            a.iataCode.toLowerCase().includes(q) ||
-            a.name.toLowerCase().includes(q) ||
-            a.city.toLowerCase().includes(q) ||
-            a.country.toLowerCase().includes(q),
-        );
+    const results =
+      q.length === 0
+        ? AIRPORTS
+        : AIRPORTS.filter(
+            (a) =>
+              a.iataCode.toLowerCase().includes(q) ||
+              a.name.toLowerCase().includes(q) ||
+              a.city.toLowerCase().includes(q) ||
+              a.country.toLowerCase().includes(q),
+          );
     return of(results).pipe(delay(150));
   }
 
@@ -40,15 +41,16 @@ export class FlightService {
     const destinations = ROUTES.filter(
       (r) => r.status === 'ACTIVE' && r.origin.iataCode === originCode.toUpperCase(),
     ).map((r) => r.destination);
-    const results = q.length === 0
-      ? destinations
-      : destinations.filter(
-          (a) =>
-            a.iataCode.toLowerCase().includes(q) ||
-            a.name.toLowerCase().includes(q) ||
-            a.city.toLowerCase().includes(q) ||
-            a.country.toLowerCase().includes(q),
-        );
+    const results =
+      q.length === 0
+        ? destinations
+        : destinations.filter(
+            (a) =>
+              a.iataCode.toLowerCase().includes(q) ||
+              a.name.toLowerCase().includes(q) ||
+              a.city.toLowerCase().includes(q) ||
+              a.country.toLowerCase().includes(q),
+          );
     return of(results).pipe(delay(150));
   }
 
@@ -68,18 +70,25 @@ export class FlightService {
         dep.getFullYear() === targetDate.getFullYear() &&
         dep.getMonth() === targetDate.getMonth() &&
         dep.getDate() === targetDate.getDate();
-      const hasFare = f.fares.some((fare) => fare.cabinClass === criteria.cabinClass && fare.availableCount > 0);
+      const hasFare = f.fares.some(
+        (fare) => fare.cabinClass === criteria.cabinClass && fare.availableCount > 0,
+      );
       const bookable = f.status === 'SCHEDULED' || f.status === 'ACTIVE' || f.status === 'DELAYED';
       return sameRoute && sameDay && hasFare && bookable;
     });
     return of(matches).pipe(delay(400));
   }
 
-  adjacentDateAvailability(criteria: SearchCriteria): Observable<{ date: string; minPrice: number | null }[]> {
+  adjacentDateAvailability(
+    criteria: SearchCriteria,
+  ): Observable<{ date: string; minPrice: number | null }[]> {
     if (this.config.useRealApi) {
-      return this.http.get<{ date: string; minPrice: number | null }[]>(`${this.config.baseUrl}/flights/adjacent`, {
-        params: searchParams(criteria),
-      });
+      return this.http.get<{ date: string; minPrice: number | null }[]>(
+        `${this.config.baseUrl}/flights/adjacent`,
+        {
+          params: searchParams(criteria),
+        },
+      );
     }
     const base = new Date(criteria.departureDate);
     const days: { date: string; minPrice: number | null }[] = [];
@@ -97,7 +106,9 @@ export class FlightService {
         );
       });
       const prices = dayFlights.flatMap((f) =>
-        f.fares.filter((fare) => fare.cabinClass === criteria.cabinClass).map((fare) => fare.basePrice + fare.taxAmount + fare.feeAmount),
+        f.fares
+          .filter((fare) => fare.cabinClass === criteria.cabinClass)
+          .map((fare) => fare.basePrice + fare.taxAmount + fare.feeAmount),
       );
       days.push({ date: dateStr, minPrice: prices.length ? Math.min(...prices) : null });
     }
@@ -167,7 +178,11 @@ function searchParams(criteria: SearchCriteria): HttpParams {
   return params;
 }
 
-export function applyFilters(flights: Flight[], filters: ResultFilters, cabinClass: string): Flight[] {
+export function applyFilters(
+  flights: Flight[],
+  filters: ResultFilters,
+  cabinClass: string,
+): Flight[] {
   return flights.filter((f) => {
     const fare = f.fares.find((x) => x.cabinClass === cabinClass) ?? f.fares[0];
     const total = fare.basePrice + fare.taxAmount + fare.feeAmount;
@@ -176,9 +191,11 @@ export function applyFilters(flights: Flight[], filters: ResultFilters, cabinCla
     if (filters.departureWindow) {
       const h = new Date(f.departureTime).getHours();
       const inWindow =
-        filters.departureWindow === 'morning' ? h < 12
-        : filters.departureWindow === 'afternoon' ? h >= 12 && h < 18
-        : h >= 18;
+        filters.departureWindow === 'morning'
+          ? h < 12
+          : filters.departureWindow === 'afternoon'
+            ? h >= 12 && h < 18
+            : h >= 18;
       if (!inWindow) return false;
     }
     if (filters.stops === 'nonstop' && f.segments.length > 1) return false;
@@ -196,17 +213,27 @@ export function applySort(flights: Flight[], sort: ResultSort, cabinClass: strin
     new Date(f.arrivalTime).getTime() - new Date(f.departureTime).getTime();
   const list = [...flights];
   switch (sort) {
-    case 'price': return list.sort((a, b) => totalOf(a) - totalOf(b));
-    case 'duration': return list.sort((a, b) => durationOf(a) - durationOf(b));
-    case 'departure': return list.sort((a, b) => new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime());
+    case 'price':
+      return list.sort((a, b) => totalOf(a) - totalOf(b));
+    case 'duration':
+      return list.sort((a, b) => durationOf(a) - durationOf(b));
+    case 'departure':
+      return list.sort(
+        (a, b) => new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime(),
+      );
     case 'recommended':
     default:
-      return list.sort((a, b) => totalOf(a) * 0.7 + durationOf(a) / 60000 - (totalOf(b) * 0.7 + durationOf(b) / 60000));
+      return list.sort(
+        (a, b) =>
+          totalOf(a) * 0.7 + durationOf(a) / 60000 - (totalOf(b) * 0.7 + durationOf(b) / 60000),
+      );
   }
 }
 
 export function flightDurationLabel(f: Flight): string {
-  const mins = Math.round((new Date(f.arrivalTime).getTime() - new Date(f.departureTime).getTime()) / 60000);
+  const mins = Math.round(
+    (new Date(f.arrivalTime).getTime() - new Date(f.departureTime).getTime()) / 60000,
+  );
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${h}h ${m.toString().padStart(2, '0')}m`;

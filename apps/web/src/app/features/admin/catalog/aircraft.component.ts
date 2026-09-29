@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
+import { AdminCatalogService } from '../services/admin-catalog.service';
 import type { Aircraft, AircraftStatus, CabinClass, Seat } from '../../../core/models/domain.model';
-import type { StatusTone } from '../../../core/status-maps';
+import type { StatusTone } from '../../../shared/utils/status-maps';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';

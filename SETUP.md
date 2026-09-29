@@ -51,7 +51,7 @@ npm run db:migrate
 For the test database (required for e2e tests):
 
 ```bash
-DATABASE_URL=postgresql://airline:AymanAnwar24@@localhost:5432/airline_booking_test?schema=public npx prisma migrate deploy --schema=prisma/schema.prisma
+DATABASE_URL=postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public npx prisma migrate deploy --schema=prisma/schema.prisma
 ```
 
 ## 5. Seed the database
@@ -91,36 +91,40 @@ npm run web:test
 
 ## Demo credentials
 
-| Role      | Email                    | Password     |
-|-----------|--------------------------|--------------|
-| Admin     | `admin@airline.local`    | `Admin123!`  |
-| Customer  | `customer@example.com`   | `Customer123!` |
+| Role     | Email                  | Password       |
+| -------- | ---------------------- | -------------- |
+| Admin    | `admin@airline.local`  | `Admin123!`    |
+| Customer | `customer@example.com` | `Customer123!` |
 
 ## Useful scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run db:migrate` | Apply new Prisma migrations in development |
-| `npm run db:generate` | Regenerate Prisma client |
-| `npm run db:seed` | Seed demo data |
-| `npm run db:reset` | Drop and recreate database (destructive) |
-| `npm run api:dev` | Start NestJS in watch mode |
-| `npm run api:build` | Build NestJS API |
-| `npm run web:dev` | Start Angular dev server |
-| `npm run web:build` | Build Angular app |
+| Command               | Description                                |
+| --------------------- | ------------------------------------------ |
+| `npm run db:migrate`  | Apply new Prisma migrations in development |
+| `npm run db:generate` | Regenerate Prisma client                   |
+| `npm run db:seed`     | Seed demo data                             |
+| `npm run db:reset`    | Drop and recreate database (destructive)   |
+| `npm run api:dev`     | Start NestJS in watch mode                 |
+| `npm run api:build`   | Build NestJS API                           |
+| `npm run web:dev`     | Start Angular dev server                   |
+| `npm run web:build`   | Build Angular app                          |
 
 ## Troubleshooting
 
 **Migration fails with connection error**
+
 - Verify PostgreSQL is running and `.env` `DATABASE_URL` is correct.
 - Ensure the `airline` user exists and owns the databases.
 
 **Tests fail with module resolution errors**
+
 - Run `npm install` again to ensure workspaces are linked correctly.
 - If NestJS packages were previously installed with different versions, run `npm install` to dedupe.
 
 **Angular dev server port conflict**
+
 - Change the port with `ng serve --port 4201` or edit `apps/web/package.json` start script.
 
 **Prisma client not found**
+
 - Run `npm run db:generate` after any schema change.

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { prismaTestClient, resetDatabase } from './test-utils.js';
@@ -11,13 +11,30 @@ const DEPART_DATE = '2030-06-15';
 
 async function seedCatalog(): Promise<{ flightId: string }> {
   const fra = await prismaTestClient.airport.create({
-    data: { iataCode: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', timezone: 'Europe/Berlin' },
+    data: {
+      iataCode: 'FRA',
+      name: 'Frankfurt Airport',
+      city: 'Frankfurt',
+      country: 'Germany',
+      timezone: 'Europe/Berlin',
+    },
   });
   const jfk = await prismaTestClient.airport.create({
-    data: { iataCode: 'JFK', name: 'John F. Kennedy International Airport', city: 'New York', country: 'United States', timezone: 'America/New_York' },
+    data: {
+      iataCode: 'JFK',
+      name: 'John F. Kennedy International Airport',
+      city: 'New York',
+      country: 'United States',
+      timezone: 'America/New_York',
+    },
   });
   const route = await prismaTestClient.route.create({
-    data: { originAirportId: fra.id, destinationAirportId: jfk.id, distanceKm: 6201, durationMinutes: 505 },
+    data: {
+      originAirportId: fra.id,
+      destinationAirportId: jfk.id,
+      distanceKm: 6201,
+      durationMinutes: 505,
+    },
   });
   const aircraft = await prismaTestClient.aircraft.create({
     data: { registration: 'NA-TEST1', model: 'Airbus A320-200', capacity: 12 },
@@ -102,10 +119,12 @@ describe('FlightsController (e2e)', () => {
     await prismaTestClient.$disconnect();
   });
 
-  it('GET /api/flights/search returns matching flights with frontend-shaped payload', async () => {
+  it('GET /api/flights/search/advanced returns matching flights with frontend-shaped payload', async () => {
     await seedCatalog();
 
-    const res = await request(app.getHttpServer()).get('/api/flights/search').query(BASE_QUERY);
+    const res = await request(app.getHttpServer())
+      .get('/api/flights/search/advanced')
+      .query(BASE_QUERY);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
@@ -121,15 +140,27 @@ describe('FlightsController (e2e)', () => {
     expect(typeof flight.fares[0].basePrice).toBe('number');
   });
 
-  it('GET /api/flights/search returns empty array when route/date has no flights', async () => {
+  it('GET /api/flights/search/advanced returns empty array when route/date has no flights', async () => {
     await seedCatalog();
 
     const res = await request(app.getHttpServer())
-      .get('/api/flights/search')
+      .get('/api/flights/search/advanced')
       .query({ ...BASE_QUERY, depart: '2030-06-20' });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
+  });
+
+  it('retains the basic flight search query contract', async () => {
+    await seedCatalog();
+
+    const res = await request(app.getHttpServer())
+      .get('/api/flights/search')
+      .query({ from: 'FRA', to: 'JFK', date: DEPART_DATE, cabin: 'ECONOMY' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].flightNumber).toBe('NV900');
   });
 
   it('applies filters and sort server-side (FR-C06)', async () => {
@@ -137,20 +168,20 @@ describe('FlightsController (e2e)', () => {
 
     // maxPrice below the cheapest fare → empty
     const cheap = await request(app.getHttpServer())
-      .get('/api/flights/search')
+      .get('/api/flights/search/advanced')
       .query({ ...BASE_QUERY, maxPrice: 100 });
     expect(cheap.body).toEqual([]);
 
     // refundableOnly → still matches (the flex fare qualifies the flight's fare list
     // per-cabin fallback uses the first fare; light is non-refundable so empty)
     const refundable = await request(app.getHttpServer())
-      .get('/api/flights/search')
+      .get('/api/flights/search/advanced')
       .query({ ...BASE_QUERY, refundableOnly: 'true' });
     expect(refundable.status).toBe(200);
 
     // sort by price is accepted
     const sorted = await request(app.getHttpServer())
-      .get('/api/flights/search')
+      .get('/api/flights/search/advanced')
       .query({ ...BASE_QUERY, sort: 'price' });
     expect(sorted.status).toBe(200);
     expect(sorted.body).toHaveLength(1);
@@ -158,7 +189,7 @@ describe('FlightsController (e2e)', () => {
 
   it('rejects invalid search params with 400', async () => {
     const res = await request(app.getHttpServer())
-      .get('/api/flights/search')
+      .get('/api/flights/search/advanced')
       .query({ ...BASE_QUERY, origin: 'FR', adults: 0 });
 
     expect(res.status).toBe(400);
@@ -167,11 +198,15 @@ describe('FlightsController (e2e)', () => {
   it('GET /api/flights/adjacent returns a 7-day price strip', async () => {
     await seedCatalog();
 
-    const res = await request(app.getHttpServer()).get('/api/flights/adjacent').query(BASE_QUERY);
+    const res = await request(app.getHttpServer())
+      .get('/api/flights/adjacent')
+      .query(BASE_QUERY);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(7);
-    const match = res.body.find((d: { date: string }) => d.date === DEPART_DATE);
+    const match = res.body.find(
+      (d: { date: string }) => d.date === DEPART_DATE,
+    );
     expect(match.minPrice).toBeCloseTo(354);
   });
 

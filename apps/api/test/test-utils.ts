@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
 import { expect, vi } from 'vitest';
+
+export type App = Parameters<typeof request>[0];
 
 /** Extracts the `refresh_token=...` cookie pair from a response's set-cookie headers. */
 export function refreshCookieOf(res: request.Response): string {
@@ -24,15 +25,21 @@ export function decodePayload(token: string): Record<string, unknown> {
 }
 
 /** Captures stdout/stderr/console output produced while `fn` runs. */
-export async function captureLogs<T>(fn: () => Promise<T>): Promise<{ result: T; output: string }> {
+export async function captureLogs<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; output: string }> {
   const captured: string[] = [];
   const sink = (chunk: unknown): boolean => {
     captured.push(String(chunk));
     return true;
   };
   const spies = [
-    vi.spyOn(process.stdout, 'write').mockImplementation(sink as unknown as typeof process.stdout.write),
-    vi.spyOn(process.stderr, 'write').mockImplementation(sink as unknown as typeof process.stderr.write),
+    vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(sink as unknown as typeof process.stdout.write),
+    vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(sink as unknown as typeof process.stderr.write),
     vi.spyOn(console, 'log').mockImplementation(() => undefined),
     vi.spyOn(console, 'warn').mockImplementation(() => undefined),
     vi.spyOn(console, 'error').mockImplementation(() => undefined),
@@ -57,7 +64,9 @@ export async function captureLogs<T>(fn: () => Promise<T>): Promise<{ result: T;
 export const prismaTestClient = new PrismaClient({
   datasources: {
     db: {
-      url: process.env['DATABASE_URL'] ?? 'postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public',
+      url:
+        process.env['DATABASE_URL'] ??
+        'postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public',
     },
   },
 });
@@ -117,7 +126,12 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
  */
 export async function registerVerifiedUser(
   app: INestApplication<App>,
-  user: { email: string; password: string; firstName: string; lastName: string },
+  user: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+  },
 ): Promise<void> {
   await request(app.getHttpServer()).post('/api/auth/register').send(user);
   await prismaTestClient.user.update({

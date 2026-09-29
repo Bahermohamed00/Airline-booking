@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
-import { REFUND_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { HasPermissionDirective } from '../../../shared/directives/has-permission.directive';
+import { REFUND_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { BOOKINGS } from '../../../core/mock/mock-data';
 import type { RefundStatus } from '../../../core/models/domain.model';

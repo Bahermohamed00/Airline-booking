@@ -1,6 +1,7 @@
 # compiled output
 /dist
 apps/*/dist/
+packages/*/dist/
 /tmp
 /out-tsc
 # Only exists if Bazel was run

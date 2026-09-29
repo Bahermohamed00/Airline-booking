@@ -1,10 +1,10 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
-import { RolesService } from '../../../core/services/roles.service';
-import { UsersService, type ApiUser } from '../../../core/services/users.service';
+import { RolesService } from '../services/roles.service';
+import { UsersService, type ApiUser } from '../services/users.service';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { USER_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { USER_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
 import type { Role, UserStatus } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';

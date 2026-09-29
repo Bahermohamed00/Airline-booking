@@ -2,10 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+} from './test-utils.js';
 
 describe('Registration (e2e)', () => {
   let app: INestApplication<App>;
@@ -58,8 +62,12 @@ describe('Registration (e2e)', () => {
   it('stores only an Argon2id hash and never leaks secrets in the response', async () => {
     const res = await register(validInput).expect(201);
 
-    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { id: res.body.userId } });
-    expect(user.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$')).toBe(true);
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
+    expect(
+      user.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$'),
+    ).toBe(true);
     expect(user.passwordHash).not.toContain(validInput.password);
 
     expect(Object.keys(res.body).sort()).toEqual(['email', 'userId']);
@@ -73,9 +81,10 @@ describe('Registration (e2e)', () => {
     });
     expect(audit).not.toBeNull();
 
-    const verification = await prismaTestClient.emailVerificationToken.findFirst({
-      where: { userId: res.body.userId, usedAt: null },
-    });
+    const verification =
+      await prismaTestClient.emailVerificationToken.findFirst({
+        where: { userId: res.body.userId, usedAt: null },
+      });
     expect(verification).not.toBeNull();
     expect(verification!.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(verification!.expiresAt.getTime()).toBeGreaterThan(Date.now());
@@ -87,7 +96,10 @@ describe('Registration (e2e)', () => {
     const exact = await register(validInput);
     expect(exact.status).toBe(409);
 
-    const differentCase = await register({ ...validInput, email: 'NewUser@Test.com' });
+    const differentCase = await register({
+      ...validInput,
+      email: 'NewUser@Test.com',
+    });
     expect(differentCase.status).toBe(409);
 
     expect(await prismaTestClient.user.count()).toBe(1);
@@ -100,7 +112,9 @@ describe('Registration (e2e)', () => {
       firstName: '  Jane  ',
     }).expect(201);
 
-    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { id: res.body.userId } });
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
     expect(user.email).toBe('mixedcase@test.com');
     expect(user.firstName).toBe('Jane');
     expect(res.body.email).toBe('mixedcase@test.com');
@@ -128,11 +142,17 @@ describe('Registration (e2e)', () => {
   });
 
   it('rejects invalid input: bad email, short password, missing/blank names', async () => {
-    expect((await register({ ...validInput, email: 'not-an-email' })).status).toBe(400);
-    expect((await register({ ...validInput, password: 'Short1!' })).status).toBe(400);
+    expect(
+      (await register({ ...validInput, email: 'not-an-email' })).status,
+    ).toBe(400);
+    expect(
+      (await register({ ...validInput, password: 'Short1!' })).status,
+    ).toBe(400);
     const { firstName: _omit, ...noFirstName } = validInput;
     expect((await register(noFirstName)).status).toBe(400);
-    expect((await register({ ...validInput, firstName: '   ' })).status).toBe(400);
+    expect((await register({ ...validInput, firstName: '   ' })).status).toBe(
+      400,
+    );
 
     expect(await prismaTestClient.user.count()).toBe(0);
   });

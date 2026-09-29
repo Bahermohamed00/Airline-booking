@@ -1,76 +1,16 @@
 // Maps Prisma rows to the public API response shape consumed by the
 // Angular frontend (see apps/web/src/app/core/models/domain.model.ts).
 
-import type { Airport, Aircraft, Flight, FlightSegment, Route, Seat, Fare, CabinClass } from '@prisma/client';
-
-export interface FareRuleResponse {
-  refundable: boolean;
-  changeAllowed: boolean;
-  changeFee: number;
-  cancellationFeePercent: number;
-  checkedBaggagePieces: number;
-  checkedBaggageWeightKg: number;
-  carryOnPieces: number;
-  seatSelectionFee: number;
-  priorityBoarding: boolean;
-  loungeAccess: boolean;
-  description: string;
-}
-
-const DEFAULT_FARE_RULES: Record<CabinClass, FareRuleResponse> = {
-  ECONOMY: {
-    refundable: false,
-    changeAllowed: true,
-    changeFee: 90,
-    cancellationFeePercent: 100,
-    checkedBaggagePieces: 1,
-    checkedBaggageWeightKg: 23,
-    carryOnPieces: 1,
-    seatSelectionFee: 15,
-    priorityBoarding: false,
-    loungeAccess: false,
-    description: 'Economy Light — changes for a fee, non-refundable.',
-  },
-  PREMIUM_ECONOMY: {
-    refundable: true,
-    changeAllowed: true,
-    changeFee: 0,
-    cancellationFeePercent: 10,
-    checkedBaggagePieces: 2,
-    checkedBaggageWeightKg: 23,
-    carryOnPieces: 2,
-    seatSelectionFee: 0,
-    priorityBoarding: true,
-    loungeAccess: false,
-    description: 'Premium Economy — included seat selection and free changes.',
-  },
-  BUSINESS: {
-    refundable: true,
-    changeAllowed: true,
-    changeFee: 0,
-    cancellationFeePercent: 10,
-    checkedBaggagePieces: 2,
-    checkedBaggageWeightKg: 32,
-    carryOnPieces: 2,
-    seatSelectionFee: 0,
-    priorityBoarding: true,
-    loungeAccess: true,
-    description: 'Business — premium fare with lounge access and free changes.',
-  },
-  FIRST: {
-    refundable: true,
-    changeAllowed: true,
-    changeFee: 0,
-    cancellationFeePercent: 0,
-    checkedBaggagePieces: 3,
-    checkedBaggageWeightKg: 32,
-    carryOnPieces: 2,
-    seatSelectionFee: 0,
-    priorityBoarding: true,
-    loungeAccess: true,
-    description: 'First — fully flexible fare with all services included.',
-  },
-};
+import type {
+  Airport,
+  Aircraft,
+  Flight,
+  FlightSegment,
+  Route,
+  Seat,
+  Fare,
+} from '@prisma/client';
+import { DEFAULT_FARE_RULES, type FareRuleResponse } from './fare-rules.js';
 
 export function mapAirport(a: Airport) {
   return {
@@ -109,7 +49,9 @@ export function mapAircraft(a: Aircraft & { seats?: Seat[] }) {
   };
 }
 
-export function mapRoute(r: Route & { originAirport: Airport; destinationAirport: Airport }) {
+export function mapRoute(
+  r: Route & { originAirport: Airport; destinationAirport: Airport },
+) {
   return {
     id: r.id,
     originAirportId: r.originAirportId,
@@ -122,7 +64,9 @@ export function mapRoute(r: Route & { originAirport: Airport; destinationAirport
   };
 }
 
-export function mapSegment(s: FlightSegment & { originAirport: Airport; destinationAirport: Airport }) {
+export function mapSegment(
+  s: FlightSegment & { originAirport: Airport; destinationAirport: Airport },
+) {
   return {
     id: s.id,
     flightId: s.flightId,
@@ -146,14 +90,19 @@ export function mapFare(f: Fare) {
     feeAmount: Number(f.feeAmount),
     currency: f.currency,
     availableCount: f.availableCount,
-    rules: (f.fareRules as FareRuleResponse | null) ?? DEFAULT_FARE_RULES[f.cabinClass],
+    rules:
+      (f.fareRules as FareRuleResponse | null) ??
+      DEFAULT_FARE_RULES[f.cabinClass],
   };
 }
 
 type FlightWithRelations = Flight & {
   route: Route & { originAirport: Airport; destinationAirport: Airport };
   aircraft: Aircraft & { seats?: Seat[] };
-  segments: (FlightSegment & { originAirport: Airport; destinationAirport: Airport })[];
+  segments: (FlightSegment & {
+    originAirport: Airport;
+    destinationAirport: Airport;
+  })[];
   fares: Fare[];
 };
 

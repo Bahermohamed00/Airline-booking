@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { USER_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { USER_STATUS_MAP, statusLabel } from '../../../shared/utils/status-maps';
 import { DEMO_CUSTOMER, STAFF_USERS } from '../../../core/mock/mock-data';
 import type { User } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';

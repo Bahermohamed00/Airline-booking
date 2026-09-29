@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { AirportStatus, FlightStatus, OfferStatus, Prisma, RouteStatus } from '@prisma/client';
+import {
+  AirportStatus,
+  FlightStatus,
+  OfferStatus,
+  Prisma,
+  RouteStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { DEFAULT_FARE_RULES } from '../flights/flights.service.js';
+import {
+  DEFAULT_FARE_RULES,
+  type FareRuleResponse,
+} from '../flights/fare-rules.js';
 import type { OffersQueryDto } from './dto/offers-query.dto.js';
 
 const airportSelect = {
@@ -27,9 +36,15 @@ const offerInclude = {
   },
 } satisfies Prisma.OfferInclude;
 
-type OfferWithRelations = Prisma.OfferGetPayload<{ include: typeof offerInclude }>;
+type OfferWithRelations = Prisma.OfferGetPayload<{
+  include: typeof offerInclude;
+}>;
 
-const BOOKABLE_STATUSES: FlightStatus[] = [FlightStatus.SCHEDULED, FlightStatus.ACTIVE, FlightStatus.DELAYED];
+const BOOKABLE_STATUSES: FlightStatus[] = [
+  FlightStatus.SCHEDULED,
+  FlightStatus.ACTIVE,
+  FlightStatus.DELAYED,
+];
 
 @Injectable()
 export class OffersService {
@@ -69,7 +84,8 @@ export class OffersService {
       ? offers
       : offers.filter((o) => {
           const domestic =
-            o.flight.route.originAirport.country === o.flight.route.destinationAirport.country;
+            o.flight.route.originAirport.country ===
+            o.flight.route.destinationAirport.country;
           return query.scope === 'domestic' ? domestic : !domestic;
         });
 
@@ -82,9 +98,15 @@ export class OffersService {
     const fare = o.flight.fares.find((f) => f.cabinClass === o.cabinClass);
     if (!fare || fare.availableCount <= 0) return null;
 
-    const originalPrice = fare.basePrice.toNumber() + fare.taxAmount.toNumber() + fare.feeAmount.toNumber();
-    const discountedPrice = Math.round(originalPrice * (1 - o.discountPercentage / 100) * 100) / 100;
-    const rules = (fare.fareRules ?? DEFAULT_FARE_RULES) as typeof DEFAULT_FARE_RULES;
+    const originalPrice =
+      fare.basePrice.toNumber() +
+      fare.taxAmount.toNumber() +
+      fare.feeAmount.toNumber();
+    const discountedPrice =
+      Math.round(originalPrice * (1 - o.discountPercentage / 100) * 100) / 100;
+    const rules =
+      (fare.fareRules as FareRuleResponse | null) ??
+      DEFAULT_FARE_RULES[fare.cabinClass];
 
     return {
       id: o.id,

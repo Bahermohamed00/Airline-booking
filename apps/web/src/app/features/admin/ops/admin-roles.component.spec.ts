@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { AdminRolesPage } from './admin-roles.component';
-import { RolesService } from '../../../core/services/roles.service';
+import { RolesService } from '../services/roles.service';
 import type { Role } from '../../../core/models/domain.model';
 
 const ROLES: Role[] = [

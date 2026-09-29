@@ -1,5 +1,5 @@
 import { IsEmail } from 'class-validator';
-import { NormalizeEmail } from './transforms.js';
+import { NormalizeEmail } from '../../common/dto-transforms.js';
 
 export class EmailVerificationRequestDto {
   @NormalizeEmail()

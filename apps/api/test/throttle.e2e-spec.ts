@@ -2,11 +2,15 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { hashToken } from '../src/auth/token-crypto.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import { hashToken } from '../src/auth/utils/token-crypto.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+} from './test-utils.js';
 
 const TEST_USER = {
   email: 'throttle@test.com',
@@ -16,7 +20,10 @@ const TEST_USER = {
 };
 
 /** Calls fn until a 429 appears (max `maxAttempts`), returning the status sequence. */
-async function untilThrottled(fn: () => Promise<request.Response>, maxAttempts: number): Promise<{ statuses: number[]; throttled: request.Response | null }> {
+async function untilThrottled(
+  fn: () => Promise<request.Response>,
+  maxAttempts: number,
+): Promise<{ statuses: number[]; throttled: request.Response | null }> {
   const statuses: number[] = [];
   let throttled: request.Response | null = null;
   for (let i = 0; i < maxAttempts; i++) {
@@ -64,8 +71,13 @@ describe('Rate limiting (e2e)', () => {
     }
   });
 
-  async function login(email = TEST_USER.email, password = 'WrongPassword123!') {
-    return request(app.getHttpServer()).post('/api/auth/login').send({ email, password });
+  async function login(
+    email = TEST_USER.email,
+    password = 'WrongPassword123!',
+  ) {
+    return request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email, password });
   }
 
   it('change-password: a valid change works under the limit, repeated attempts are throttled', async () => {
@@ -77,12 +89,19 @@ describe('Rate limiting (e2e)', () => {
       request(app.getHttpServer())
         .post('/api/auth/change-password')
         .set('Authorization', `Bearer ${token}`)
-        .send({ currentPassword, newPassword: 'AnotherPass123!', confirmPassword: 'AnotherPass123!' });
+        .send({
+          currentPassword,
+          newPassword: 'AnotherPass123!',
+          confirmPassword: 'AnotherPass123!',
+        });
 
     // Legitimate change succeeds first (limit not yet reached)
     await change(TEST_USER.password).expect(200);
 
-    const { statuses, throttled } = await untilThrottled(() => change('WrongPassword123!'), 8);
+    const { statuses, throttled } = await untilThrottled(
+      () => change('WrongPassword123!'),
+      8,
+    );
     expect(throttled).not.toBeNull();
     expect(statuses.slice(0, -1).every((s) => s !== 429)).toBe(true);
   });
@@ -96,7 +115,11 @@ describe('Rate limiting (e2e)', () => {
     const stillThrottled = await request(app.getHttpServer())
       .post('/api/auth/change-password')
       .set('Authorization', `Bearer ${token}`)
-      .send({ currentPassword: 'Whatever123!', newPassword: 'AnotherPass123!', confirmPassword: 'AnotherPass123!' });
+      .send({
+        currentPassword: 'Whatever123!',
+        newPassword: 'AnotherPass123!',
+        confirmPassword: 'AnotherPass123!',
+      });
     expect(stillThrottled.status).toBe(429);
 
     // Unrelated endpoints answer normally (counters are per-route)
@@ -112,9 +135,15 @@ describe('Rate limiting (e2e)', () => {
 
   it('password-reset: valid token flow works under the limit, token abuse is throttled', async () => {
     await registerVerifiedUser(app, TEST_USER);
-    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: TEST_USER.email } });
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { email: TEST_USER.email },
+    });
     await prismaTestClient.passwordResetToken.create({
-      data: { userId: user.id, tokenHash: hashToken('valid-reset-token'), expiresAt: new Date(Date.now() + 3_600_000) },
+      data: {
+        userId: user.id,
+        tokenHash: hashToken('valid-reset-token'),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
     });
 
     // Legitimate reset succeeds first

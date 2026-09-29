@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AUDIT_EVENTS, AuditService, type AuditLogItem } from '../../../core/services/audit.service';
+import { AUDIT_EVENTS, AuditService, type AuditLogItem } from '../services/audit.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';

@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
-import { SeatService, SeatMapState } from '../../../core/services/seat.service';
+import { SeatService, SeatMapState } from '../services/seat.service';
 import { PricingService, formatMoney } from '../../../core/services/pricing.service';
 import type { Fare, Flight, Seat } from '../../../core/models/domain.model';
 import type { SeatSelection } from '../../../core/models/booking-flow.model';

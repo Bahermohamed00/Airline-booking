@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { NOTIFICATION_STATUS_MAP, statusLabel, StatusTone } from '../../../core/status-maps';
+import { NOTIFICATION_STATUS_MAP, statusLabel, StatusTone } from '../../../shared/utils/status-maps';
 import { NOTIFICATIONS } from '../../../core/mock/mock-data';
 import type { NotificationChannel, NotificationItem } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';

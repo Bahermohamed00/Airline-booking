@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AdminCatalogService } from '../../../core/services/admin-catalog.service';
+import { AdminCatalogService } from '../services/admin-catalog.service';
 import type { Airport, Flight, Route } from '../../../core/models/domain.model';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';

@@ -2,10 +2,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+} from './test-utils.js';
 
 describe('AuthController (e2e)', () => {
   let app: INestApplication<App>;
@@ -55,10 +59,12 @@ describe('AuthController (e2e)', () => {
       lastName: 'Customer',
     });
 
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({
-      email: 'customer@test.com',
-      password: 'Password123!',
-    });
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        email: 'customer@test.com',
+        password: 'Password123!',
+      });
 
     expect(res.status).toBe(200);
     expect(res.body.accessToken).toBeDefined();
@@ -68,10 +74,12 @@ describe('AuthController (e2e)', () => {
   });
 
   it('POST /api/auth/login rejects invalid credentials', async () => {
-    const res = await request(app.getHttpServer()).post('/api/auth/login').send({
-      email: 'customer@test.com',
-      password: 'WrongPassword!',
-    });
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        email: 'customer@test.com',
+        password: 'WrongPassword!',
+      });
 
     expect(res.status).toBe(401);
   });
@@ -87,10 +95,12 @@ describe('AuthController (e2e)', () => {
       firstName: 'Test',
       lastName: 'Customer',
     });
-    const login = await request(app.getHttpServer()).post('/api/auth/login').send({
-      email: 'customer@test.com',
-      password: 'Password123!',
-    });
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({
+        email: 'customer@test.com',
+        password: 'Password123!',
+      });
 
     const res = await request(app.getHttpServer())
       .get('/api/auth/me')

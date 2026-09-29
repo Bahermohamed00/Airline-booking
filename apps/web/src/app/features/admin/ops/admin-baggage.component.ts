@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { BaggageService } from '../../../core/services/domain-services';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { BAGGAGE_STATUS_MAP, statusLabel, StatusTone } from '../../../core/status-maps';
+import { BAGGAGE_STATUS_MAP, statusLabel, StatusTone } from '../../../shared/utils/status-maps';
 import type { Baggage, BaggageStatus } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';

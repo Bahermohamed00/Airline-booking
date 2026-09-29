@@ -2,11 +2,15 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+} from './test-utils.js';
 
 const PASSWORD = 'Password123!';
 
@@ -37,7 +41,11 @@ describe('Audit log API (e2e)', () => {
       create: { resource: 'audit', action: 'read' },
     });
 
-    const role = async (name: string, isSuperAdmin: boolean, permissionIds: string[]) => {
+    const role = async (
+      name: string,
+      isSuperAdmin: boolean,
+      permissionIds: string[],
+    ) => {
       const r = await prismaTestClient.role.upsert({
         where: { name },
         update: { isSuperAdmin },
@@ -73,8 +81,15 @@ describe('Audit log API (e2e)', () => {
 
     // 25 deterministic audit rows + 1 poisoned-metadata row
     // (actor_id has an FK to users — use one real actor plus nulls)
-    await registerVerifiedUser(app, { email: 'actor@audit.test', password: PASSWORD, firstName: 'Real', lastName: 'Actor' });
-    const realActor = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'actor@audit.test' } });
+    await registerVerifiedUser(app, {
+      email: 'actor@audit.test',
+      password: PASSWORD,
+      firstName: 'Real',
+      lastName: 'Actor',
+    });
+    const realActor = await prismaTestClient.user.findUniqueOrThrow({
+      where: { email: 'actor@audit.test' },
+    });
     realActorId = realActor.id;
     const rows = Array.from({ length: 25 }, (_, i) => ({
       actorId: i % 2 === 0 ? realActor.id : null,
@@ -115,12 +130,23 @@ describe('Audit log API (e2e)', () => {
   });
 
   async function loginAs(email: string, roleName?: string): Promise<string> {
-    await registerVerifiedUser(app, { email, password: PASSWORD, firstName: 'Audit', lastName: 'Tester' });
+    await registerVerifiedUser(app, {
+      email,
+      password: PASSWORD,
+      firstName: 'Audit',
+      lastName: 'Tester',
+    });
     if (roleName) {
-      const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email } });
-      await prismaTestClient.userRole.create({ data: { userId: user.id, roleId: roleIds[roleName]! } });
+      const user = await prismaTestClient.user.findUniqueOrThrow({
+        where: { email },
+      });
+      await prismaTestClient.userRole.create({
+        data: { userId: user.id, roleId: roleIds[roleName]! },
+      });
     }
-    const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password: PASSWORD });
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email, password: PASSWORD });
     expect(login.status).toBe(200);
     return login.body.accessToken as string;
   }
@@ -135,14 +161,20 @@ describe('Audit log API (e2e)', () => {
       await getAudit(null).expect(401);
     });
 
-    it.each(['Customer', 'Flight Manager', 'Booking Manager', 'Finance Staff', 'Support Staff'])(
-      '403 for %s (no audit:read in the catalog)',
-      async (roleName) => {
-        const email = `${roleName.replace(/\s+/g, '-').toLowerCase()}@audit.test`;
-        const token = roleName === 'Customer' ? await loginAs(email) : await loginAs(email, roleName);
-        await getAudit(token).expect(403);
-      },
-    );
+    it.each([
+      'Customer',
+      'Flight Manager',
+      'Booking Manager',
+      'Finance Staff',
+      'Support Staff',
+    ])('403 for %s (no audit:read in the catalog)', async (roleName) => {
+      const email = `${roleName.replace(/\s+/g, '-').toLowerCase()}@audit.test`;
+      const token =
+        roleName === 'Customer'
+          ? await loginAs(email)
+          : await loginAs(email, roleName);
+      await getAudit(token).expect(403);
+    });
 
     it('200 for Administrator (has audit:read) and Super Admin (bypass)', async () => {
       const adminToken = await loginAs('admin@audit.test', 'Administrator');
@@ -181,20 +213,34 @@ describe('Audit log API (e2e)', () => {
       expect(limited.body.totalPages).toBe(Math.ceil(dbTotal / 5));
     });
 
-    it.each(['page=0', 'limit=0', 'limit=101', 'page=abc', 'limit=-3'])('rejects invalid pagination %s', async (q) => {
-      const token = await loginAs('admin-badpage@audit.test', 'Administrator');
-      await getAudit(token, `?${q}`).expect(400);
-    });
+    it.each(['page=0', 'limit=0', 'limit=101', 'page=abc', 'limit=-3'])(
+      'rejects invalid pagination %s',
+      async (q) => {
+        const token = await loginAs(
+          'admin-badpage@audit.test',
+          'Administrator',
+        );
+        await getAudit(token, `?${q}`).expect(400);
+      },
+    );
   });
 
   describe('filters, sorting, search', () => {
     it('filters by event, actorType, targetId, and combinations', async () => {
       const token = await loginAs('admin-filter@audit.test', 'Administrator');
 
-      const byEvent = await getAudit(token, '?event=PASSWORD_CHANGED').expect(200);
-      const eventDbCount = await prismaTestClient.auditLog.count({ where: { action: 'PASSWORD_CHANGED' } });
+      const byEvent = await getAudit(token, '?event=PASSWORD_CHANGED').expect(
+        200,
+      );
+      const eventDbCount = await prismaTestClient.auditLog.count({
+        where: { action: 'PASSWORD_CHANGED' },
+      });
       expect(byEvent.body.total).toBe(eventDbCount);
-      expect((byEvent.body.items as Array<{ event: string }>).every((i) => i.event === 'PASSWORD_CHANGED')).toBe(true);
+      expect(
+        (byEvent.body.items as Array<{ event: string }>).every(
+          (i) => i.event === 'PASSWORD_CHANGED',
+        ),
+      ).toBe(true);
 
       const byActorType = await getAudit(token, '?actorType=Guest').expect(200);
       expect(byActorType.body.total).toBe(1);
@@ -202,20 +248,38 @@ describe('Audit log API (e2e)', () => {
       const byTarget = await getAudit(token, '?targetId=target-04').expect(200);
       expect(byTarget.body.total).toBe(1);
 
-      const byActor = await getAudit(token, `?actorId=${realActorId}`).expect(200);
-      const actorDbCount = await prismaTestClient.auditLog.count({ where: { actorId: realActorId } });
+      const byActor = await getAudit(token, `?actorId=${realActorId}`).expect(
+        200,
+      );
+      const actorDbCount = await prismaTestClient.auditLog.count({
+        where: { actorId: realActorId },
+      });
       expect(byActor.body.total).toBe(actorDbCount);
-      expect((byActor.body.items as Array<{ actorId: string }>).every((i) => i.actorId === realActorId)).toBe(true);
+      expect(
+        (byActor.body.items as Array<{ actorId: string }>).every(
+          (i) => i.actorId === realActorId,
+        ),
+      ).toBe(true);
 
-      const combo = await getAudit(token, '?event=TOKEN_REUSE_DETECTED&actorType=Staff').expect(200);
+      const combo = await getAudit(
+        token,
+        '?event=TOKEN_REUSE_DETECTED&actorType=Staff',
+      ).expect(200);
       expect(combo.body.total).toBeGreaterThan(0);
-      expect((combo.body.items as Array<{ event: string; actorType: string }>).every((i) => i.event === 'TOKEN_REUSE_DETECTED' && i.actorType === 'Staff')).toBe(true);
+      expect(
+        (combo.body.items as Array<{ event: string; actorType: string }>).every(
+          (i) => i.event === 'TOKEN_REUSE_DETECTED' && i.actorType === 'Staff',
+        ),
+      ).toBe(true);
     });
 
     it('filters by date range and rejects invalid dates', async () => {
       const token = await loginAs('admin-dates@audit.test', 'Administrator');
 
-      const ranged = await getAudit(token, '?from=2026-09-15T00:00:00Z&to=2026-09-20T23:59:59Z').expect(200);
+      const ranged = await getAudit(
+        token,
+        '?from=2026-09-15T00:00:00Z&to=2026-09-20T23:59:59Z',
+      ).expect(200);
       expect(ranged.body.total).toBe(6);
 
       await getAudit(token, '?from=not-a-date').expect(400);
@@ -232,15 +296,27 @@ describe('Audit log API (e2e)', () => {
       const token = await loginAs('admin-sort@audit.test', 'Administrator');
 
       const defaultRes = await getAudit(token).expect(200);
-      const defaultDates = (defaultRes.body.items as Array<{ createdAt: string }>).map((i) => i.createdAt);
+      const defaultDates = (
+        defaultRes.body.items as Array<{ createdAt: string }>
+      ).map((i) => i.createdAt);
       expect([...defaultDates].sort().reverse()).toEqual(defaultDates);
 
-      const byEvent = await getAudit(token, '?sortBy=event&sortOrder=asc&limit=5').expect(200);
-      const events = (byEvent.body.items as Array<{ event: string }>).map((i) => i.event);
+      const byEvent = await getAudit(
+        token,
+        '?sortBy=event&sortOrder=asc&limit=5',
+      ).expect(200);
+      const events = (byEvent.body.items as Array<{ event: string }>).map(
+        (i) => i.event,
+      );
       expect([...events].sort()).toEqual(events);
 
-      const byDateAsc = await getAudit(token, '?sortBy=createdAt&sortOrder=asc&limit=5').expect(200);
-      const datesAsc = (byDateAsc.body.items as Array<{ createdAt: string }>).map((i) => i.createdAt);
+      const byDateAsc = await getAudit(
+        token,
+        '?sortBy=createdAt&sortOrder=asc&limit=5',
+      ).expect(200);
+      const datesAsc = (
+        byDateAsc.body.items as Array<{ createdAt: string }>
+      ).map((i) => i.createdAt);
       expect([...datesAsc].sort()).toEqual(datesAsc);
     });
 
@@ -260,7 +336,10 @@ describe('Audit log API (e2e)', () => {
       expect(byIp.body.total).toBe(1);
 
       // 'invalid_or_expired' exists ONLY inside the poisoned row's metadata
-      const noMetadata = await getAudit(token, '?search=invalid_or_expired').expect(200);
+      const noMetadata = await getAudit(
+        token,
+        '?search=invalid_or_expired',
+      ).expect(200);
       expect(noMetadata.body.total).toBe(0);
     });
 
@@ -276,11 +355,35 @@ describe('Audit log API (e2e)', () => {
       const res = await getAudit(token, '?actorType=Guest').expect(200);
 
       const item = (res.body.items as Array<Record<string, unknown>>)[0]!;
-      expect(Object.keys(item).sort()).toEqual(['actorId', 'actorType', 'createdAt', 'event', 'id', 'ipAddress', 'metadata', 'targetId', 'targetType']);
+      expect(Object.keys(item).sort()).toEqual([
+        'actorId',
+        'actorType',
+        'createdAt',
+        'event',
+        'id',
+        'ipAddress',
+        'metadata',
+        'targetId',
+        'targetType',
+      ]);
       expect(item['metadata']).toEqual({ reason: 'invalid_or_expired' });
 
       const raw = JSON.stringify(res.body);
-      for (const forbidden of ['fake-password', 'fake-hash', 'fake-access', 'fake-refresh', 'fake-mfa', 'fake-codes', 'fake-key', 'fake-smtp', 'fake-db', 'passwordHash', 'mfaSecret', 'refreshToken', 'accessToken']) {
+      for (const forbidden of [
+        'fake-password',
+        'fake-hash',
+        'fake-access',
+        'fake-refresh',
+        'fake-mfa',
+        'fake-codes',
+        'fake-key',
+        'fake-smtp',
+        'fake-db',
+        'passwordHash',
+        'mfaSecret',
+        'refreshToken',
+        'accessToken',
+      ]) {
         expect(raw).not.toContain(forbidden);
       }
     });
@@ -288,10 +391,24 @@ describe('Audit log API (e2e)', () => {
 
   describe('immutability', () => {
     it('exposes no write paths on the audit resource', async () => {
-      const token = await loginAs('admin-immutable@audit.test', 'Administrator');
-      await request(app.getHttpServer()).post('/api/audit').set('Authorization', `Bearer ${token}`).send({}).expect(404);
-      await request(app.getHttpServer()).patch(`/api/audit/${randomUUID()}`).set('Authorization', `Bearer ${token}`).send({}).expect(404);
-      await request(app.getHttpServer()).delete(`/api/audit/${randomUUID()}`).set('Authorization', `Bearer ${token}`).expect(404);
+      const token = await loginAs(
+        'admin-immutable@audit.test',
+        'Administrator',
+      );
+      await request(app.getHttpServer())
+        .post('/api/audit')
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(404);
+      await request(app.getHttpServer())
+        .patch(`/api/audit/${randomUUID()}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(404);
+      await request(app.getHttpServer())
+        .delete(`/api/audit/${randomUUID()}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
     });
   });
 });

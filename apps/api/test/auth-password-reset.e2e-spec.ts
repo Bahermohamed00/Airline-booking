@@ -2,11 +2,16 @@ import { describe, it, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import type { App } from './test-utils.js';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { hashToken } from '../src/auth/token-crypto.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase, refreshCookieOf } from './test-utils.js';
+import { hashToken } from '../src/auth/utils/token-crypto.js';
+import {
+  prismaTestClient,
+  registerVerifiedUser,
+  resetDatabase,
+  refreshCookieOf,
+} from './test-utils.js';
 
 describe('Password reset (e2e)', () => {
   let app: INestApplication<App>;
@@ -34,13 +39,26 @@ describe('Password reset (e2e)', () => {
   });
 
   async function seedUser(email: string, password: string) {
-    await registerVerifiedUser(app, { email, password, firstName: 'Test', lastName: 'User' });
+    await registerVerifiedUser(app, {
+      email,
+      password,
+      firstName: 'Test',
+      lastName: 'User',
+    });
     return prismaTestClient.user.findUniqueOrThrow({ where: { email } });
   }
 
-  async function plantResetToken(userId: string, rawToken: string, expiresInMs = 3_600_000) {
+  async function plantResetToken(
+    userId: string,
+    rawToken: string,
+    expiresInMs = 3_600_000,
+  ) {
     await prismaTestClient.passwordResetToken.create({
-      data: { userId, tokenHash: hashToken(rawToken), expiresAt: new Date(Date.now() + expiresInMs) },
+      data: {
+        userId,
+        tokenHash: hashToken(rawToken),
+        expiresAt: new Date(Date.now() + expiresInMs),
+      },
     });
   }
 
@@ -56,10 +74,19 @@ describe('Password reset (e2e)', () => {
       .expect(200);
 
     // Bob: old password dead, new password works
-    await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'bob@test.com', password: 'BobPassword123!' }).expect(401);
-    await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'bob@test.com', password: 'NewPassword123!' }).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'bob@test.com', password: 'BobPassword123!' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'bob@test.com', password: 'NewPassword123!' })
+      .expect(200);
     // Alice's account is untouched by Bob's reset
-    await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'alice@test.com', password: 'OldPassword123!' }).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'alice@test.com', password: 'OldPassword123!' })
+      .expect(200);
   });
 
   it('marks the token used — a second attempt with the same token fails', async () => {
@@ -118,18 +145,29 @@ describe('Password reset (e2e)', () => {
       .expect(200);
 
     expect(unknown.body).toEqual(existing.body);
-    expect(existing.body).toEqual({ message: 'If the email exists, a reset link has been sent' });
+    expect(existing.body).toEqual({
+      message: 'If the email exists, a reset link has been sent',
+    });
     // The token was created for the normalized address's owner
-    expect(await prismaTestClient.passwordResetToken.count({ where: { userId: user.id, usedAt: null } })).toBe(1);
+    expect(
+      await prismaTestClient.passwordResetToken.count({
+        where: { userId: user.id, usedAt: null },
+      }),
+    ).toBe(1);
   });
 
   it('expires reset tokens per RESET_TOKEN_EXPIRES_IN (default: 1 hour)', async () => {
     const user = await seedUser('ttl@test.com', 'Password123!');
     const before = Date.now();
 
-    await request(app.getHttpServer()).post('/api/auth/password-reset-request').send({ email: 'ttl@test.com' }).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/password-reset-request')
+      .send({ email: 'ttl@test.com' })
+      .expect(200);
 
-    const token = await prismaTestClient.passwordResetToken.findFirstOrThrow({ where: { userId: user.id } });
+    const token = await prismaTestClient.passwordResetToken.findFirstOrThrow({
+      where: { userId: user.id },
+    });
     const ttlMs = token.expiresAt.getTime() - before;
     expect(ttlMs).toBeGreaterThan(3_500_000);
     expect(ttlMs).toBeLessThanOrEqual(3_700_000);
@@ -144,7 +182,9 @@ describe('Password reset (e2e)', () => {
       .send({ token: 'policy-token', newPassword: 'Pass123!' }) // 8 chars: passes the old reset DTO, fails the 12-char policy
       .expect(400);
 
-    const row = await prismaTestClient.passwordResetToken.findFirstOrThrow({ where: { userId: user.id } });
+    const row = await prismaTestClient.passwordResetToken.findFirstOrThrow({
+      where: { userId: user.id },
+    });
     expect(row.usedAt).toBeNull();
   });
 
@@ -171,17 +211,38 @@ describe('Password reset (e2e)', () => {
       .expect(200);
 
     // Both sessions of the reset user are dead — access tokens and refresh cookies
-    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${login1.body.accessToken}`).expect(401);
-    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${login2.body.accessToken}`).expect(401);
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', refreshCookieOf(login1)).expect(401);
-    await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', refreshCookieOf(login2)).expect(401);
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${login1.body.accessToken}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${login2.body.accessToken}`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', refreshCookieOf(login1))
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', refreshCookieOf(login2))
+      .expect(401);
 
-    const sessions = await prismaTestClient.session.findMany({ where: { userId: user.id } });
+    const sessions = await prismaTestClient.session.findMany({
+      where: { userId: user.id },
+    });
     expect(sessions).toHaveLength(2);
-    expect(sessions.every((s) => s.revokedAt !== null && s.revokeReason === 'password_reset')).toBe(true);
+    expect(
+      sessions.every(
+        (s) => s.revokedAt !== null && s.revokeReason === 'password_reset',
+      ),
+    ).toBe(true);
 
     // The unrelated user's session is untouched
-    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${otherLogin.body.accessToken}`).expect(200);
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${otherLogin.body.accessToken}`)
+      .expect(200);
 
     // And the new password works
     await request(app.getHttpServer())
@@ -193,7 +254,10 @@ describe('Password reset (e2e)', () => {
   it('audits request, failure, and completion without ever storing the raw token', async () => {
     const user = await seedUser('audit-reset@test.com', 'Password123!');
 
-    await request(app.getHttpServer()).post('/api/auth/password-reset-request').send({ email: 'audit-reset@test.com' }).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/password-reset-request')
+      .send({ email: 'audit-reset@test.com' })
+      .expect(200);
     await request(app.getHttpServer())
       .post('/api/auth/password-reset')
       .send({ token: 'wrong-token', newPassword: 'NewPassword123!' })
@@ -229,8 +293,12 @@ describe('Password reset (e2e)', () => {
       .send({ token: 'hash-token', newPassword: 'NewPassword123!' })
       .expect(200);
 
-    const after = await prismaTestClient.user.findUniqueOrThrow({ where: { id: user.id } });
-    expect(after.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$')).toBe(true);
+    const after = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: user.id },
+    });
+    expect(
+      after.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$'),
+    ).toBe(true);
     expect(after.passwordHash).not.toContain('NewPassword123!');
   });
 });
