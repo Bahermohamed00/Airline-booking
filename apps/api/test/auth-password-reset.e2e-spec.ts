@@ -158,7 +158,7 @@ describe('Password reset (e2e)', () => {
       .post('/api/auth/login')
       .send({ email: 'revoke-reset@test.com', password: 'OldPassword123!' })
       .expect(200);
-    const other = await seedUser('other-reset@test.com', 'OtherPassword123!');
+    await seedUser('other-reset@test.com', 'OtherPassword123!');
     const otherLogin = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({ email: 'other-reset@test.com', password: 'OtherPassword123!' })

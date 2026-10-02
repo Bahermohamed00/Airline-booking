@@ -17,7 +17,9 @@ import { AircraftModule } from './aircraft/aircraft.module.js';
 import { FlightsModule } from './flights/flights.module.js';
 import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module.js';
 import { BookingsModule } from './bookings/bookings.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { OffersModule } from './offers/offers.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -51,7 +53,9 @@ const skipThrottleInTest = (): boolean => isTest && process.env['E2E_THROTTLE'] 
     FlightsModule,
     ScheduleRulesModule,
     BookingsModule,
+    PaymentsModule,
     OffersModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [

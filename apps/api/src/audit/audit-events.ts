@@ -40,6 +40,13 @@ export const AUDIT_EVENTS = [
   'OFFER_CREATED',
   'OFFER_UPDATED',
   'OFFER_DELETED',
+  // Payments & paid booking lifecycle (Phase 6F).
+  'PAYMENT_SUCCEEDED',
+  'PAYMENT_FAILED',
+  'BOOKING_CONFIRMED',
+  'SEAT_HOLD_CONVERTED',
+  'REFUND_COMPLETED',
+  'BR14_PAYMENT_EXCEPTION',
 ] as const;
 
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];

@@ -25,6 +25,12 @@ export class FlightsController {
     return this.flights.findOne(id);
   }
 
+  @Get(':id/seat-availability')
+  @Public()
+  getSeatAvailability(@Param('id', ParseUUIDPipe) id: string) {
+    return this.flights.getSeatAvailability(id);
+  }
+
   @Post('generate')
   @Permissions({ resource: 'flights', action: 'manage' })
   generate(@Body() dto: GenerateFlightsDto) {

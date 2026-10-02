@@ -1,7 +1,34 @@
-import { PrismaClient, CabinClass, UserStatus, AircraftStatus, AirportStatus, RouteStatus, BookingStatus, PaymentStatus, LoyaltyTier, Weekday, ScheduleRuleStatus, OfferStatus, Role, Permission, User, Aircraft, Airport, Route, ScheduleRule, Offer } from '@prisma/client';
+import {
+  PrismaClient,
+  CabinClass,
+  UserStatus,
+  AircraftStatus,
+  AirportStatus,
+  RouteStatus,
+  BookingStatus,
+  PaymentStatus,
+  LoyaltyTier,
+  Weekday,
+  ScheduleRuleStatus,
+  OfferStatus,
+  Role,
+  Permission,
+  User,
+  Aircraft,
+  Airport,
+  Route,
+  ScheduleRule,
+  Offer,
+} from '@prisma/client';
 import { hash as argonHash } from '@node-rs/argon2';
 import { pathToFileURL } from 'node:url';
-import { generateFlights, operatingDateOfFlight } from '../apps/api/src/flights/flight-generator.js';
+import {
+  generateFlights,
+  operatingDateOfFlight,
+} from '../apps/api/src/flights/flight-generator.js';
+import { generateSeatMap } from '../apps/api/src/aircraft/seat-map.js';
+import { generateBookingReference } from '../apps/api/src/bookings/booking-reference.js';
+import { refundPolicyFromFareRules } from '../apps/api/src/payments/refund-policy.js';
 
 const prisma = new PrismaClient();
 
@@ -35,26 +62,112 @@ async function hash(password: string): Promise<string> {
   });
 }
 
-function generateBookingReference(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let ref = '';
-  for (let i = 0; i < 6; i++) {
-    ref += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return ref;
-}
-
-export const AIRPORTS: Array<Pick<Airport, 'iataCode' | 'icaoCode' | 'name' | 'city' | 'country' | 'timezone' | 'latitude' | 'longitude'>> = [
-  { iataCode: 'FRA', icaoCode: 'EDDF', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', timezone: 'Europe/Berlin', latitude: 50.0379, longitude: 8.5622 },
-  { iataCode: 'MUC', icaoCode: 'EDDM', name: 'Munich Airport', city: 'Munich', country: 'Germany', timezone: 'Europe/Berlin', latitude: 48.3538, longitude: 11.7861 },
-  { iataCode: 'HAM', icaoCode: 'EDDH', name: 'Hamburg Airport', city: 'Hamburg', country: 'Germany', timezone: 'Europe/Berlin', latitude: 53.6304, longitude: 9.9882 },
-  { iataCode: 'LHR', icaoCode: 'EGLL', name: 'Heathrow Airport', city: 'London', country: 'United Kingdom', timezone: 'Europe/London', latitude: 51.47, longitude: -0.4614 },
-  { iataCode: 'JFK', icaoCode: 'KJFK', name: 'John F. Kennedy International Airport', city: 'New York', country: 'United States', timezone: 'America/New_York', latitude: 40.6413, longitude: -73.7781 },
-  { iataCode: 'LAX', icaoCode: 'KLAX', name: 'Los Angeles International Airport', city: 'Los Angeles', country: 'United States', timezone: 'America/Los_Angeles', latitude: 33.9416, longitude: -118.4085 },
-  { iataCode: 'CDG', icaoCode: 'LFPG', name: 'Charles de Gaulle Airport', city: 'Paris', country: 'France', timezone: 'Europe/Paris', latitude: 49.0097, longitude: 2.5479 },
-  { iataCode: 'AMS', icaoCode: 'EHAM', name: 'Amsterdam Airport Schiphol', city: 'Amsterdam', country: 'Netherlands', timezone: 'Europe/Amsterdam', latitude: 52.3105, longitude: 4.7683 },
-  { iataCode: 'SIN', icaoCode: 'WSSS', name: 'Singapore Changi Airport', city: 'Singapore', country: 'Singapore', timezone: 'Asia/Singapore', latitude: 1.3644, longitude: 103.9915 },
-  { iataCode: 'DXB', icaoCode: 'OMDB', name: 'Dubai International Airport', city: 'Dubai', country: 'United Arab Emirates', timezone: 'Asia/Dubai', latitude: 25.2532, longitude: 55.3657 },
+export const AIRPORTS: Array<
+  Pick<
+    Airport,
+    'iataCode' | 'icaoCode' | 'name' | 'city' | 'country' | 'timezone' | 'latitude' | 'longitude'
+  >
+> = [
+  {
+    iataCode: 'FRA',
+    icaoCode: 'EDDF',
+    name: 'Frankfurt Airport',
+    city: 'Frankfurt',
+    country: 'Germany',
+    timezone: 'Europe/Berlin',
+    latitude: 50.0379,
+    longitude: 8.5622,
+  },
+  {
+    iataCode: 'MUC',
+    icaoCode: 'EDDM',
+    name: 'Munich Airport',
+    city: 'Munich',
+    country: 'Germany',
+    timezone: 'Europe/Berlin',
+    latitude: 48.3538,
+    longitude: 11.7861,
+  },
+  {
+    iataCode: 'HAM',
+    icaoCode: 'EDDH',
+    name: 'Hamburg Airport',
+    city: 'Hamburg',
+    country: 'Germany',
+    timezone: 'Europe/Berlin',
+    latitude: 53.6304,
+    longitude: 9.9882,
+  },
+  {
+    iataCode: 'LHR',
+    icaoCode: 'EGLL',
+    name: 'Heathrow Airport',
+    city: 'London',
+    country: 'United Kingdom',
+    timezone: 'Europe/London',
+    latitude: 51.47,
+    longitude: -0.4614,
+  },
+  {
+    iataCode: 'JFK',
+    icaoCode: 'KJFK',
+    name: 'John F. Kennedy International Airport',
+    city: 'New York',
+    country: 'United States',
+    timezone: 'America/New_York',
+    latitude: 40.6413,
+    longitude: -73.7781,
+  },
+  {
+    iataCode: 'LAX',
+    icaoCode: 'KLAX',
+    name: 'Los Angeles International Airport',
+    city: 'Los Angeles',
+    country: 'United States',
+    timezone: 'America/Los_Angeles',
+    latitude: 33.9416,
+    longitude: -118.4085,
+  },
+  {
+    iataCode: 'CDG',
+    icaoCode: 'LFPG',
+    name: 'Charles de Gaulle Airport',
+    city: 'Paris',
+    country: 'France',
+    timezone: 'Europe/Paris',
+    latitude: 49.0097,
+    longitude: 2.5479,
+  },
+  {
+    iataCode: 'AMS',
+    icaoCode: 'EHAM',
+    name: 'Amsterdam Airport Schiphol',
+    city: 'Amsterdam',
+    country: 'Netherlands',
+    timezone: 'Europe/Amsterdam',
+    latitude: 52.3105,
+    longitude: 4.7683,
+  },
+  {
+    iataCode: 'SIN',
+    icaoCode: 'WSSS',
+    name: 'Singapore Changi Airport',
+    city: 'Singapore',
+    country: 'Singapore',
+    timezone: 'Asia/Singapore',
+    latitude: 1.3644,
+    longitude: 103.9915,
+  },
+  {
+    iataCode: 'DXB',
+    icaoCode: 'OMDB',
+    name: 'Dubai International Airport',
+    city: 'Dubai',
+    country: 'United Arab Emirates',
+    timezone: 'Asia/Dubai',
+    latitude: 25.2532,
+    longitude: 55.3657,
+  },
 ];
 
 const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>> = [
@@ -79,12 +192,18 @@ const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>
   { resource: 'notifications', action: 'manage', description: 'Manage notifications' },
   { resource: 'reports', action: 'read', description: 'View and export reports' },
   { resource: 'audit', action: 'read', description: 'View audit logs' },
+  { resource: 'dashboard', action: 'read', description: 'View operations dashboard' },
   { resource: 'settings', action: 'manage', description: 'Manage system settings' },
   { resource: 'offers', action: 'read', description: 'View offer catalog' },
   { resource: 'offers', action: 'manage', description: 'Manage offers' },
 ];
 
-const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{ resource: string; action: string }>; isSuperAdmin?: boolean }> = [
+const ROLE_DEFS: Array<{
+  name: string;
+  description: string;
+  permissions: Array<{ resource: string; action: string }>;
+  isSuperAdmin?: boolean;
+}> = [
   {
     name: 'Super Admin',
     description: 'Full system access',
@@ -103,6 +222,7 @@ const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{
       { resource: 'bookings', action: 'manage' },
       { resource: 'reports', action: 'read' },
       { resource: 'audit', action: 'read' },
+      { resource: 'dashboard', action: 'read' },
     ],
   },
   {
@@ -114,6 +234,7 @@ const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{
       { resource: 'airports', action: 'manage' },
       { resource: 'aircraft', action: 'manage' },
       { resource: 'routes', action: 'manage' },
+      { resource: 'dashboard', action: 'read' },
     ],
   },
   {
@@ -123,6 +244,7 @@ const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{
       { resource: 'bookings', action: 'read' },
       { resource: 'bookings', action: 'manage' },
       { resource: 'users', action: 'read' },
+      { resource: 'dashboard', action: 'read' },
     ],
   },
   {
@@ -132,6 +254,7 @@ const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{
       { resource: 'payments', action: 'read' },
       { resource: 'payments', action: 'refund' },
       { resource: 'reports', action: 'read' },
+      { resource: 'dashboard', action: 'read' },
     ],
   },
   {
@@ -142,6 +265,7 @@ const ROLE_DEFS: Array<{ name: string; description: string; permissions: Array<{
       { resource: 'bookings', action: 'read' },
       { resource: 'baggage', action: 'manage' },
       { resource: 'checkin', action: 'manage' },
+      { resource: 'dashboard', action: 'read' },
     ],
   },
 ];
@@ -177,7 +301,9 @@ async function seedRoles(allPermissions: Permission[]): Promise<Role[]> {
 
     if (!def.isSuperAdmin) {
       for (const wanted of def.permissions) {
-        const perm = allPermissions.find((p) => p.resource === wanted.resource && p.action === wanted.action);
+        const perm = allPermissions.find(
+          (p) => p.resource === wanted.resource && p.action === wanted.action,
+        );
         if (perm) {
           await prisma.rolePermission.upsert({
             where: { roleId_permissionId: { roleId: role.id, permissionId: perm.id } },
@@ -265,25 +391,11 @@ async function seedSeats(aircraft: Aircraft[]): Promise<void> {
     const existing = await prisma.seat.count({ where: { aircraftId: ac.id } });
     if (existing > 0) continue;
 
-    const seats: Array<{ seatNumber: string; cabinClass: CabinClass; seatRow: number; seatColumn: string; isExitRow: boolean }> = [];
-    const totalRows = Math.ceil(ac.capacity / 6);
-    let count = 0;
-    for (let row = 1; row <= totalRows && count < ac.capacity; row++) {
-      for (const col of ['A', 'B', 'C', 'D', 'E', 'F']) {
-        if (count >= ac.capacity) break;
-        const cabinClass = row <= 2 && ac.capacity >= 300 ? CabinClass.FIRST : row <= 6 && ac.capacity >= 220 ? CabinClass.BUSINESS : CabinClass.ECONOMY;
-        seats.push({
-          seatNumber: `${row}${col}`,
-          cabinClass,
-          seatRow: row,
-          seatColumn: col,
-          isExitRow: row === 12 || row === 25,
-        });
-        count++;
-      }
-    }
-
-    await prisma.seat.createMany({ data: seats.map((s) => ({ ...s, aircraftId: ac.id, features: {} })) });
+    // Shared with the API's seat-map generator — never fork the layout here.
+    const seats = generateSeatMap(ac.capacity);
+    await prisma.seat.createMany({
+      data: seats.map((s) => ({ ...s, aircraftId: ac.id, features: {} })),
+    });
   }
 }
 
@@ -304,7 +416,12 @@ async function seedRoutes(airports: Airport[]): Promise<Route[]> {
     const origin = airports.find((a) => a.iataCode === pair.origin)!;
     const dest = airports.find((a) => a.iataCode === pair.dest)!;
     const route = await prisma.route.upsert({
-      where: { originAirportId_destinationAirportId: { originAirportId: origin.id, destinationAirportId: dest.id } },
+      where: {
+        originAirportId_destinationAirportId: {
+          originAirportId: origin.id,
+          destinationAirportId: dest.id,
+        },
+      },
       // Reference-data correction (Phase 2): existing rows predate the distance fields.
       update: { distanceKm: pair.distanceKm, durationMinutes: pair.durationMinutes },
       create: {
@@ -320,7 +437,15 @@ async function seedRoutes(airports: Airport[]): Promise<Route[]> {
   return created;
 }
 
-const ALL_DAYS: Weekday[] = [Weekday.MON, Weekday.TUE, Weekday.WED, Weekday.THU, Weekday.FRI, Weekday.SAT, Weekday.SUN];
+const ALL_DAYS: Weekday[] = [
+  Weekday.MON,
+  Weekday.TUE,
+  Weekday.WED,
+  Weekday.THU,
+  Weekday.FRI,
+  Weekday.SAT,
+  Weekday.SUN,
+];
 const WEEKDAYS: Weekday[] = [Weekday.MON, Weekday.TUE, Weekday.WED, Weekday.THU, Weekday.FRI];
 
 interface ScheduleRuleDef {
@@ -338,20 +463,101 @@ interface ScheduleRuleDef {
  * NV200+ are additional weekday-pattern frequencies on existing routes.
  */
 export const SCHEDULE_RULE_DEFS: ScheduleRuleDef[] = [
-  { flightNumber: 'NV100', origin: 'FRA', destination: 'JFK', aircraftRegistration: 'NV-359Y', departureTimeLocal: '08:00', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV101', origin: 'FRA', destination: 'LAX', aircraftRegistration: 'NV-748X', departureTimeLocal: '09:30', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV102', origin: 'FRA', destination: 'SIN', aircraftRegistration: 'NV-748X', departureTimeLocal: '10:00', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV103', origin: 'FRA', destination: 'DXB', aircraftRegistration: 'NV-321B', departureTimeLocal: '11:30', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV104', origin: 'MUC', destination: 'LHR', aircraftRegistration: 'NV-320A', departureTimeLocal: '12:00', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV105', origin: 'MUC', destination: 'CDG', aircraftRegistration: 'NV-321B', departureTimeLocal: '13:30', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV106', origin: 'HAM', destination: 'AMS', aircraftRegistration: 'NV-320A', departureTimeLocal: '14:00', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV107', origin: 'JFK', destination: 'LAX', aircraftRegistration: 'NV-321B', departureTimeLocal: '15:30', operatingDays: ALL_DAYS },
-  { flightNumber: 'NV200', origin: 'FRA', destination: 'JFK', aircraftRegistration: 'NV-359Y', departureTimeLocal: '18:30', operatingDays: [Weekday.MON, Weekday.WED, Weekday.FRI, Weekday.SUN] },
-  { flightNumber: 'NV201', origin: 'FRA', destination: 'SIN', aircraftRegistration: 'NV-748X', departureTimeLocal: '22:15', operatingDays: [Weekday.TUE, Weekday.THU, Weekday.SAT] },
-  { flightNumber: 'NV202', origin: 'MUC', destination: 'LHR', aircraftRegistration: 'NV-320A', departureTimeLocal: '07:15', operatingDays: WEEKDAYS },
+  {
+    flightNumber: 'NV100',
+    origin: 'FRA',
+    destination: 'JFK',
+    aircraftRegistration: 'NV-359Y',
+    departureTimeLocal: '08:00',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV101',
+    origin: 'FRA',
+    destination: 'LAX',
+    aircraftRegistration: 'NV-748X',
+    departureTimeLocal: '09:30',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV102',
+    origin: 'FRA',
+    destination: 'SIN',
+    aircraftRegistration: 'NV-748X',
+    departureTimeLocal: '10:00',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV103',
+    origin: 'FRA',
+    destination: 'DXB',
+    aircraftRegistration: 'NV-321B',
+    departureTimeLocal: '11:30',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV104',
+    origin: 'MUC',
+    destination: 'LHR',
+    aircraftRegistration: 'NV-320A',
+    departureTimeLocal: '12:00',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV105',
+    origin: 'MUC',
+    destination: 'CDG',
+    aircraftRegistration: 'NV-321B',
+    departureTimeLocal: '13:30',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV106',
+    origin: 'HAM',
+    destination: 'AMS',
+    aircraftRegistration: 'NV-320A',
+    departureTimeLocal: '14:00',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV107',
+    origin: 'JFK',
+    destination: 'LAX',
+    aircraftRegistration: 'NV-321B',
+    departureTimeLocal: '15:30',
+    operatingDays: ALL_DAYS,
+  },
+  {
+    flightNumber: 'NV200',
+    origin: 'FRA',
+    destination: 'JFK',
+    aircraftRegistration: 'NV-359Y',
+    departureTimeLocal: '18:30',
+    operatingDays: [Weekday.MON, Weekday.WED, Weekday.FRI, Weekday.SUN],
+  },
+  {
+    flightNumber: 'NV201',
+    origin: 'FRA',
+    destination: 'SIN',
+    aircraftRegistration: 'NV-748X',
+    departureTimeLocal: '22:15',
+    operatingDays: [Weekday.TUE, Weekday.THU, Weekday.SAT],
+  },
+  {
+    flightNumber: 'NV202',
+    origin: 'MUC',
+    destination: 'LHR',
+    aircraftRegistration: 'NV-320A',
+    departureTimeLocal: '07:15',
+    operatingDays: WEEKDAYS,
+  },
 ];
 
-async function seedScheduleRules(routes: Route[], aircraft: Aircraft[], airports: Airport[]): Promise<ScheduleRule[]> {
+async function seedScheduleRules(
+  routes: Route[],
+  aircraft: Aircraft[],
+  airports: Airport[],
+): Promise<ScheduleRule[]> {
   const baseDate = new Date();
   baseDate.setHours(0, 0, 0, 0);
   const effectiveFrom = new Date(baseDate);
@@ -405,9 +611,14 @@ async function adoptExistingFlights(rules: ScheduleRule[]): Promise<number> {
   });
   let adopted = 0;
   for (const flight of unlinked) {
-    const rule = rules.find((r) => r.flightNumber === flight.flightNumber && r.routeId === flight.routeId);
+    const rule = rules.find(
+      (r) => r.flightNumber === flight.flightNumber && r.routeId === flight.routeId,
+    );
     if (!rule) continue;
-    const operatingDate = operatingDateOfFlight(flight.departureTime, flight.route.originAirport.timezone);
+    const operatingDate = operatingDateOfFlight(
+      flight.departureTime,
+      flight.route.originAirport.timezone,
+    );
     await prisma.flight.update({
       where: { id: flight.id },
       data: { scheduleRuleId: rule.id, operatingDate: new Date(`${operatingDate}T00:00:00Z`) },
@@ -433,50 +644,94 @@ async function seedGenerateFlights(): Promise<void> {
   );
 }
 
+/**
+ * Demo CONFIRMED booking for the demo customer: full fare total (base + tax +
+ * fee), a matching SUCCESS payment, a fare-rules snapshot, and BookingSeat rows
+ * on every segment — the same invariants the real payment flow produces.
+ */
 async function seedDemoBooking(customer: User): Promise<void> {
   const existing = await prisma.booking.findFirst({ where: { userId: customer.id } });
   if (existing) return;
 
   const flight = await prisma.flight.findFirst({
-    include: { route: { include: { originAirport: true, destinationAirport: true } }, fares: true, aircraft: true },
+    where: { status: 'SCHEDULED', departureTime: { gt: new Date() } },
+    orderBy: { departureTime: 'asc' },
+    include: {
+      fares: { where: { cabinClass: CabinClass.ECONOMY } },
+      segments: { orderBy: { segmentNumber: 'asc' } },
+    },
   });
-  if (!flight) return;
+  const fare = flight?.fares[0];
+  if (!flight || !fare || flight.segments.length === 0) return;
 
-  const fare = flight.fares.find((f) => f.cabinClass === CabinClass.ECONOMY) ?? flight.fares[0];
+  // First economy seat not already occupied by another booking on this flight.
+  const seat = await prisma.seat.findFirst({
+    where: {
+      aircraftId: flight.aircraftId,
+      cabinClass: CabinClass.ECONOMY,
+      bookingSeats: { none: { flightSegment: { flightId: flight.id } } },
+    },
+    orderBy: { seatNumber: 'asc' },
+  });
+  if (!seat) return;
 
-  await prisma.booking.create({
-    data: {
-      bookingReference: generateBookingReference(),
-      userId: customer.id,
-      status: BookingStatus.CONFIRMED,
-      totalAmount: fare.basePrice,
-      currency: fare.currency,
-      contactEmail: customer.email,
-      bookingPassengers: {
-        create: [
-          {
-            passenger: {
-              create: {
-                userId: customer.id,
-                firstName: customer.firstName,
-                lastName: customer.lastName,
-              },
-            },
-            passengerType: 'ADULT',
-          },
-        ],
-      },
-      payments: {
-        create: {
-          amount: fare.basePrice,
-          currency: fare.currency,
-          status: PaymentStatus.SUCCESS,
-          provider: 'mock',
-          providerReference: `mock_${generateBookingReference()}`,
-          paidAt: new Date(),
+  const perPassenger = {
+    basePrice: Number(fare.basePrice),
+    taxAmount: Number(fare.taxAmount),
+    feeAmount: Number(fare.feeAmount),
+  };
+  const totalAmount = perPassenger.basePrice + perPassenger.taxAmount + perPassenger.feeAmount;
+  const refundPolicy = refundPolicyFromFareRules(fare.fareRules);
+
+  await prisma.$transaction(async (tx) => {
+    const booking = await tx.booking.create({
+      data: {
+        bookingReference: generateBookingReference(),
+        userId: customer.id,
+        status: BookingStatus.CONFIRMED,
+        totalAmount,
+        currency: fare.currency,
+        contactEmail: customer.email,
+        fareRulesSnapshot: {
+          cabinClass: CabinClass.ECONOMY,
+          perPassenger: { ...perPassenger, total: totalAmount },
+          passengerCount: 1,
+          refundPolicy: refundPolicy
+            ? {
+                refundable: refundPolicy.refundable,
+                cancellationFeePercent: refundPolicy.cancellationFeePercent,
+              }
+            : null,
         },
       },
-    },
+    });
+    const passenger = await tx.passenger.create({
+      data: { userId: customer.id, firstName: customer.firstName, lastName: customer.lastName },
+    });
+    const bookingPassenger = await tx.bookingPassenger.create({
+      data: { bookingId: booking.id, passengerId: passenger.id, passengerType: 'ADULT' },
+    });
+    for (const segment of flight.segments) {
+      await tx.bookingSeat.create({
+        data: {
+          bookingPassengerId: bookingPassenger.id,
+          flightSegmentId: segment.id,
+          seatId: seat.id,
+          seatNumber: seat.seatNumber,
+        },
+      });
+    }
+    await tx.payment.create({
+      data: {
+        bookingId: booking.id,
+        amount: totalAmount,
+        currency: fare.currency,
+        status: PaymentStatus.SUCCESS,
+        provider: 'mock',
+        providerReference: `mock_seed_${booking.bookingReference}`,
+        paidAt: new Date(),
+      },
+    });
   });
 }
 
@@ -486,21 +741,38 @@ async function seedDemoBooking(customer: User): Promise<void> {
  * Payments arrive in a later phase; this booking must stay pre-payment.
  */
 async function seedPendingBooking(customer: User): Promise<void> {
-  const reference = 'NVPND1';
+  const reference = 'NVPEND01';
   const existing = await prisma.booking.findUnique({ where: { bookingReference: reference } });
   if (existing) return;
 
   const flight = await prisma.flight.findFirst({
     where: { status: 'SCHEDULED', departureTime: { gt: new Date() } },
     orderBy: { departureTime: 'asc' },
-    include: { fares: { where: { cabinClass: CabinClass.ECONOMY } }, aircraft: { include: { seats: { where: { cabinClass: CabinClass.ECONOMY }, orderBy: { seatNumber: 'asc' }, take: 1 } } } },
+    include: { fares: { where: { cabinClass: CabinClass.ECONOMY } } },
   });
   const fare = flight?.fares[0];
-  const seat = flight?.aircraft.seats[0];
-  if (!flight || !fare || !seat) return;
+  if (!flight || !fare) return;
+
+  // First economy seat not already occupied on this flight — the demo CONFIRMED
+  // booking may sit on the same flight (it is seeded first).
+  const seat = await prisma.seat.findFirst({
+    where: {
+      aircraftId: flight.aircraftId,
+      cabinClass: CabinClass.ECONOMY,
+      bookingSeats: { none: { flightSegment: { flightId: flight.id } } },
+    },
+    orderBy: { seatNumber: 'asc' },
+  });
+  if (!seat) return;
 
   const totalAmount = Number(fare.basePrice) + Number(fare.taxAmount) + Number(fare.feeAmount);
-  const perPassenger = { basePrice: Number(fare.basePrice), taxAmount: Number(fare.taxAmount), feeAmount: Number(fare.feeAmount), total: totalAmount };
+  const perPassenger = {
+    basePrice: Number(fare.basePrice),
+    taxAmount: Number(fare.taxAmount),
+    feeAmount: Number(fare.feeAmount),
+    total: totalAmount,
+  };
+  const refundPolicy = refundPolicyFromFareRules(fare.fareRules);
 
   await prisma.$transaction(async (tx) => {
     const booking = await tx.booking.create({
@@ -511,7 +783,17 @@ async function seedPendingBooking(customer: User): Promise<void> {
         totalAmount,
         currency: fare.currency,
         contactEmail: customer.email,
-        fareRulesSnapshot: { cabinClass: CabinClass.ECONOMY, perPassenger, passengerCount: 1 },
+        fareRulesSnapshot: {
+          cabinClass: CabinClass.ECONOMY,
+          perPassenger,
+          passengerCount: 1,
+          refundPolicy: refundPolicy
+            ? {
+                refundable: refundPolicy.refundable,
+                cancellationFeePercent: refundPolicy.cancellationFeePercent,
+              }
+            : null,
+        },
       },
     });
     const passenger = await tx.passenger.create({
@@ -527,7 +809,8 @@ async function seedPendingBooking(customer: User): Promise<void> {
         userId: customer.id,
         bookingId: booking.id,
         status: 'ACTIVE',
-        expiresAt: new Date(Date.now() + 15 * 60000),
+        // Demo hold stays payable on the seed day; real checkout holds use SEAT_HOLD_MINUTES.
+        expiresAt: new Date(Date.now() + 24 * 3_600_000),
       },
     });
   });
@@ -547,14 +830,30 @@ async function seedOffers(): Promise<number> {
   validUntil.setDate(validUntil.getDate() + 60);
 
   const active = { status: OfferStatus.ACTIVE, validFrom, validUntil };
-  const defs: Array<Pick<Offer, 'title' | 'description' | 'badge' | 'destination' | 'offerValue' | 'terms' | 'imageUrl' | 'status' | 'validFrom' | 'validUntil'>> = [
+  const defs: Array<
+    Pick<
+      Offer,
+      | 'title'
+      | 'description'
+      | 'badge'
+      | 'destination'
+      | 'offerValue'
+      | 'terms'
+      | 'imageUrl'
+      | 'status'
+      | 'validFrom'
+      | 'validUntil'
+    >
+  > = [
     {
       title: 'Transatlantic Business',
-      description: 'Fully flat seats, lounge access, and priority everything on our flagship route to New York.',
+      description:
+        'Fully flat seats, lounge access, and priority everything on our flagship route to New York.',
       badge: '−30% Business',
       destination: 'Frankfurt → New York',
       offerValue: 'from €1,899',
-      terms: 'One-way Business Class fare, taxes included. Subject to availability on NV100/NV200 departures.',
+      terms:
+        'One-way Business Class fare, taxes included. Subject to availability on NV100/NV200 departures.',
       imageUrl: 'assets/img/dest-nyc.jpg',
       ...active,
     },
@@ -564,17 +863,20 @@ async function seedOffers(): Promise<number> {
       badge: 'City break',
       destination: 'Frankfurt → London',
       offerValue: 'from €89',
-      terms: 'One-way Economy Light fare, hand baggage only. Weekend departures until the end of the season.',
+      terms:
+        'One-way Economy Light fare, hand baggage only. Weekend departures until the end of the season.',
       imageUrl: 'assets/img/dest-london.jpg',
       ...active,
     },
     {
       title: 'Winter Sun in Dubai',
-      description: 'Trade the cold for the coast — daily nonstop flights and a free date change on this fare.',
+      description:
+        'Trade the cold for the coast — daily nonstop flights and a free date change on this fare.',
       badge: 'Winter sun',
       destination: 'Frankfurt → Dubai',
       offerValue: 'from €349',
-      terms: 'One-way Economy fare, taxes included. Free one-time date change up to 7 days before departure.',
+      terms:
+        'One-way Economy fare, taxes included. Free one-time date change up to 7 days before departure.',
       imageUrl: 'assets/img/dest-dubai.jpg',
       ...active,
     },
@@ -659,10 +961,34 @@ async function seedLoyalty(customer: User): Promise<void> {
 
 async function seedSystemSettings(): Promise<void> {
   const settings = [
-    { key: 'seat_hold_minutes', value: '15', category: 'booking', isPublic: true, description: 'Minutes a seat hold stays active during checkout' },
-    { key: 'check_in_opens_hours', value: '24', category: 'operations', isPublic: true, description: 'Hours before departure when online check-in opens' },
-    { key: 'default_currency', value: 'EUR', category: 'localization', isPublic: true, description: 'Default currency for new bookings' },
-    { key: 'cancellation_fee_percent', value: '10', category: 'finance', isPublic: false, description: 'Default cancellation fee percentage' },
+    {
+      key: 'seat_hold_minutes',
+      value: '15',
+      category: 'booking',
+      isPublic: true,
+      description: 'Minutes a seat hold stays active during checkout',
+    },
+    {
+      key: 'check_in_opens_hours',
+      value: '24',
+      category: 'operations',
+      isPublic: true,
+      description: 'Hours before departure when online check-in opens',
+    },
+    {
+      key: 'default_currency',
+      value: 'EUR',
+      category: 'localization',
+      isPublic: true,
+      description: 'Default currency for new bookings',
+    },
+    {
+      key: 'cancellation_fee_percent',
+      value: '10',
+      category: 'finance',
+      isPublic: false,
+      description: 'Default cancellation fee percentage',
+    },
   ];
 
   for (const s of settings) {
@@ -693,7 +1019,9 @@ async function main(): Promise<void> {
   await seedSystemSettings();
 
   // eslint-disable-next-line no-console
-  console.log(`Seeded: ${permissions.length} permissions, ${roles.length} roles, ${airports.length} airports, ${aircraft.length} aircraft, ${routes.length} routes, ${scheduleRules.length} schedule rules (${adopted} flights adopted), ${offers} offers`);
+  console.log(
+    `Seeded: ${permissions.length} permissions, ${roles.length} roles, ${airports.length} airports, ${aircraft.length} aircraft, ${routes.length} routes, ${scheduleRules.length} schedule rules (${adopted} flights adopted), ${offers} offers`,
+  );
   // eslint-disable-next-line no-console
   console.log(`Users: admin=${admin.email} / customer=${customer.email}`);
 }

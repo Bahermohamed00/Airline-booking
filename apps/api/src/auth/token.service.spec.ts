@@ -3,7 +3,6 @@ import { UnauthorizedException } from '@nestjs/common';
 import { TokenService } from './token.service.js';
 import { SessionService } from './session.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ConfigService } from '@nestjs/config';
 import { AuditService } from '../audit/audit.service.js';
 
 const createMockPrisma = () => {

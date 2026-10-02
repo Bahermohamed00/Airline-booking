@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { generateBookingReference } from './booking-reference.js';
+import { refundPolicyFromFareRules } from '../payments/refund-policy.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
 import { AdminBookingQueryDto } from './dto/admin-booking-query.dto.js';
 
@@ -140,6 +141,15 @@ export class BookingsService {
     return this.toView(booking);
   }
 
+  /** Shared booking view for lifecycle flows (payments module) after mutations. */
+  async getBookingView(id: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id }, include: BOOKING_INCLUDE });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+    return this.toView(booking);
+  }
+
   // ---------- Creation internals ----------
 
   private createAttempt(user: AuthUser, dto: CreateBookingDto): Promise<BookingWithRelations> {
@@ -228,6 +238,7 @@ export class BookingsService {
       };
       const perPassengerTotal = perPassenger.basePrice + perPassenger.taxAmount + perPassenger.feeAmount;
       const totalAmount = perPassengerTotal * dto.passengers.length;
+      const refundPolicy = refundPolicyFromFareRules(fare.fareRules);
 
       const booking = await tx.booking.create({
         data: {
@@ -242,6 +253,12 @@ export class BookingsService {
             cabinClass: dto.cabinClass,
             perPassenger: { ...perPassenger, total: perPassengerTotal },
             passengerCount: dto.passengers.length,
+            // BR-15: capture the fare's refund policy (when configured) so
+            // cancellation refunds are computed from the rules sold, not the
+            // rules that happen to be configured at cancellation time.
+            refundPolicy: refundPolicy
+              ? { refundable: refundPolicy.refundable, cancellationFeePercent: refundPolicy.cancellationFeePercent }
+              : null,
           },
         },
       });

@@ -1,6 +1,6 @@
 import { ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ThrottlerException, ThrottlerGuard, ThrottlerStorage, InjectThrottlerOptions, InjectThrottlerStorage, type ThrottlerLimitDetail, type ThrottlerModuleOptions } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerStorage, InjectThrottlerOptions, InjectThrottlerStorage, type ThrottlerLimitDetail, type ThrottlerModuleOptions } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { AuditService } from '../audit/audit.service.js';
 

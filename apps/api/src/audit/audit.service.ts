@@ -51,6 +51,12 @@ const SAFE_METADATA_KEYS = [
   'flightNumber',
   'seatNumbers',
   'holdCount',
+  // Payment-domain metadata (never tokens or card data).
+  'paymentId',
+  'refundId',
+  'amount',
+  'currency',
+  'providerReference',
   // Offer metadata.
   'title',
 ] as const;

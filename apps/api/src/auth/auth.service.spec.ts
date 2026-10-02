@@ -154,7 +154,7 @@ describe('AuthService', () => {
       where: { id: 'user-1' },
       data: { passwordHash: expect.stringMatching(/^\$argon2id\$/) },
     });
-  });
+  }, 15000); // bcrypt cost-12 hashing is CPU-bound under parallel test load
 
   it('should audit LOGIN_FAILED for an unknown email', async () => {
     prisma.user.findUnique.mockResolvedValue(null);

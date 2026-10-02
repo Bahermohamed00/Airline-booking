@@ -5,7 +5,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import { prismaTestClient, resetDatabase } from './test-utils.js';
 
 describe('Registration (e2e)', () => {
   let app: INestApplication<App>;

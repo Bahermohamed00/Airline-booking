@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Airport, Fare, Flight, Route } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { toAirportView, type AirportView } from '../airports/airports.service.js';
+import { toAirportView } from '../airports/airports.service.js';
 import { generateFlights, type GenerationSummary } from './flight-generator.js';
 import { FlightQueryDto } from './dto/flight-query.dto.js';
 import { GenerateFlightsDto } from './dto/generate-flights.dto.js';
@@ -84,6 +84,38 @@ export class FlightsService {
       throw new NotFoundException('Flight not found');
     }
     return toFlightView(flight);
+  }
+
+  /**
+   * Per-flight seat availability for the customer seat map. Occupied seats
+   * come from BookingSeat rows on non-cancelled bookings; held seats from
+   * unexpired ACTIVE seat holds. Expired/RELEASED holds and cancelled
+   * bookings never block a seat (the cron + booking-creation self-heal own
+   * the state transitions; this read-only view applies the same rules).
+   */
+  async getSeatAvailability(id: string) {
+    const flight = await this.prisma.flight.findUnique({ where: { id }, select: { id: true } });
+    if (!flight) {
+      throw new NotFoundException('Flight not found');
+    }
+    const [occupied, held] = await Promise.all([
+      this.prisma.bookingSeat.findMany({
+        where: {
+          flightSegment: { flightId: id },
+          bookingPassenger: { booking: { status: { not: 'CANCELLED' } } },
+        },
+        select: { seatId: true },
+      }),
+      this.prisma.seatHold.findMany({
+        where: { flightId: id, status: 'ACTIVE', expiresAt: { gt: new Date() } },
+        select: { seatId: true },
+      }),
+    ]);
+    return {
+      flightId: id,
+      occupiedSeatIds: occupied.map((s) => s.seatId),
+      heldSeatIds: held.map((s) => s.seatId),
+    };
   }
 
   async generate(dto: GenerateFlightsDto): Promise<GenerationSummary> {

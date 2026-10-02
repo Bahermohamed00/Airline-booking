@@ -54,10 +54,35 @@ export async function captureLogs<T>(fn: () => Promise<T>): Promise<{ result: T;
   return { result: result as T, output: captured.join('') };
 }
 
+const FALLBACK_TEST_DATABASE_URL =
+  'postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public';
+
+/**
+ * Resolves the e2e database URL, always targeting a dedicated test database:
+ * `resetDatabase()` truncates every table, and Prisma's client auto-loads the
+ * repo-root `.env`, so an ambient DATABASE_URL almost always points at the
+ * DEVELOPMENT database. An ambient URL already naming a `*_test` database is
+ * honored as-is; anything else is rewritten to `airline_booking_test` on the
+ * same server with the same credentials. Hard-fails if the result is still
+ * not a `*_test` database.
+ */
+function resolveTestDatabaseUrl(): string {
+  const url = new URL(process.env['DATABASE_URL'] ?? FALLBACK_TEST_DATABASE_URL);
+  const dbName = url.pathname.replace(/^\//, '');
+  if (!dbName.endsWith('_test')) {
+    url.pathname = '/airline_booking_test';
+  }
+  const resolvedName = url.pathname.replace(/^\//, '');
+  if (!resolvedName.endsWith('_test')) {
+    throw new Error(`E2E tests must run against a dedicated *_test database — got "${resolvedName}".`);
+  }
+  return url.toString();
+}
+
 export const prismaTestClient = new PrismaClient({
   datasources: {
     db: {
-      url: process.env['DATABASE_URL'] ?? 'postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public',
+      url: resolveTestDatabaseUrl(),
     },
   },
 });

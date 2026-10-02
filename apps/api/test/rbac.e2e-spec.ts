@@ -353,7 +353,7 @@ describe('RBAC guards & role matrix (e2e)', () => {
   });
 
   it('permissions come only from the database — token claims for roles/permissions are ignored', async () => {
-    const token = await loginAs('forged@matrix.test'); // Customer with no staff role
+    await loginAs('forged@matrix.test'); // Customer with no staff role
     const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'forged@matrix.test' } });
     const session = await prismaTestClient.session.findFirstOrThrow({ where: { userId: user.id } });
 
