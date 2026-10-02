@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Concurrency: cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only values. JWT_SECRET just needs to be non-empty (the API reads it
+  # with getOrThrow); it is NOT a real credential. NODE_ENV=test skips throttling
+  # and in-app cron. NOTIFICATION_PROVIDER=mock guarantees no real email is sent.
+  NODE_ENV: test
+  JWT_SECRET: ci-test-secret-not-for-production
+  NOTIFICATION_PROVIDER: mock
+  PAYMENT_PROVIDER: mock
+  # The e2e harness always targets a dedicated *_test database; it rewrites any
+  # ambient URL to airline_booking_test and hard-fails otherwise.
+  DATABASE_URL: postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public
+
+jobs:
+  ci:
+    name: Build, test & Prisma guard
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: airline
+          POSTGRES_PASSWORD: airline
+          POSTGRES_DB: airline_booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U airline -d airline_booking_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma validate
+        run: npx prisma validate --schema=prisma/schema
+
+      - name: Prisma generate
+        run: npx prisma generate --schema=prisma/schema
+
+      - name: Apply migrations to the test database
+        run: npx prisma migrate deploy --schema=prisma/schema
+
+      - name: Migration guard (schema ↔ migrations drift)
+        # Compares the freshly-migrated database against the Prisma datamodel.
+        # Exit code is non-zero if there is any drift, so this also proves that
+        # `migrate deploy` actually applied the migrations above.
+        run: npx prisma migrate diff --from-schema-datasource prisma/schema --to-schema-datamodel prisma/schema --exit-code
+
+      - name: Lint (API oxlint)
+        run: npm run lint
+
+      - name: API build
+        run: npm run api:build
+
+      - name: Web build
+        run: npm run web:build
+
+      - name: API unit tests
+        run: npm run api:test
+
+      - name: Web unit tests
+        run: npm run web:test
+
+      - name: API e2e tests
+        run: npm run api:test:e2e
