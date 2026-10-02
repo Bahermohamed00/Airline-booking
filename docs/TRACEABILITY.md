@@ -1,6 +1,6 @@
-# Traceability Matrix — Phases 0–5
+# Traceability Matrix — Phases 0–6F
 
-This document maps SRS v2.1 requirements to their implementation artifacts for the foundation, identity/RBAC, mock-data UI, bookings/seat-holds, and offers phases.
+This document maps SRS v2.1 requirements to their implementation artifacts for the foundation, identity/RBAC, mock-data UI, bookings/seat-holds, offers, real-data integration (Phases 6A–6E), and payments/refunds (Phase 6F) phases.
 
 ## Legend
 
@@ -149,9 +149,19 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 | **Deferred (backend phase required)** | — | Admin cancellation, BR-14 payment exception, payments, refunds, notifications — no backend exists; NOT faked | — | — | — | — |
 | **Known limitations** | — | Admin list unpaginated (fine at current scale); filters limited to reference/status/email; seat-to-passenger association unavailable in the current API | — | — | — | — |
 
+## Phase 6F — Payments & Refunds (full stack)
+
+| Requirement | Use Case | UI / Screen | API Endpoint / Module | Service / Guard | Prisma / PostgreSQL | Test |
+|-------------|----------|-------------|-----------------------|-----------------|---------------------|------|
+| FR-C13 / NFR-01 Customer payment (tokenized, no raw card) | UC-03 | ReviewPage `/booking/review` (real API) | `POST /api/bookings/:id/payment`, `GET /api/bookings/:id/payments` (owner) | `PaymentsService.payBooking`, `MockPaymentProvider`, idempotency | `Payment` (PENDING→SUCCESS/FAILED), no PAN stored | `payments.service.spec.ts`, `payments.e2e-spec.ts`, `mock-payment.provider.spec.ts` |
+| SRS 5.9 Payments & refunds (admin) | UC-09 | AdminPaymentsPage `/admin/payments`, AdminRefundsPage `/admin/refunds` (`payments:read`/`payments:refund`) | `GET /api/admin/payments(/:id)`, `POST /api/admin/payments/:id/refund`, `GET /api/admin/refunds` | `AdminPaymentsController`, `AdminRefundsController`, `PaymentsService.refundPayment` — refund recorded `PENDING` (row-locked, remainder-validated) **before** the provider call, then `PROCESSED`/`REJECTED` | `Payment`, `Refund` (PENDING/PROCESSED/REJECTED) | `payments.e2e-spec.ts`, `refund-policy.spec.ts`, `admin-payments.component.spec.ts`, `admin-refunds.component.spec.ts` |
+| BR-15 Admin cancellation with auto-refund | UC-09 | AdminBookingsPage manage-tier action | `POST /api/admin/bookings/:id/cancel` (`bookings:manage`) | `AdminBookingLifecycleController` → `PaymentsService.adminCancelBooking`; refund to the fare-policy target, payment marked `REFUNDED` | `Booking.status`→CANCELLED, `Refund`, `Payment` | `payments.e2e-spec.ts` |
+| BR-14 Payment exception confirmation | UC-09 | AdminBookingsPage (reason required, audited) | `POST /api/admin/bookings/:id/confirm-exception` (`bookings:manage`) | `PaymentsService.confirmBookingException` — confirms without creating a Payment row | `Booking` confirmed; `BR14_PAYMENT_EXCEPTION` in `AuditLog` | `payments.e2e-spec.ts` (audit row asserted) |
+| Refund policy snapshot | UC-03/05 | Cancel flow shows refund estimate | — | `refundPolicyFromFareRules` / `resolveRefundPolicy` (fare-rules snapshot on the booking) | `Booking.fareRulesSnapshot.refundPolicy` | `refund-policy.spec.ts` |
+| BR-10/BR-11 Audit log | UC-12 | — | Emitted post-commit, fail-soft | `AuditService.log` | `PAYMENT_SUCCEEDED`, `PAYMENT_FAILED`, `BOOKING_CONFIRMED`, `SEAT_HOLD_CONVERTED`, `REFUND_COMPLETED`, `BR14_PAYMENT_EXCEPTION` in `AuditLog` | `payments.e2e-spec.ts` |
+
 ## Known Gaps (to be addressed in later phases)
 
 - The admin users page and the check-in/boarding-pass/baggage/loyalty/notifications pages still run on `core/mock/` services; their backends (where they exist) are wired in later phases.
-- Payments and refunds are not implemented (future phase). One mock `Payment` row exists in seed demo data only; real bookings remain PENDING until then.
 - Automatic `Offer` ACTIVE→EXPIRED status transition is not implemented; public visibility is date-filtered server-side, so expiry is enforced regardless.
 - Localization and multi-currency support (NFR-13) planned for a future phase.

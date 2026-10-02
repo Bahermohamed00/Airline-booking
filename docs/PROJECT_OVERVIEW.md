@@ -50,19 +50,23 @@ Public endpoints use `@Public()` + throttles; everything else is guarded.
 
 ## Database (prisma/)
 
-- `schema.prisma` — single source of truth (UUID PKs, snake_case via
-  `@@map`/`@map`). Domains: identity/RBAC (users, roles, permissions,
-  sessions, tokens), catalog (airports, aircraft, seats, routes),
-  schedule (schedule_rules, flights, flight_segments, fares), booking
-  (bookings, passengers, seat_holds, booking_seats), payments (payments,
+- `schema/` — multi-file Prisma schema, single source of truth (UUID PKs,
+  snake_case via `@@map`/`@map`): `schema/schema.prisma` is the
+  generator/datasource entrypoint and each model lives in
+  `schema/<Model>/<Model>.prisma` (37 models, 23 enums). Domains: identity/RBAC
+  (users, roles, permissions, sessions, tokens), catalog (airports, aircraft,
+  seats, routes), schedule (schedule_rules, flights, flight_segments, fares),
+  booking (bookings, passengers, seat_holds, booking_seats), payments (payments,
   refunds), offers, loyalty, notifications, baggage/check-in, settings, audit.
+  See `docs/PRISMA_OWNERSHIP.md` for per-model ownership.
 - 8 migrations (`20260923*`–`20260928*`); both `airline_booking` (dev) and
   `airline_booking_test` (e2e) are up to date.
-- `seed.ts` — idempotent NovaAir dataset (permissions/roles, admin + demo
-  customer, 10 airports, 4 aircraft + seat maps via the shared seat-map
-  generator, 8 routes, 11 schedule rules, 14-day flight window, demo
-  CONFIRMED + PENDING bookings with real invariants, loyalty, offers,
-  settings).
+- `seed.ts` + `seed/` — idempotent NovaAir dataset, split into domain modules
+  (identity, catalog, flights, booking, offers, operations) orchestrated by
+  `seed.ts` (permissions/roles, admin + demo customer, 10 airports, 4 aircraft +
+  seat maps via the shared seat-map generator, 8 routes, 11 schedule rules,
+  14-day flight window, demo CONFIRMED + PENDING bookings with real invariants,
+  loyalty, offers, settings).
 
 ## Frontend structure
 
