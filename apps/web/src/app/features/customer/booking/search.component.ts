@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
 import { Router } from '@angular/router';
-import { AIRPORTS } from '../../../core/mock/mock-data';
+import { FlightService } from '../../../core/services/flight.service';
 import type { CabinClass } from '../../../core/models/domain.model';
 import type { SearchCriteria, TripType } from '../../../core/models/booking-flow.model';
 import { NaSegmented, SegmentOption } from '../../../shared/ui/segmented.component';
@@ -70,12 +70,25 @@ function toDateInput(d: Date): string {
             </div>
           </div>
 
+          @if (airportsError()) {
+            <na-alert tone="danger" title="Airports unavailable" icon="⚠" [retryable]="true" (retry)="loadAirports()">
+              We couldn't load the airport list. Please try again.
+            </na-alert>
+          } @else if (airportsLoading()) {
+            <p class="airports-status" role="status">Loading airports…</p>
+          } @else if (airportOptions().length === 0) {
+            <na-alert tone="info" title="No airports available" icon="ℹ" [retryable]="true" (retry)="loadAirports()">
+              No active airports are available right now. Please try again later.
+            </na-alert>
+          }
+
           <div class="search-card__route">
             <na-autocomplete
               #fromField
               label="From"
               placeholder="City or airport"
-              [options]="airportOptions"
+              [options]="airportOptions()"
+              [disabled]="airportsLoading() || airportsError()"
               (selected)="origin.set($event.value)"
             />
             <button type="button" class="swap" (click)="swapAirports()" aria-label="Swap origin and destination">
@@ -85,7 +98,8 @@ function toDateInput(d: Date): string {
               #toField
               label="To"
               placeholder="City or airport"
-              [options]="airportOptions"
+              [options]="airportOptions()"
+              [disabled]="airportsLoading() || airportsError()"
               (selected)="destination.set($event.value)"
             />
           </div>
@@ -246,6 +260,7 @@ function toDateInput(d: Date): string {
     }
     .search-card__cabin { flex: 0 1 220px; min-width: 180px; margin-left: auto; }
     .search-card__route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: var(--na-space-3); }
+    .airports-status { margin: 0; color: var(--na-ink-500); font-size: var(--na-text-sm); }
     .swap {
       width: 40px; height: 40px; margin-bottom: var(--na-space-1);
       display: inline-flex; align-items: center; justify-content: center;
@@ -304,6 +319,7 @@ function toDateInput(d: Date): string {
 })
 export class SearchPage {
   private readonly router = inject(Router);
+  private readonly flightsApi = inject(FlightService);
 
   private readonly fromField = viewChild('fromField', { read: NaAutocomplete });
   private readonly toField = viewChild('toField', { read: NaAutocomplete });
@@ -314,13 +330,9 @@ export class SearchPage {
     { value: 'MULTI_CITY', label: 'Multi-city' },
   ];
 
-  protected readonly airportOptions: AutocompleteOption[] = AIRPORTS.filter((a) => a.status === 'ACTIVE').map(
-    (a) => ({
-      value: a.iataCode,
-      label: `${a.iataCode} — ${a.name}`,
-      hint: `${a.city}, ${a.country}`,
-    }),
-  );
+  protected readonly airportOptions = signal<AutocompleteOption[]>([]);
+  protected readonly airportsLoading = signal(true);
+  protected readonly airportsError = signal(false);
 
   protected readonly passengerGroups = [
     { key: 'adults' as const, label: 'Adults (12+)', min: 1, max: 9 },
@@ -353,6 +365,32 @@ export class SearchPage {
   protected readonly formError = signal<string | null>(null);
   protected readonly advisoryDismissed = signal(false);
   protected readonly recentSearches = signal<SearchCriteria[]>(this.loadRecent());
+
+  constructor() {
+    this.loadAirports();
+  }
+
+  protected loadAirports(): void {
+    this.airportsLoading.set(true);
+    this.airportsError.set(false);
+    this.flightsApi.listAirports().subscribe({
+      next: (airports) => {
+        this.airportOptions.set(
+          airports.map((a) => ({
+            value: a.iataCode,
+            label: `${a.iataCode} — ${a.name}`,
+            hint: `${a.city}, ${a.country}`,
+          })),
+        );
+        this.airportsLoading.set(false);
+      },
+      error: () => {
+        this.airportOptions.set([]);
+        this.airportsLoading.set(false);
+        this.airportsError.set(true);
+      },
+    });
+  }
 
   protected setCount(key: 'adults' | 'children' | 'infants', value: number): void {
     const group = this.passengerGroups.find((g) => g.key === key)!;

@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { AIRPORTS } from '../../core/mock/mock-data';
+import { FlightService } from '../../core/services/flight.service';
+import type { Airport } from '../../core/models/domain.model';
 import { daysFromNow, toDateInput } from './date-input';
 
 @Component({
@@ -39,10 +40,11 @@ import { daysFromNow, toDateInput } from './date-input';
             id="hs-from"
             class="field__control"
             [value]="origin()"
+            [disabled]="airportsLoading() || airportsError()"
             (change)="origin.set($any($event.target).value)"
           >
-            <option value="" disabled>Select origin</option>
-            @for (a of airports; track a.iataCode) {
+            <option value="" disabled>{{ airportsLoading() ? 'Loading airports…' : 'Select origin' }}</option>
+            @for (a of airports(); track a.iataCode) {
               <option [value]="a.iataCode">{{ a.city }} ({{ a.iataCode }})</option>
             }
           </select>
@@ -65,10 +67,11 @@ import { daysFromNow, toDateInput } from './date-input';
             id="hs-to"
             class="field__control"
             [value]="destination()"
+            [disabled]="airportsLoading() || airportsError()"
             (change)="destination.set($any($event.target).value)"
           >
-            <option value="" disabled>Select destination</option>
-            @for (a of airports; track a.iataCode) {
+            <option value="" disabled>{{ airportsLoading() ? 'Loading airports…' : 'Select destination' }}</option>
+            @for (a of airports(); track a.iataCode) {
               <option [value]="a.iataCode">{{ a.city }} ({{ a.iataCode }})</option>
             }
           </select>
@@ -121,6 +124,18 @@ import { daysFromNow, toDateInput } from './date-input';
           </svg>
         </button>
       </form>
+
+      @if (airportsError()) {
+        <p class="card__error" role="alert">
+          We couldn't load the airport list.
+          <button type="button" class="card__retry" (click)="loadAirports()">Try again</button>
+        </p>
+      } @else if (!airportsLoading() && airports().length === 0) {
+        <p class="card__error" role="status">
+          No airports are available right now.
+          <button type="button" class="card__retry" (click)="loadAirports()">Try again</button>
+        </p>
+      }
 
       @if (error()) {
         <p class="card__error" role="alert">{{ error() }}</p>
@@ -194,6 +209,12 @@ import { daysFromNow, toDateInput } from './date-input';
       background: var(--h-brown-700); border: 1px solid var(--h-onphoto-line-strong);
       border-radius: var(--na-radius-md); padding: var(--na-space-3) var(--na-space-4);
     }
+    .card__retry {
+      background: none; border: 1px solid currentColor; border-radius: var(--na-radius-sm);
+      color: inherit; font-weight: var(--na-font-semibold); font-size: inherit;
+      padding: 0.15rem 0.6rem; margin-left: var(--na-space-2);
+    }
+    .card__retry:hover { background: rgba(255, 255, 255, 0.12); }
     @media (max-width: 1100px) {
       .card__grid, .card__grid--oneway { grid-template-columns: 1fr auto 1fr 1fr 1fr; }
       .card__submit { grid-column: 1 / -1; }
@@ -208,8 +229,11 @@ import { daysFromNow, toDateInput } from './date-input';
 })
 export class SearchCard {
   private readonly router = inject(Router);
+  private readonly flightsApi = inject(FlightService);
 
-  protected readonly airports = AIRPORTS.filter((a) => a.status === 'ACTIVE');
+  protected readonly airports = signal<Airport[]>([]);
+  protected readonly airportsLoading = signal(true);
+  protected readonly airportsError = signal(false);
   protected readonly passengerOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9];
   protected readonly minDate = toDateInput(new Date());
 
@@ -220,6 +244,26 @@ export class SearchCard {
   protected readonly returnDate = signal(daysFromNow(8));
   protected readonly passengers = signal(1);
   protected readonly error = signal<string | null>(null);
+
+  constructor() {
+    this.loadAirports();
+  }
+
+  protected loadAirports(): void {
+    this.airportsLoading.set(true);
+    this.airportsError.set(false);
+    this.flightsApi.listAirports().subscribe({
+      next: (airports) => {
+        this.airports.set(airports);
+        this.airportsLoading.set(false);
+      },
+      error: () => {
+        this.airports.set([]);
+        this.airportsLoading.set(false);
+        this.airportsError.set(true);
+      },
+    });
+  }
 
   protected swap(): void {
     const from = this.origin();

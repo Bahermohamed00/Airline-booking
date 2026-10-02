@@ -4,6 +4,7 @@
 import type {
   FlightStatus, FlightScheduleStatus, BookingStatus, PaymentStatus, RefundStatus,
   BaggageStatus, SeatHoldStatus, NotificationStatus, LoyaltyTier, UserStatus, CheckInStatus,
+  AircraftStatus,
 } from './models/domain.model';
 
 export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
@@ -25,6 +26,12 @@ export const SCHEDULE_STATUS_MAP: Record<FlightScheduleStatus, StatusPresentatio
   ONTIME: { label: 'On time', tone: 'success' },
   DELAYED: { label: 'Delayed', tone: 'warning' },
   CANCELLED: { label: 'Cancelled', tone: 'danger' },
+};
+
+export const AIRCRAFT_STATUS_MAP: Record<AircraftStatus, StatusPresentation> = {
+  ACTIVE: { label: 'Active', tone: 'success' },
+  MAINTENANCE: { label: 'Maintenance', tone: 'warning' },
+  RETIRED: { label: 'Retired', tone: 'neutral' },
 };
 
 export const BOOKING_STATUS_MAP: Record<BookingStatus, StatusPresentation> = {

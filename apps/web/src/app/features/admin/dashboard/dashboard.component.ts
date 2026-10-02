@@ -1,36 +1,16 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { AdminService } from '../../../core/services/domain-services';
+import { DashboardService, type DashboardData, type DashboardFlight, type DashboardBooking, type DashboardRange } from '../../../core/services/dashboard.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
 import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
-import type { Booking, Flight } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
+import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { NaSegmented, type SegmentOption } from '../../../shared/ui/segmented.component';
-
-interface DashboardKpis {
-  totalFlights: number;
-  totalBookings: number;
-  confirmedBookings: number;
-  passengers: number;
-  revenue: number;
-  currency: string;
-  occupancyPercent: number;
-  todaysFlights: Flight[];
-  delayedCount: number;
-  cancelledCount: number;
-  completedCount: number;
-  scheduledCount: number;
-  pendingRefunds: number;
-  openBaggageCases: number;
-  recentBookings: Booking[];
-  trend: number[];
-  revenueTrend: number[];
-}
 
 interface KpiCard {
   key: string;
@@ -52,7 +32,7 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
 @Component({
   selector: 'na-admin-dashboard',
   standalone: true,
-  imports: [NaBreadcrumbs, NaBadge, NaAlert, NaSkeleton, NaEmptyState, NaSegmented, HasPermissionDirective],
+  imports: [NaBreadcrumbs, NaButton, NaBadge, NaAlert, NaSkeleton, NaEmptyState, NaSegmented, HasPermissionDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
@@ -76,6 +56,11 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
             <div class="na-card kpi"><na-skeleton [rows]="[1, 2]" height="1.2rem" /></div>
           }
         </div>
+      } @else if (loadError()) {
+        <div class="na-card load-error" role="alert">
+          <p>{{ loadError() }}</p>
+          <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+        </div>
       } @else if (kpis(); as k) {
         <!-- KPI grid -->
         <section class="kpi-grid" aria-label="Key performance indicators">
@@ -89,8 +74,8 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
           <ng-container *naHasPermission="'payments:read'">
             <div class="na-card kpi kpi--accent">
               <p class="kpi__label">Revenue</p>
-              <p class="kpi__value">{{ formatMoney(k.revenue, k.currency) }}</p>
-              <p class="kpi__hint">{{ revenueDeltaHint() }}</p>
+              <p class="kpi__value">{{ k.revenue === null ? '—' : formatMoney(k.revenue, k.currency) }}</p>
+              <p class="kpi__hint">{{ k.revenue === null ? 'Available once payments are implemented' : revenueDeltaHint() }}</p>
             </div>
           </ng-container>
         </section>
@@ -101,22 +86,29 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
             <div class="na-card chart-card">
               <h3>Revenue trend</h3>
               <p class="chart-card__sub">Gross bookings revenue · last {{ range() }}</p>
-              <div class="chart" role="img" [attr.aria-label]="'Revenue bar chart, peak ' + formatMoney(maxOf(revenueBars()), k.currency)">
-                <svg [attr.viewBox]="viewBox()" preserveAspectRatio="none" aria-hidden="true">
-                  @for (bar of revenueBars(); track bar.label; let i = $index) {
-                    <rect
-                      class="bar bar--cta"
-                      [attr.x]="barX(i)"
-                      [attr.y]="100 - bar.heightPct"
-                      [attr.width]="barWidth()"
-                      [attr.height]="bar.heightPct"
-                      rx="1.5"
-                    >
-                      <title>{{ bar.tooltip }}</title>
-                    </rect>
-                  }
-                </svg>
-              </div>
+              @if (k.revenueTrend === null) {
+                <na-empty-state
+                  title="No payment data yet"
+                  message="Revenue trends will appear here once payment processing is implemented."
+                />
+              } @else {
+                <div class="chart" role="img" [attr.aria-label]="'Revenue bar chart, peak ' + formatMoney(maxOf(revenueBars()), k.currency)">
+                  <svg [attr.viewBox]="viewBox()" preserveAspectRatio="none" aria-hidden="true">
+                    @for (bar of revenueBars(); track bar.label; let i = $index) {
+                      <rect
+                        class="bar bar--cta"
+                        [attr.x]="barX(i)"
+                        [attr.y]="100 - bar.heightPct"
+                        [attr.width]="barWidth()"
+                        [attr.height]="bar.heightPct"
+                        rx="1.5"
+                      >
+                        <title>{{ bar.tooltip }}</title>
+                      </rect>
+                    }
+                  </svg>
+                </div>
+              }
             </div>
             <div class="na-card chart-card">
               <h3>Bookings trend</h3>
@@ -172,9 +164,9 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
                     @for (f of k.todaysFlights; track f.id) {
                       <tr>
                         <td class="na-text-mono">{{ f.flightNumber }}</td>
-                        <td>{{ f.route.origin.iataCode }} → {{ f.route.destination.iataCode }}</td>
+                        <td>{{ f.originIata }} → {{ f.destinationIata }}</td>
                         <td>{{ formatTime(f.departureTime) }}</td>
-                        <td>{{ f.aircraft.registration }}</td>
+                        <td>{{ f.aircraftRegistration }}</td>
                         <td><na-badge [tone]="flightStatus(f).tone">{{ flightStatus(f).label }}</na-badge></td>
                       </tr>
                     }
@@ -188,15 +180,19 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
             <!-- Recent bookings -->
             <section class="na-card recent">
               <h3>Recent bookings</h3>
-              <ul>
-                @for (b of k.recentBookings; track b.id) {
-                  <li>
-                    <span class="na-text-mono">{{ b.bookingReference }}</span>
-                    <span class="recent__amount">{{ formatMoney(b.totalAmount, b.currency) }}</span>
-                    <na-badge [tone]="bookingStatus(b).tone">{{ bookingStatus(b).label }}</na-badge>
-                  </li>
-                }
-              </ul>
+              @if (k.recentBookings.length === 0) {
+                <na-empty-state title="No bookings yet" message="New bookings will appear here as customers book flights." />
+              } @else {
+                <ul>
+                  @for (b of k.recentBookings; track b.id) {
+                    <li>
+                      <span class="na-text-mono">{{ b.bookingReference }}</span>
+                      <span class="recent__amount">{{ formatMoney(b.totalAmount, b.currency) }}</span>
+                      <na-badge [tone]="bookingStatus(b).tone">{{ bookingStatus(b).label }}</na-badge>
+                    </li>
+                  }
+                </ul>
+              }
             </section>
 
             <!-- Alerts -->
@@ -231,6 +227,7 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
     .page { display: flex; flex-direction: column; gap: var(--na-space-5); }
     .page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); flex-wrap: wrap; }
     .subtitle { color: var(--na-ink-500); margin-top: var(--na-space-1); }
+    .load-error { display: flex; align-items: center; gap: var(--na-space-4); padding: var(--na-space-4); border: 1px solid var(--na-danger); border-radius: var(--na-radius-md); color: var(--na-danger); }
     .kpi-grid {
       display: grid; gap: var(--na-space-4);
       grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -280,7 +277,7 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
   `,
 })
 export class DashboardPage {
-  private readonly admin = inject(AdminService);
+  private readonly dashboard = inject(DashboardService);
   private readonly auth = inject(AuthService);
 
   readonly rangeOptions: SegmentOption[] = [
@@ -290,20 +287,36 @@ export class DashboardPage {
   ];
 
   readonly loading = signal(true);
-  readonly kpis = signal<DashboardKpis | null>(null);
-  readonly range = signal<'7d' | '30d' | '90d'>('30d');
+  readonly loadError = signal<string | null>(null);
+  readonly kpis = signal<DashboardData | null>(null);
+  readonly range = signal<DashboardRange>('30d');
 
   setRange(value: string): void {
     if (value === '7d' || value === '30d' || value === '90d') {
       this.range.set(value);
+      this.load();
     }
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.dashboard.getDashboard(this.range()).subscribe({
+      next: (data) => {
+        this.kpis.set(data);
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+        this.loadError.set('Could not load the operations dashboard. Please try again.');
+      },
+    });
   }
 
   readonly canViewRevenue = computed(() => this.auth.hasPermission('payments:read'));
 
   readonly revenueDeltaHint = computed(() => {
-    const values = this.kpis()?.revenueTrend ?? [];
-    const points = this.range() === '7d' ? values.slice(-7) : values;
+    const points = (this.kpis()?.revenueTrend ?? []).map((p) => p.value);
     if (points.length < 2) return 'Awaiting trend data';
     const mid = Math.floor(points.length / 2);
     const previous = points.slice(0, mid).reduce((sum, v) => sum + v, 0);
@@ -313,14 +326,15 @@ export class DashboardPage {
     return `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% vs previous period`;
   });
 
-  readonly revenueBars = computed<ChartBar[]>(() => this.buildBars(this.kpis()?.revenueTrend ?? [], 'Revenue', this.kpis()?.currency ?? 'EUR', true));
-  readonly bookingBars = computed<ChartBar[]>(() => this.buildBars(this.kpis()?.trend ?? [], 'Bookings', '', false));
+  readonly revenueBars = computed<ChartBar[]>(() =>
+    this.buildBars((this.kpis()?.revenueTrend ?? []).map((p) => p.value), 'Revenue', this.kpis()?.currency ?? 'EUR', true),
+  );
+  readonly bookingBars = computed<ChartBar[]>(() =>
+    this.buildBars(this.kpis()?.bookingsTrend.map((p) => p.value) ?? [], 'Bookings', '', false),
+  );
 
   constructor() {
-    this.admin.dashboardKpis().subscribe((data) => {
-      this.kpis.set(data as DashboardKpis);
-      this.loading.set(false);
-    });
+    this.load();
   }
 
   readonly kpiCards = computed<KpiCard[]>(() => {
@@ -373,11 +387,11 @@ export class DashboardPage {
     return timeFmt.format(new Date(iso));
   }
 
-  flightStatus(f: Flight) {
+  flightStatus(f: DashboardFlight) {
     return statusLabel(FLIGHT_STATUS_MAP, f.status);
   }
 
-  bookingStatus(b: Booking) {
+  bookingStatus(b: DashboardBooking) {
     return statusLabel(BOOKING_STATUS_MAP, b.status);
   }
 }

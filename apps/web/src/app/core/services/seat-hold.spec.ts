@@ -24,7 +24,7 @@ describe('BookingDraftService seat holds (BR-13)', () => {
   });
 
   it('creates a hold with an expiry window when seats are set', () => {
-    const seat = FLIGHTS[6].aircraft.seats[10];
+    const seat = FLIGHTS[6].aircraft.seats![10];
     draft.setSeats([{ passengerIndex: 0, seat }], []);
 
     const expires = draft.seatHoldExpiresAt();
@@ -35,14 +35,14 @@ describe('BookingDraftService seat holds (BR-13)', () => {
   });
 
   it('reports remaining seconds and non-expiry inside the window', () => {
-    const seat = FLIGHTS[6].aircraft.seats[10];
+    const seat = FLIGHTS[6].aircraft.seats![10];
     draft.setSeats([{ passengerIndex: 0, seat }], []);
     expect(draft.holdSecondsRemaining()).toBeGreaterThan(0);
     expect(draft.isHoldExpired()).toBe(false);
   });
 
   it('treats a hold past expiresAt as expired (BR-13 auto-expiry)', () => {
-    const seat = FLIGHTS[6].aircraft.seats[10];
+    const seat = FLIGHTS[6].aircraft.seats![10];
     draft.setSeats([{ passengerIndex: 0, seat }], []);
     const future = Date.now() + (SEAT_HOLD_MINUTES + 1) * 60 * 1000;
     expect(draft.isHoldExpired(future)).toBe(true);
@@ -50,7 +50,7 @@ describe('BookingDraftService seat holds (BR-13)', () => {
   });
 
   it('releaseHold clears seats and expiry', () => {
-    const seat = FLIGHTS[6].aircraft.seats[10];
+    const seat = FLIGHTS[6].aircraft.seats![10];
     draft.setSeats([{ passengerIndex: 0, seat }], []);
     draft.releaseHold();
     expect(draft.seatHoldExpiresAt()).toBeNull();

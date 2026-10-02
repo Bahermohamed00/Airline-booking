@@ -74,6 +74,9 @@ export const BENEFITS: Benefit[] = [
   },
 ];
 
+// Deliberately editorial: the API Offer model is marketing/catalog data only
+// (no prices, routes, or cabins), so the landing-page showcase keeps its own
+// curated data. The /offers page is the API-driven offer catalog.
 export const OFFERS: Offer[] = [
   {
     badge: '−30% Business',

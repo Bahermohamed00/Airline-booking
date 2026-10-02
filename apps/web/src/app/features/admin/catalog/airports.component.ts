@@ -1,8 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AIRPORTS, ROUTES } from '../../../core/mock/mock-data';
-import type { Airport } from '../../../core/models/domain.model';
+import { forkJoin } from 'rxjs';
+import type { Airport, Route } from '../../../core/models/domain.model';
+import type { AirportPayload } from '../../../core/models/catalog-api.model';
+import { CatalogService } from '../../../core/services/catalog.service';
 import type { StatusTone } from '../../../core/status-maps';
+import { toErrorMessage } from '../../../shared/utils/http-error-message';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';
@@ -35,11 +38,11 @@ const TIMEZONES = [
   'America/New_York', 'America/Los_Angeles', 'Asia/Dubai', 'Asia/Singapore',
 ];
 
+const DUPLICATE_IATA_MESSAGE = 'An airport with this IATA code already exists.';
+
 @Component({
   selector: 'na-admin-airports',
-  standalone: true,
   imports: [FormsModule, NaBreadcrumbs, NaButton, NaBadge, NaDialog, NaDataTable, NaSkeleton],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="page">
       <na-breadcrumbs [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Airports' }]" />
@@ -53,6 +56,11 @@ const TIMEZONES = [
 
       @if (loading()) {
         <na-skeleton [rows]="[1, 2, 3, 4, 5]" height="2.5rem" />
+      } @else if (loadError()) {
+        <div class="list-error" role="alert">
+          <p>{{ loadError() }}</p>
+          <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+        </div>
       } @else {
         <na-data-table
           [columns]="columns"
@@ -162,7 +170,7 @@ const TIMEZONES = [
             </div>
             <div class="drawer__actions">
               <na-button variant="secondary" (clicked)="createOpen.set(false)">Cancel</na-button>
-              <na-button variant="cta" type="submit">Add airport</na-button>
+              <na-button variant="cta" type="submit" [disabled]="submitting()" [loading]="submitting()">Add airport</na-button>
             </div>
           </form>
         </aside>
@@ -185,6 +193,8 @@ const TIMEZONES = [
     .page { display: flex; flex-direction: column; gap: var(--na-space-5); }
     .page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); flex-wrap: wrap; }
     .subtitle { color: var(--na-ink-500); margin-top: var(--na-space-1); }
+    .list-error { display: flex; align-items: center; gap: var(--na-space-4); padding: var(--na-space-4); border: 1px solid var(--na-border); border-radius: var(--na-radius-lg); background: var(--na-surface-raised); }
+    .list-error p { margin: 0; color: var(--na-ink-500); }
     .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
       position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
@@ -211,6 +221,7 @@ const TIMEZONES = [
   `,
 })
 export class AirportsPage {
+  private readonly catalog = inject(CatalogService);
   private readonly toast = inject(ToastService);
 
   readonly columns: TableColumn<AirportRow>[] = [
@@ -228,12 +239,15 @@ export class AirportsPage {
   readonly timezones = TIMEZONES;
 
   readonly loading = signal(true);
+  readonly loadError = signal<string | null>(null);
   readonly airports = signal<Airport[]>([]);
+  readonly routes = signal<Route[]>([]);
   readonly selectedId = signal<string | null>(null);
   readonly selected = computed(() => this.airports().find((a) => a.id === this.selectedId()) ?? null);
 
   readonly createOpen = signal(false);
   readonly toggleDialogOpen = signal(false);
+  readonly submitting = signal(false);
   readonly errors = signal<Partial<Record<keyof AirportForm, string>>>({});
 
   form: AirportForm = { iataCode: '', icaoCode: '', name: '', city: '', country: '', timezone: '' };
@@ -251,10 +265,27 @@ export class AirportsPage {
   );
 
   constructor() {
-    setTimeout(() => {
-      this.airports.set(AIRPORTS.map((a) => ({ ...a })));
-      this.loading.set(false);
-    }, 300);
+    this.load();
+  }
+
+  /** Airports and routes load once together; route counts derive client-side. */
+  load(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+    forkJoin({
+      airports: this.catalog.listAirports(),
+      routes: this.catalog.listRoutes(),
+    }).subscribe({
+      next: ({ airports, routes }) => {
+        this.airports.set(airports);
+        this.routes.set(routes);
+        this.loading.set(false);
+      },
+      error: (err: unknown) => {
+        this.loadError.set(toErrorMessage(err, 'Could not load the airport catalog.'));
+        this.loading.set(false);
+      },
+    });
   }
 
   openDetail(id: string): void {
@@ -266,13 +297,13 @@ export class AirportsPage {
   }
 
   routeCount(a: Airport, direction: 'origin' | 'destination'): number {
-    return ROUTES.filter((r) =>
+    return this.routes().filter((r) =>
       direction === 'origin' ? r.originAirportId === a.id : r.destinationAirportId === a.id,
     ).length;
   }
 
-  associatedRoutes(a: Airport) {
-    return ROUTES.filter((r) => r.originAirportId === a.id || r.destinationAirportId === a.id);
+  associatedRoutes(a: Airport): Route[] {
+    return this.routes().filter((r) => r.originAirportId === a.id || r.destinationAirportId === a.id);
   }
 
   statusTone(a: Airport): StatusTone {
@@ -291,7 +322,7 @@ export class AirportsPage {
     const iata = this.form.iataCode.trim().toUpperCase();
     const icao = this.form.icaoCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(iata)) errs.iataCode = 'IATA code must be exactly three uppercase letters.';
-    else if (this.airports().some((a) => a.iataCode === iata)) errs.iataCode = 'An airport with this IATA code already exists.';
+    else if (this.airports().some((a) => a.iataCode === iata)) errs.iataCode = DUPLICATE_IATA_MESSAGE;
     if (icao && !/^[A-Z]{4}$/.test(icao)) errs.icaoCode = 'ICAO code must be four uppercase letters.';
     if (!this.form.name.trim()) errs.name = 'Airport name is required.';
     if (!this.form.city.trim()) errs.city = 'City is required.';
@@ -300,21 +331,34 @@ export class AirportsPage {
     this.errors.set(errs);
     if (Object.keys(errs).length > 0) return;
 
-    this.airports.update((list) => [
-      ...list,
-      {
-        id: crypto.randomUUID(),
-        iataCode: iata,
-        icaoCode: icao || null,
-        name: this.form.name.trim(),
-        city: this.form.city.trim(),
-        country: this.form.country.trim(),
-        timezone: this.form.timezone,
-        status: 'ACTIVE',
+    // DTO fields only — the server assigns the id and the initial status.
+    const payload: AirportPayload = {
+      iataCode: iata,
+      name: this.form.name.trim(),
+      city: this.form.city.trim(),
+      country: this.form.country.trim(),
+      timezone: this.form.timezone,
+    };
+    if (icao) payload.icaoCode = icao;
+
+    this.submitting.set(true);
+    this.catalog.createAirport(payload).subscribe({
+      next: (created) => {
+        this.submitting.set(false);
+        this.airports.update((list) => [...list, created]);
+        this.createOpen.set(false);
+        this.toast.success(`Airport ${created.iataCode} added to the catalog.`);
       },
-    ]);
-    this.createOpen.set(false);
-    this.toast.success(`Airport ${iata} added to the catalog.`);
+      error: (err: unknown) => {
+        this.submitting.set(false);
+        const status = (err as { status?: number } | null)?.status;
+        if (status === 409) {
+          this.errors.set({ iataCode: DUPLICATE_IATA_MESSAGE });
+        } else {
+          this.toast.error(toErrorMessage(err, 'Could not add the airport. Please try again.'));
+        }
+      },
+    });
   }
 
   confirmToggle(): void {
@@ -322,9 +366,15 @@ export class AirportsPage {
     const a = this.selected();
     if (!a) return;
     const next = a.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    this.airports.update((list) => list.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-    this.toast.success(
-      next === 'ACTIVE' ? `${a.iataCode} reactivated.` : `${a.iataCode} deactivated.`,
-    );
+    this.catalog.updateAirport(a.id, { status: next }).subscribe({
+      next: (updated) => {
+        this.airports.update((list) => list.map((x) => (x.id === updated.id ? updated : x)));
+        this.toast.success(
+          next === 'ACTIVE' ? `${a.iataCode} reactivated.` : `${a.iataCode} deactivated.`,
+        );
+      },
+      error: (err: unknown) =>
+        this.toast.error(toErrorMessage(err, 'Could not update the airport status.')),
+    });
   }
 }

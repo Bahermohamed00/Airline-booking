@@ -104,7 +104,7 @@ export class BookingService {
           currency: breakdown.currency,
           status: 'SUCCESS',
           provider: 'mockpay',
-          providerReference: draft.paymentReference ?? `mp_${reference.toLowerCase()}`,
+          providerReference: `mp_${reference.toLowerCase()}`,
           paidAt: now,
           createdAt: now,
         },

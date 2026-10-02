@@ -91,7 +91,10 @@ export interface Aircraft {
   model: string;
   capacity: number;
   status: AircraftStatus;
-  seats: Seat[];
+  /** Configured seat count from the /aircraft view; absent for aircraft nested in flight views. */
+  seatCount?: number;
+  /** Only present when seats were explicitly loaded (mock data or GET /aircraft/:id/seats). */
+  seats?: Seat[];
 }
 
 export interface Seat {
@@ -114,6 +117,8 @@ export interface Flight {
   aircraft: Aircraft;
   departureTime: string; // ISO
   arrivalTime: string; // ISO
+  /** Origin-local operating date (yyyy-mm-dd) when provided by the flights API. */
+  operatingDate?: string | null;
   status: FlightStatus;
   scheduleStatus: FlightScheduleStatus;
   segments: FlightSegment[];
@@ -155,7 +160,8 @@ export interface Fare {
   feeAmount: number;
   currency: string;
   availableCount: number;
-  rules: FareRule;
+  /** Rich rule set when the API provides one; null = rules unknown (never fabricated). */
+  rules: FareRule | null;
 }
 
 export interface SeatHold {

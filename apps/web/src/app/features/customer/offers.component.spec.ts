@@ -3,7 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { OffersPage } from './offers.component';
-import { OffersService, type OfferView } from '../../../core/services/offers.service';
+import { OffersService, type OfferView } from '../../core/services/offers.service';
 
 const OFFERS: OfferView[] = [
   {

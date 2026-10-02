@@ -77,9 +77,10 @@ export class PricingService {
   }
 
   estimateRefund(fare: Fare, totalPaid: number): { amount: number; feePercent: number; refundable: boolean } {
-    const feePercent = fare.rules.refundable ? fare.rules.cancellationFeePercent : 100;
+    // Rules unknown (null) → no refund is promised rather than a fabricated one.
+    const feePercent = fare.rules?.refundable ? fare.rules.cancellationFeePercent : 100;
     const amount = round2(Math.max(0, totalPaid * (1 - feePercent / 100)));
-    return { amount, feePercent, refundable: fare.rules.refundable };
+    return { amount, feePercent, refundable: fare.rules?.refundable ?? false };
   }
 }
 

@@ -20,9 +20,10 @@ describe('mock-data NovaAir identity (Phase 1)', () => {
 
   it('keeps aircraft → seats relationships intact (full seat map per tail)', () => {
     for (const a of AIRCRAFT) {
-      expect(a.seats).toHaveLength(a.capacity);
-      expect(new Set(a.seats.map((s) => s.seatNumber)).size).toBe(a.capacity);
-      expect(a.seats.every((s) => s.aircraftId === a.id)).toBe(true);
+      const seats = a.seats!;
+      expect(seats).toHaveLength(a.capacity);
+      expect(new Set(seats.map((s) => s.seatNumber)).size).toBe(a.capacity);
+      expect(seats.every((s) => s.aircraftId === a.id)).toBe(true);
     }
   });
 

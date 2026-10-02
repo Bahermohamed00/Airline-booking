@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { BookingService } from '../../core/services/booking.service';
-import { CheckInService } from '../../core/services/domain-services';
+import { CustomerBookingService } from '../../core/services/customer-booking.service';
 import { BOOKING_STATUS_MAP, statusLabel } from '../../core/status-maps';
-import type { Booking, CabinClass } from '../../core/models/domain.model';
+import type { CabinClass } from '../../core/models/domain.model';
+import type { CustomerBooking } from '../../core/models/customer-booking.model';
 import { NaTabs, TabItem } from '../../shared/ui/tabs.component';
 import { NaBadge } from '../../shared/ui/badge.component';
 import { NaButton } from '../../shared/ui/button.component';
@@ -22,9 +22,7 @@ interface EmptyStateContent {
 
 @Component({
   selector: 'app-my-bookings',
-  standalone: true,
   imports: [NaTabs, NaBadge, NaButton, NaAlert, NaEmptyState, NaRouteLine],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="na-container page">
       <header class="hero">
@@ -63,26 +61,30 @@ interface EmptyStateContent {
             @for (booking of filtered(); track booking.id) {
               <li class="journey na-card" [class.journey--cancelled]="booking.status === 'CANCELLED'">
                 <div class="journey__top">
-                  <na-route-line
-                    [origin]="booking.flight.route.origin.iataCode"
-                    [destination]="booking.flight.route.destination.iataCode"
-                    [originCity]="booking.flight.route.origin.city"
-                    [destinationCity]="booking.flight.route.destination.city"
-                    size="lg"
-                  />
+                  @if (booking.flight; as f) {
+                    <na-route-line
+                      [origin]="f.origin"
+                      [destination]="f.destination"
+                      size="lg"
+                    />
+                  } @else {
+                    <p class="journey__noflight na-text-muted">Flight details are being finalized.</p>
+                  }
                 </div>
-                <div class="journey__times">
-                  <div class="journey__point">
-                    <p class="journey__time">{{ fmtTime(booking.flight.departureTime) }}</p>
-                    <p class="journey__date">{{ fmtDate(booking.flight.departureTime) }}</p>
+                @if (booking.flight; as f) {
+                  <div class="journey__times">
+                    <div class="journey__point">
+                      <p class="journey__time">{{ fmtTime(f.departureTime) }}</p>
+                      <p class="journey__date">{{ fmtDate(f.departureTime) }}</p>
+                    </div>
+                    <span class="journey__arrow" aria-hidden="true">→</span>
+                    <span class="na-visually-hidden">to</span>
+                    <div class="journey__point journey__point--to">
+                      <p class="journey__time">{{ fmtTime(f.arrivalTime) }}</p>
+                      <p class="journey__date">{{ fmtDate(f.arrivalTime) }}</p>
+                    </div>
                   </div>
-                  <span class="journey__arrow" aria-hidden="true">→</span>
-                  <span class="na-visually-hidden">to</span>
-                  <div class="journey__point journey__point--to">
-                    <p class="journey__time">{{ fmtTime(booking.flight.arrivalTime) }}</p>
-                    <p class="journey__date">{{ fmtDate(booking.flight.arrivalTime) }}</p>
-                  </div>
-                </div>
+                }
                 <div class="journey__foot">
                   <div class="journey__info">
                     <p class="journey__meta">{{ metaLine(booking) }}</p>
@@ -98,6 +100,9 @@ interface EmptyStateContent {
                     <div class="journey__actions">
                       @if (canCheckIn(booking)) {
                         <na-button variant="cta" size="sm" (clicked)="goCheckIn()">Check in</na-button>
+                      }
+                      @if (booking.status === 'PENDING') {
+                        <span class="journey__hint">Payment pending</span>
                       }
                       <na-button variant="secondary" size="sm" (clicked)="goManage(booking)">Manage</na-button>
                     </div>
@@ -124,6 +129,7 @@ interface EmptyStateContent {
     }
     .journey:hover { transform: translateY(-2px); box-shadow: var(--na-shadow-md); }
     .journey__top { margin-bottom: var(--na-space-5); }
+    .journey__noflight { margin: 0; }
     .journey__times { display: flex; align-items: flex-start; gap: var(--na-space-3); margin-bottom: var(--na-space-5); }
     .journey__point--to { text-align: right; }
     .journey__time { font-size: var(--na-text-lg); font-weight: var(--na-font-semibold); color: var(--na-ink-900); }
@@ -141,7 +147,8 @@ interface EmptyStateContent {
     }
     .journey__ref { font-weight: var(--na-font-semibold); }
     .journey__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--na-space-3); flex-shrink: 0; }
-    .journey__actions { display: flex; gap: var(--na-space-2); flex-wrap: wrap; justify-content: flex-end; }
+    .journey__actions { display: flex; gap: var(--na-space-2); flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+    .journey__hint { font-size: var(--na-text-sm); font-weight: var(--na-font-medium); color: var(--na-warning); }
     .journey--cancelled .journey__top,
     .journey--cancelled .journey__times,
     .journey--cancelled .journey__info { opacity: 0.55; }
@@ -177,8 +184,7 @@ interface EmptyStateContent {
   `,
 })
 export class MyBookingsPage {
-  private readonly bookingService = inject(BookingService);
-  private readonly checkInService = inject(CheckInService);
+  private readonly bookingService = inject(CustomerBookingService);
   private readonly router = inject(Router);
 
   readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
@@ -186,7 +192,7 @@ export class MyBookingsPage {
 
   readonly loading = signal(true);
   readonly error = signal(false);
-  readonly bookings = signal<Booking[]>([]);
+  readonly bookings = signal<CustomerBooking[]>([]);
   readonly activeTab = signal<BookingTab>('upcoming');
 
   setTab(tab: string): void {
@@ -254,15 +260,16 @@ export class MyBookingsPage {
     });
   }
 
-  canCheckIn(booking: Booking): boolean {
-    return this.checkInService.eligibility(booking).eligible;
+  /** Check-in only exists for confirmed bookings; PENDING bookings are unpaid. */
+  canCheckIn(booking: CustomerBooking): boolean {
+    return booking.status === 'CONFIRMED' || booking.status === 'CHECKED_IN';
   }
 
   goCheckIn(): void {
     this.router.navigate(['/checkin']);
   }
 
-  goManage(booking: Booking): void {
+  goManage(booking: CustomerBooking): void {
     this.router.navigate(['/bookings', booking.id]);
   }
 
@@ -270,10 +277,9 @@ export class MyBookingsPage {
     this.router.navigate(['/search']);
   }
 
-  metaLine(booking: Booking): string {
-    const parts = [booking.flight.flightNumber];
-    const cabin = this.cabinOf(booking);
-    if (cabin) parts.push(cabin);
+  metaLine(booking: CustomerBooking): string {
+    const parts = [booking.flight?.flightNumber ?? 'Flight pending'];
+    if (booking.cabinClass) parts.push(this.cabinLabel(booking.cabinClass));
     const n = booking.passengers.length;
     parts.push(`${n} ${n === 1 ? 'passenger' : 'passengers'}`);
     return parts.join(' · ');
@@ -287,25 +293,19 @@ export class MyBookingsPage {
     return this.timeFmt.format(new Date(iso));
   }
 
-  private cabinOf(booking: Booking): string | null {
-    for (const bs of booking.seats) {
-      const seat = booking.flight.aircraft.seats.find((s) => s.id === bs.seatId || s.seatNumber === bs.seatNumber);
-      if (seat) return this.cabinLabel(seat.cabinClass);
-    }
-    return null;
-  }
-
   private cabinLabel(cabin: CabinClass): string {
     return cabin.charAt(0) + cabin.slice(1).toLowerCase().replace('_', ' ');
   }
 
-  private bucket(bookings: Booking[], tab: BookingTab): Booking[] {
+  private bucket(bookings: CustomerBooking[], tab: BookingTab): CustomerBooking[] {
     const now = Date.now();
     return bookings.filter((b) => {
-      const dep = new Date(b.flight.departureTime).getTime();
       if (tab === 'cancelled') return b.status === 'CANCELLED';
-      if (tab === 'upcoming') return b.status !== 'CANCELLED' && dep >= now;
-      return b.status !== 'CANCELLED' && dep < now;
+      if (b.status === 'CANCELLED') return false;
+      const dep = b.flight ? new Date(b.flight.departureTime).getTime() : null;
+      // A booking without flight details is still actionable — keep it visible.
+      if (tab === 'upcoming') return dep === null || dep >= now;
+      return dep !== null && dep < now;
     });
   }
 }

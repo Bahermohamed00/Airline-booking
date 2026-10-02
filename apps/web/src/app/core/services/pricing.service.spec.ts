@@ -30,7 +30,7 @@ const flexibleFare: Fare = {
   ...fare,
   id: 'f1-fare-flex',
   basePrice: 160,
-  rules: { ...fare.rules, refundable: true, cancellationFeePercent: 0 },
+  rules: { ...fare.rules!, refundable: true, cancellationFeePercent: 0 },
 };
 
 const economySeat: Seat = {

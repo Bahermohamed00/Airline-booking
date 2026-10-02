@@ -2,6 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import type {
   BookingDraft, SearchCriteria, PassengerForm, SeatSelection, ExtraSelection,
 } from '../models/booking-flow.model';
+import type { CustomerBooking } from '../models/customer-booking.model';
 import type { Flight, Fare } from '../models/domain.model';
 
 const HOLD_MINUTES = 15;
@@ -31,12 +32,13 @@ export class BookingDraftService {
       fare,
       returnFare: returnFare ?? null,
       passengers,
+      contactEmail: '',
+      contactPhone: '',
       seats: [],
       returnSeats: [],
       extras: [],
       baggagePieces: passengers.map(() => 0),
       seatHoldExpiresAt: null,
-      paymentReference: null,
       confirmedBooking: null,
     });
   }
@@ -47,6 +49,14 @@ export class BookingDraftService {
 
   setPassengers(passengers: PassengerForm[]): void {
     this.update((d) => ({ ...d, passengers }));
+  }
+
+  setContact(contactEmail: string, contactPhone: string): void {
+    this.update((d) => ({ ...d, contactEmail, contactPhone }));
+  }
+
+  setConfirmedBooking(booking: CustomerBooking): void {
+    this.update((d) => ({ ...d, confirmedBooking: booking }));
   }
 
   setSeats(seats: SeatSelection[], returnSeats: SeatSelection[]): void {
@@ -60,10 +70,6 @@ export class BookingDraftService {
 
   setBaggage(pieces: number[]): void {
     this.update((d) => ({ ...d, baggagePieces: pieces }));
-  }
-
-  setPaymentReference(ref: string): void {
-    this.update((d) => ({ ...d, paymentReference: ref }));
   }
 
   holdSecondsRemaining(now: number = Date.now()): number {

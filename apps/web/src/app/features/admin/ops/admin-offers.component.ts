@@ -396,7 +396,7 @@ export class AdminOffersPage {
           this.toast.error('An offer with this title already exists.');
         } else if (err.status === 400) {
           const msg = err.error?.message;
-          this.toast.error(Array.isArray(msg) ? msg.join(' ') : (msg ?? 'Validation failed.');
+          this.toast.error(Array.isArray(msg) ? msg.join(' ') : (msg ?? 'Validation failed.'));
         } else {
           this.toast.error('Could not save the offer. Please try again.');
         }

@@ -1,12 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BookingService } from '../../core/services/booking.service';
-import { AuthService } from '../../core/services/auth.service';
+import { switchMap } from 'rxjs';
+import { CustomerBookingService } from '../../core/services/customer-booking.service';
+import { PaymentService } from '../../core/services/payment.service';
 import { formatMoney } from '../../core/services/pricing.service';
 import {
-  BOOKING_STATUS_MAP, PAYMENT_STATUS_MAP, REFUND_STATUS_MAP, FLIGHT_STATUS_MAP, statusLabel,
+  BOOKING_STATUS_MAP, FLIGHT_STATUS_MAP, PAYMENT_STATUS_MAP, REFUND_STATUS_MAP, SEAT_HOLD_STATUS_MAP, statusLabel,
 } from '../../core/status-maps';
-import type { Booking } from '../../core/models/domain.model';
+import type { CustomerBooking } from '../../core/models/customer-booking.model';
+import type { CustomerPayment } from '../../core/models/payment.model';
+import { toErrorMessage } from '../../shared/utils/http-error-message';
 import { NaBreadcrumbs } from '../../shared/ui/breadcrumbs.component';
 import { NaBadge } from '../../shared/ui/badge.component';
 import { NaButton } from '../../shared/ui/button.component';
@@ -14,14 +17,11 @@ import { NaAlert } from '../../shared/ui/alert.component';
 import { NaSkeleton } from '../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../shared/ui/empty-state.component';
 import { NaDialog } from '../../shared/ui/dialog.component';
-import { NaTimeline, TimelineEvent } from '../../shared/ui/timeline.component';
 import { ToastService } from '../../shared/ui/toast.service';
 
 @Component({
   selector: 'app-manage-booking',
-  standalone: true,
-  imports: [RouterLink, NaBreadcrumbs, NaBadge, NaButton, NaAlert, NaSkeleton, NaEmptyState, NaDialog, NaTimeline],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, NaBreadcrumbs, NaBadge, NaButton, NaAlert, NaSkeleton, NaEmptyState, NaDialog],
   template: `
     <div class="na-container page">
       <na-breadcrumbs [items]="[{ label: 'My bookings', link: '/bookings' }, { label: 'Booking details' }]" />
@@ -50,130 +50,172 @@ import { ToastService } from '../../shared/ui/toast.service';
             </na-badge>
           </header>
 
-          @if (notOwner()) {
-            <na-alert tone="info" title="Viewing another account's booking">
-              This booking does not belong to the signed-in account. Some actions may be restricted.
-            </na-alert>
-          }
-
           <div class="grid">
             <section class="na-card section" aria-labelledby="itin-h">
               <h2 id="itin-h">Itinerary</h2>
-              <div class="itin">
-                <p class="itin__flight">
-                  <strong>{{ b.flight.flightNumber }}</strong>
-                  <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, b.flight.status).tone">
-                    {{ statusLabel(FLIGHT_STATUS_MAP, b.flight.status).label }}
-                  </na-badge>
-                </p>
-                <div class="itin__route">
-                  <div>
-                    <p class="itin__code">{{ b.flight.route.origin.iataCode }}</p>
-                    <p class="na-text-muted na-text-small">{{ b.flight.route.origin.city }}</p>
-                    <p class="itin__time">{{ timeFmt(b.flight.departureTime) }}</p>
-                    <p class="na-text-muted na-text-small">{{ dateFmt(b.flight.departureTime) }}</p>
-                  </div>
-                  <span class="itin__arrow" aria-hidden="true">→</span>
-                  <div>
-                    <p class="itin__code">{{ b.flight.route.destination.iataCode }}</p>
-                    <p class="na-text-muted na-text-small">{{ b.flight.route.destination.city }}</p>
-                    <p class="itin__time">{{ timeFmt(b.flight.arrivalTime) }}</p>
-                    <p class="na-text-muted na-text-small">{{ dateFmt(b.flight.arrivalTime) }}</p>
+              @if (b.flight; as f) {
+                <div class="itin">
+                  <p class="itin__flight">
+                    <strong>{{ f.flightNumber }}</strong>
+                    <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, f.status).tone">
+                      {{ statusLabel(FLIGHT_STATUS_MAP, f.status).label }}
+                    </na-badge>
+                  </p>
+                  <div class="itin__route">
+                    <div>
+                      <p class="itin__code">{{ f.origin }}</p>
+                      <p class="itin__time">{{ timeFmt(f.departureTime) }}</p>
+                      <p class="na-text-muted na-text-small">{{ dateFmt(f.departureTime) }}</p>
+                    </div>
+                    <span class="itin__arrow" aria-hidden="true">→</span>
+                    <div>
+                      <p class="itin__code">{{ f.destination }}</p>
+                      <p class="itin__time">{{ timeFmt(f.arrivalTime) }}</p>
+                      <p class="na-text-muted na-text-small">{{ dateFmt(f.arrivalTime) }}</p>
+                    </div>
                   </div>
                 </div>
-                <p class="na-text-muted na-text-small">Aircraft: {{ b.flight.aircraft.model }} ({{ b.flight.aircraft.registration }})</p>
-              </div>
+              } @else {
+                <p class="na-text-muted">Flight details are being finalized and will appear here shortly.</p>
+              }
             </section>
 
             <section class="na-card section" aria-labelledby="pax-h">
               <h2 id="pax-h">Passengers &amp; seats</h2>
               <ul class="pax">
-                @for (bp of b.passengers; track bp.id) {
+                @for (p of b.passengers; track p.id) {
                   <li class="pax__row">
-                    <span>{{ bp.passenger.firstName }} {{ bp.passenger.lastName }}
-                      <span class="na-text-muted na-text-small">({{ bp.passengerType }})</span>
+                    <span>{{ p.firstName }} {{ p.lastName }}
+                      <span class="na-text-muted na-text-small">({{ p.passengerType }})</span>
                     </span>
-                    <span class="na-text-mono">Seat {{ seatOf(b, bp.id) ?? 'Not selected' }}</span>
                   </li>
                 }
               </ul>
-              @if (baggageAllowance(b); as allowance) {
-                <p class="na-text-muted na-text-small allowance">
-                  Included baggage: {{ allowance.carryOn }} carry-on · {{ allowance.checked }} checked bag(s) up to {{ allowance.weightKg }} kg each
-                </p>
+              @if (b.seats.length === 0) {
+                <p class="na-text-muted na-text-small">No seats selected.</p>
+              } @else {
+                <ul class="pax">
+                  @for (s of b.seats; track s.seatId) {
+                    <li class="pax__row">
+                      <span class="na-text-mono">Seat {{ s.seatNumber }}</span>
+                      <span class="na-text-small">
+                        <na-badge [tone]="statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).tone">
+                          {{ statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).label }}
+                        </na-badge>
+                        @if (s.holdStatus === 'ACTIVE') {
+                          <span class="na-text-muted"> · held until {{ fmt(s.holdExpiresAt) }}</span>
+                        }
+                      </span>
+                    </li>
+                  }
+                </ul>
               }
             </section>
 
             <section class="na-card section" aria-labelledby="pay-h">
-              <h2 id="pay-h">Payments</h2>
-              @if (b.payments.length === 0) {
-                <p class="na-text-muted">No payments recorded.</p>
-              } @else {
-                <div class="table-wrap">
-                  <table>
-                    <thead>
-                      <tr><th>Amount</th><th>Status</th><th>Reference</th><th>Paid at</th></tr>
-                    </thead>
-                    <tbody>
-                      @for (p of b.payments; track p.id) {
-                        <tr>
-                          <td>{{ money(p.amount, p.currency) }}</td>
-                          <td>
-                            <na-badge [tone]="statusLabel(PAYMENT_STATUS_MAP, p.status).tone">
-                              {{ statusLabel(PAYMENT_STATUS_MAP, p.status).label }}
-                            </na-badge>
-                          </td>
-                          <td class="na-text-mono">{{ p.providerReference ?? '—' }}</td>
-                          <td>{{ p.paidAt ? fmt(p.paidAt) : '—' }}</td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
+              <h2 id="pay-h">Payment</h2>
+
+              @if (paymentError(); as payErr) {
+                <na-alert tone="danger" icon="✕" title="Payment failed">
+                  {{ payErr }}
+                  @if (b.status === 'PENDING') {
+                    <div class="pay-retry">
+                      <na-button variant="secondary" size="sm" (clicked)="startPayment()">Try again</na-button>
+                    </div>
+                  }
+                </na-alert>
+              }
+
+              @if (b.status === 'PENDING') {
+                <div class="pay-due">
+                  <p class="pay-due__amount">Payment due: <strong>{{ money(b.totalAmount, b.currency) }}</strong></p>
+                  <p class="na-text-muted na-text-small">
+                    Your seats stay held while payment is pending. Pay now to confirm the booking.
+                  </p>
+                  <na-button variant="primary" (clicked)="startPayment()">Pay now</na-button>
                 </div>
               }
 
-              @if (b.refunds.length > 0) {
-                <h3 class="sub-h">Refunds</h3>
-                <ul class="plain-list">
-                  @for (r of b.refunds; track r.id) {
-                    <li>
-                      {{ money(r.amount, r.currency) }}
-                      <na-badge [tone]="statusLabel(REFUND_STATUS_MAP, r.status).tone">
-                        {{ statusLabel(REFUND_STATUS_MAP, r.status).label }}
-                      </na-badge>
-                      <span class="na-text-muted na-text-small">· {{ r.reason ?? 'Refund' }}</span>
-                    </li>
+              @if (paymentsError()) {
+                <div class="pay-load-error" role="alert">
+                  <span>Could not load payment details.</span>
+                  <button type="button" class="pay-load-error__retry" (click)="loadPayments(b.id)">Retry</button>
+                </div>
+              } @else if (payments(); as list) {
+                @if (list.length === 0) {
+                  @if (b.status !== 'PENDING') {
+                    <p class="na-text-muted">No payment has been recorded for this booking.</p>
                   }
-                </ul>
+                } @else {
+                  @for (p of list; track p.id) {
+                    <article class="pay-card">
+                      <header class="pay-card__head">
+                        <strong>{{ money(p.amount, p.currency) }}</strong>
+                        <na-badge [tone]="statusLabel(PAYMENT_STATUS_MAP, p.status).tone">
+                          {{ statusLabel(PAYMENT_STATUS_MAP, p.status).label }}
+                        </na-badge>
+                      </header>
+                      <dl class="pay-facts">
+                        <div>
+                          <dt>Provider</dt>
+                          <dd>{{ p.provider }}</dd>
+                        </div>
+                        <div>
+                          <dt>Provider reference</dt>
+                          <dd class="na-text-mono">{{ p.providerReference ?? '—' }}</dd>
+                        </div>
+                        @if (p.paidAt) {
+                          <div>
+                            <dt>Paid</dt>
+                            <dd>{{ fmt(p.paidAt) }}</dd>
+                          </div>
+                        }
+                        @if (p.failedAt) {
+                          <div>
+                            <dt>Failed</dt>
+                            <dd>{{ fmt(p.failedAt) }}</dd>
+                          </div>
+                        }
+                      </dl>
+                      @if (p.refunds.length) {
+                        <div class="pay-refunds">
+                          <h3>Refunds</h3>
+                          <ul>
+                            @for (r of p.refunds; track r.id) {
+                              <li>
+                                {{ money(r.amount, r.currency) }}
+                                <na-badge [tone]="statusLabel(REFUND_STATUS_MAP, r.status).tone">
+                                  {{ statusLabel(REFUND_STATUS_MAP, r.status).label }}
+                                </na-badge>
+                                <span class="na-text-muted na-text-small">
+                                  @if (r.reason) { · {{ r.reason }} }
+                                  @if (r.processedAt) { · processed {{ fmt(r.processedAt) }} }
+                                </span>
+                              </li>
+                            }
+                          </ul>
+                        </div>
+                      }
+                    </article>
+                  }
+                }
               }
             </section>
 
-            <section class="na-card section" aria-labelledby="extras-h">
-              <h2 id="extras-h">Extras</h2>
-              @if (b.extras.length === 0) {
-                <p class="na-text-muted">No extras purchased.</p>
-              } @else {
-                <ul class="plain-list">
-                  @for (e of b.extras; track e.id) {
-                    <li>
-                      {{ e.extraService.name }} × {{ e.quantity }}
-                      <span class="na-text-muted">— {{ money(e.price, b.currency) }}</span>
-                    </li>
-                  }
-                </ul>
-              }
-            </section>
-
-            <section class="na-card section" aria-labelledby="history-h">
-              <h2 id="history-h">History</h2>
-              <na-timeline [events]="timeline()" />
+            <section class="na-card section" aria-labelledby="contact-h">
+              <h2 id="contact-h">Contact</h2>
+              <p>{{ b.contactEmail }}</p>
+              <p class="na-text-muted">{{ b.contactPhone ?? 'No phone number provided' }}</p>
             </section>
 
             <section class="na-card section" aria-labelledby="actions-h">
               <h2 id="actions-h">Actions</h2>
-              <p class="total">Total paid: <strong>{{ money(b.totalAmount, b.currency) }}</strong></p>
+              <p class="total">Total: <strong>{{ money(b.totalAmount, b.currency) }}</strong></p>
+              @if (b.perPassengerTotal !== null) {
+                <p class="per-pax na-text-muted na-text-small">{{ money(b.perPassengerTotal, b.currency) }} per passenger</p>
+              }
               <div class="actions">
-                @if (b.status !== 'CANCELLED') {
+                @if (b.status === 'PENDING') {
                   <na-button variant="danger" (clicked)="cancelOpen.set(true)">Cancel booking</na-button>
                 }
                 <a routerLink="/search" class="rebook-link">Rebook / search flights</a>
@@ -190,17 +232,26 @@ import { ToastService } from '../../shared/ui/toast.service';
             (cancelled)="cancelOpen.set(false)"
             (confirmed)="confirmCancel()"
           >
-            @if (estimate(); as est) {
-              <p>
-                @if (est.refundable) {
-                  A cancellation fee of {{ est.feePercent }}% applies. Estimated refund:
-                  <strong>{{ money(est.amount, b.currency) }}</strong>.
-                } @else {
-                  This fare is non-refundable. Cancelling will not return any payment.
-                }
-              </p>
-            }
+            <p>This booking is pending payment — no charge has been made. Cancelling releases the held seats.</p>
             <p class="na-text-muted na-text-small">This action cannot be undone.</p>
+          </na-dialog>
+
+          <na-dialog
+            [open]="payOpen()"
+            title="Pay for your booking"
+            [confirmLabel]="processing() ? 'Processing…' : 'Pay ' + money(b.totalAmount, b.currency)"
+            cancelLabel="Not now"
+            (cancelled)="onPayDialogCancelled()"
+            (confirmed)="confirmPayment()"
+          >
+            <p>
+              You are paying <strong>{{ money(b.totalAmount, b.currency) }}</strong> for booking
+              <span class="na-text-mono">{{ b.bookingReference }}</span>.
+            </p>
+            <p class="na-text-muted na-text-small">
+              Payment is handled by a mock provider — no card data is collected or stored here.
+              The booking is confirmed as soon as the payment succeeds.
+            </p>
           </na-dialog>
       }
     </div>
@@ -212,25 +263,37 @@ import { ToastService } from '../../shared/ui/toast.service';
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--na-space-4); margin-top: var(--na-space-4); }
     .section { padding: var(--na-space-6); }
     .section h2 { font-size: var(--na-text-lg); margin-bottom: var(--na-space-4); }
-    .sub-h { font-size: var(--na-text-base); margin: var(--na-space-4) 0 var(--na-space-2); }
     .itin__flight { display: flex; align-items: center; gap: var(--na-space-3); margin-bottom: var(--na-space-4); }
-    .itin__route { display: flex; align-items: center; gap: var(--na-space-6); margin-bottom: var(--na-space-3); }
+    .itin__route { display: flex; align-items: center; gap: var(--na-space-6); }
     .itin__code { font-size: var(--na-text-2xl); font-weight: var(--na-font-bold); }
     .itin__time { font-size: var(--na-text-lg); font-weight: var(--na-font-semibold); }
     .itin__arrow { font-size: var(--na-text-xl); color: var(--na-ink-300); }
     .pax { list-style: none; margin: 0 0 var(--na-space-3); padding: 0; }
-    .pax__row { display: flex; justify-content: space-between; gap: var(--na-space-4); padding: var(--na-space-2) 0; border-bottom: 1px solid var(--na-border); }
+    .pax:last-child { margin-bottom: 0; }
+    .pax__row { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-4); padding: var(--na-space-2) 0; border-bottom: 1px solid var(--na-border); }
     .pax__row:last-child { border-bottom: none; }
-    .allowance { margin-top: var(--na-space-2); }
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); }
-    th { text-align: left; padding: var(--na-space-2); font-size: var(--na-text-xs); text-transform: uppercase; color: var(--na-ink-500); border-bottom: 1px solid var(--na-border); }
-    td { padding: var(--na-space-2); border-bottom: 1px solid var(--na-border); }
-    tr:last-child td { border-bottom: none; }
-    .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-2); }
-    .plain-list li { display: flex; align-items: center; gap: var(--na-space-2); flex-wrap: wrap; }
-    .total { margin-bottom: var(--na-space-4); font-size: var(--na-text-lg); }
+    .total { margin-bottom: var(--na-space-2); font-size: var(--na-text-lg); }
+    .per-pax { margin-bottom: var(--na-space-4); }
     .actions { display: flex; align-items: center; gap: var(--na-space-4); flex-wrap: wrap; }
+    .pay-due__amount { font-size: var(--na-text-lg); margin-bottom: var(--na-space-2); }
+    .pay-due na-button { margin-top: var(--na-space-3); }
+    .pay-retry { margin-top: var(--na-space-2); }
+    .pay-load-error {
+      display: flex; align-items: center; gap: var(--na-space-3);
+      font-size: var(--na-text-sm); color: var(--na-ink-700); margin-top: var(--na-space-3);
+    }
+    .pay-load-error__retry {
+      background: none; border: 1px solid var(--na-border-strong); border-radius: var(--na-radius-sm);
+      padding: 0.2rem 0.6rem; color: var(--na-ink-900); font-weight: var(--na-font-semibold);
+    }
+    .pay-card { border: 1px solid var(--na-border); border-radius: var(--na-radius-md); padding: var(--na-space-3) var(--na-space-4); margin-top: var(--na-space-3); }
+    .pay-card__head { display: flex; justify-content: space-between; align-items: center; gap: var(--na-space-3); }
+    .pay-facts { margin: var(--na-space-2) 0 0; display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
+    .pay-facts div { display: grid; grid-template-columns: 130px 1fr; gap: var(--na-space-3); }
+    .pay-facts dt { color: var(--na-ink-500); }
+    .pay-facts dd { margin: 0; }
+    .pay-refunds h3 { font-size: var(--na-text-sm); margin: var(--na-space-3) 0 var(--na-space-1); }
+    .pay-refunds ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
     @media (max-width: 639px) {
       .grid { grid-template-columns: 1fr; }
       .itin__route { gap: var(--na-space-4); }
@@ -238,69 +301,39 @@ import { ToastService } from '../../shared/ui/toast.service';
   `,
 })
 export class ManageBookingPage {
-  private readonly bookingService = inject(BookingService);
-  private readonly auth = inject(AuthService);
+  private readonly bookingService = inject(CustomerBookingService);
+  private readonly paymentService = inject(PaymentService);
   private readonly route = inject(ActivatedRoute);
   private readonly toast = inject(ToastService);
   readonly router = inject(Router);
 
   readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
+  readonly FLIGHT_STATUS_MAP = FLIGHT_STATUS_MAP;
+  readonly SEAT_HOLD_STATUS_MAP = SEAT_HOLD_STATUS_MAP;
   readonly PAYMENT_STATUS_MAP = PAYMENT_STATUS_MAP;
   readonly REFUND_STATUS_MAP = REFUND_STATUS_MAP;
-  readonly FLIGHT_STATUS_MAP = FLIGHT_STATUS_MAP;
   readonly statusLabel = statusLabel;
 
   readonly loading = signal(true);
   readonly error = signal(false);
-  readonly booking = signal<Booking | undefined>(undefined);
+  readonly booking = signal<CustomerBooking | null>(null);
   readonly cancelOpen = signal(false);
   readonly cancelling = signal(false);
+
+  /** null = not loaded yet (or not requested); payments failure is non-blocking. */
+  readonly payments = signal<CustomerPayment[] | null>(null);
+  readonly paymentsError = signal(false);
+  readonly payOpen = signal(false);
+  readonly processing = signal(false);
+  readonly paymentError = signal<string | null>(null);
+
+  /** Generated once per user-initiated payment attempt; retried requests in
+   *  the same attempt reuse it, a fresh attempt after failure regenerates it. */
+  private idempotencyKey = '';
 
   private readonly dtFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
   private readonly dFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
   private readonly tFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
-
-  readonly notOwner = computed(() => {
-    const b = this.booking();
-    const u = this.auth.user();
-    return !!b && !!u && b.userId !== u.id;
-  });
-
-  readonly estimate = computed(() => {
-    const b = this.booking();
-    return b ? this.bookingService.estimateCancellation(b) : null;
-  });
-
-  readonly timeline = computed<TimelineEvent[]>(() => {
-    const b = this.booking();
-    if (!b) return [];
-    const events: TimelineEvent[] = [
-      { label: 'Booking created', timestamp: this.fmt(b.bookedAt), tone: 'info' },
-    ];
-    for (const p of b.payments) {
-      events.push({
-        label: `Payment ${statusLabel(PAYMENT_STATUS_MAP, p.status).label.toLowerCase()}`,
-        detail: `${formatMoney(p.amount, p.currency)} via ${p.provider}`,
-        timestamp: p.paidAt ? this.fmt(p.paidAt) : this.fmt(p.createdAt),
-        tone: statusLabel(PAYMENT_STATUS_MAP, p.status).tone,
-      });
-    }
-    for (const r of b.refunds) {
-      events.push({
-        label: `Refund ${statusLabel(REFUND_STATUS_MAP, r.status).label.toLowerCase()}`,
-        detail: formatMoney(r.amount, r.currency),
-        timestamp: this.fmt(r.processedAt ?? r.createdAt),
-        tone: statusLabel(REFUND_STATUS_MAP, r.status).tone,
-      });
-    }
-    if (b.status === 'CANCELLED' && b.refunds.length === 0) {
-      events.push({ label: 'Booking cancelled', tone: 'danger' });
-    }
-    if (b.status === 'CHECKED_IN') {
-      events.push({ label: 'Checked in', tone: 'success' });
-    }
-    return events;
-  });
 
   constructor() {
     this.route.paramMap.subscribe(() => this.load());
@@ -314,45 +347,106 @@ export class ManageBookingPage {
       next: (booking) => {
         this.booking.set(booking);
         this.loading.set(false);
+        this.loadPayments(booking.id);
       },
-      error: () => {
+      error: (err: unknown) => {
         this.loading.set(false);
-        this.error.set(true);
+        // The API answers 404 for unknown ids and other users' bookings alike.
+        if ((err as { status?: number } | null)?.status === 404) {
+          this.booking.set(null);
+        } else {
+          this.error.set(true);
+        }
       },
     });
+  }
+
+  loadPayments(bookingId: string): void {
+    this.paymentsError.set(false);
+    this.paymentService.getPayments(bookingId).subscribe({
+      next: (list) => this.payments.set(list),
+      error: () => this.paymentsError.set(true),
+    });
+  }
+
+  /** Opens the payment confirmation dialog with a fresh idempotency key. */
+  startPayment(): void {
+    const b = this.booking();
+    if (!b || b.status !== 'PENDING' || this.processing()) return;
+    this.idempotencyKey = crypto.randomUUID();
+    this.paymentError.set(null);
+    this.payOpen.set(true);
+  }
+
+  onPayDialogCancelled(): void {
+    // An in-flight payment must not be interrupted or repeated.
+    if (this.processing()) return;
+    this.payOpen.set(false);
+  }
+
+  confirmPayment(): void {
+    const b = this.booking();
+    if (!b || this.processing()) return;
+    this.processing.set(true);
+    this.paymentService
+      .tokenize()
+      .pipe(
+        switchMap((token) =>
+          this.paymentService.pay(b.id, { token, idempotencyKey: this.idempotencyKey }),
+        ),
+      )
+      .subscribe({
+        next: (result) => {
+          this.processing.set(false);
+          this.payOpen.set(false);
+          this.paymentError.set(null);
+          this.booking.set(result.booking);
+          this.payments.update((list) => [result.payment, ...(list ?? [])]);
+          this.toast.success('Payment successful — your booking is confirmed.');
+        },
+        error: (err: unknown) => {
+          this.processing.set(false);
+          this.payOpen.set(false);
+          this.paymentError.set(this.describePaymentError(err));
+        },
+      });
+  }
+
+  private describePaymentError(err: unknown): string {
+    const status = (err as { status?: number } | null)?.status;
+    const serverMessage = (err as { error?: { message?: string | string[] } } | null)?.error
+      ?.message;
+    const message = Array.isArray(serverMessage) ? serverMessage.join(' ') : serverMessage;
+    // 402 and 409 bodies are safe to display per the API contract.
+    if ((status === 402 || status === 409) && message) return message;
+    return toErrorMessage(
+      err,
+      'Payment could not be completed. Please try again.',
+      'This booking is no longer payable.',
+    );
   }
 
   confirmCancel(): void {
     const b = this.booking();
     if (!b || this.cancelling()) return;
     this.cancelling.set(true);
-    this.bookingService.cancelBooking(b.id).subscribe({
+    this.bookingService.cancel(b.id).subscribe({
       next: (updated) => {
         this.cancelling.set(false);
         this.cancelOpen.set(false);
-        this.booking.set({ ...updated });
-        this.toast.success('Booking cancelled. Any eligible refund has been requested.');
+        this.booking.set(updated);
+        this.toast.success('Booking cancelled. The held seats have been released.');
       },
-      error: (err) => {
+      error: (err: unknown) => {
         this.cancelling.set(false);
         this.cancelOpen.set(false);
-        this.toast.error(err?.message ?? 'Could not cancel this booking.');
+        this.toast.error(
+          (err as { status?: number } | null)?.status === 409
+            ? 'Only pending bookings can be cancelled.'
+            : 'Could not cancel this booking. Please try again.',
+        );
       },
     });
-  }
-
-  seatOf(b: Booking, bookingPassengerId: string): string | null {
-    return b.seats.find((s) => s.bookingPassengerId === bookingPassengerId)?.seatNumber ?? null;
-  }
-
-  baggageAllowance(b: Booking): { carryOn: number; checked: number; weightKg: number } | null {
-    const rules = b.flight.fares[0]?.rules;
-    if (!rules) return null;
-    return {
-      carryOn: rules.carryOnPieces,
-      checked: rules.checkedBaggagePieces,
-      weightKg: rules.checkedBaggageWeightKg,
-    };
   }
 
   money(amount: number, currency: string): string {

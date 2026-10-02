@@ -1,4 +1,5 @@
-import type { CabinClass, ExtraService, Fare, Flight, PassengerType, Seat, Booking } from './domain.model';
+import type { CabinClass, ExtraService, Fare, Flight, PassengerType, Seat } from './domain.model';
+import type { CustomerBooking } from './customer-booking.model';
 
 export type TripType = 'ONE_WAY' | 'ROUND_TRIP' | 'MULTI_CITY';
 
@@ -68,11 +69,13 @@ export interface BookingDraft {
   fare: Fare;
   returnFare?: Fare | null;
   passengers: PassengerForm[];
+  contactEmail: string;
+  contactPhone: string;
   seats: SeatSelection[];
   returnSeats: SeatSelection[];
   extras: ExtraSelection[];
   baggagePieces: number[];
+  /** Client-side selection timer only — a real server hold starts at POST /bookings. */
   seatHoldExpiresAt: string | null;
-  paymentReference: string | null;
-  confirmedBooking: Booking | null;
+  confirmedBooking: CustomerBooking | null;
 }

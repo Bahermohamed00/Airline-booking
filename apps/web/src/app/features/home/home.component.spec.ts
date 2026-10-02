@@ -1,12 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { HomePage } from './home.component';
+import { FlightService } from '../../core/services/flight.service';
 
 describe('HomePage', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [HomePage],
-      providers: [provideRouter([])],
+      providers: [
+        provideRouter([]),
+        // The search card loads airports from the API; stub it so the landing page renders offline.
+        { provide: FlightService, useValue: { listAirports: () => of([]) } },
+      ],
     }).compileComponents();
   });
 

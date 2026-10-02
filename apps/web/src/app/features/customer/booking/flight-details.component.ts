@@ -75,21 +75,25 @@ function cabinLabel(c: CabinClass): string {
                   <article class="na-card fare" [class.fare--soldout]="fare.availableCount === 0">
                     <header class="fare__head">
                       <h3>{{ label(fare.cabinClass) }}</h3>
-                      <div class="fare__badges">
-                        <na-badge [tone]="fare.rules.refundable ? 'success' : 'neutral'">
-                          {{ fare.rules.refundable ? 'Refundable' : 'Non-refundable' }}
-                        </na-badge>
-                        @if (fare.rules.priorityBoarding) { <na-badge tone="info">Priority boarding</na-badge> }
-                        @if (fare.rules.loungeAccess) { <na-badge tone="info">Lounge access</na-badge> }
-                      </div>
+                      @if (fare.rules; as rules) {
+                        <div class="fare__badges">
+                          <na-badge [tone]="rules.refundable ? 'success' : 'neutral'">
+                            {{ rules.refundable ? 'Refundable' : 'Non-refundable' }}
+                          </na-badge>
+                          @if (rules.priorityBoarding) { <na-badge tone="info">Priority boarding</na-badge> }
+                          @if (rules.loungeAccess) { <na-badge tone="info">Lounge access</na-badge> }
+                        </div>
+                      }
                     </header>
-                    <p class="na-text-small na-text-muted">{{ fare.rules.description }}</p>
-                    <ul class="fare__rules">
-                      <li>{{ fare.rules.refundable ? 'Free cancellation (fee ' + fare.rules.cancellationFeePercent + '%)' : 'Non-refundable ticket' }}</li>
-                      <li>{{ fare.rules.changeAllowed ? 'Changes allowed' + (fare.rules.changeFee ? ' — fee ' + money(fare.rules.changeFee, fare) : ' — free') : 'Changes not allowed' }}</li>
-                      <li>{{ fare.rules.checkedBaggagePieces }}× checked bag up to {{ fare.rules.checkedBaggageWeightKg }} kg + {{ fare.rules.carryOnPieces }}× carry-on</li>
-                      <li>{{ fare.rules.seatSelectionFee === 0 ? 'Seat selection included' : 'Seat selection from ' + money(fare.rules.seatSelectionFee, fare) }}</li>
-                    </ul>
+                    @if (fare.rules; as rules) {
+                      <p class="na-text-small na-text-muted">{{ rules.description }}</p>
+                      <ul class="fare__rules">
+                        <li>{{ rules.refundable ? 'Free cancellation (fee ' + rules.cancellationFeePercent + '%)' : 'Non-refundable ticket' }}</li>
+                        <li>{{ rules.changeAllowed ? 'Changes allowed' + (rules.changeFee ? ' — fee ' + money(rules.changeFee, fare) : ' — free') : 'Changes not allowed' }}</li>
+                        <li>{{ rules.checkedBaggagePieces }}× checked bag up to {{ rules.checkedBaggageWeightKg }} kg + {{ rules.carryOnPieces }}× carry-on</li>
+                        <li>{{ rules.seatSelectionFee === 0 ? 'Seat selection included' : 'Seat selection from ' + money(rules.seatSelectionFee, fare) }}</li>
+                      </ul>
+                    }
                     <table class="fare__breakdown">
                       <tbody>
                         <tr><td>Base fare</td><td>{{ money(fare.basePrice, fare) }}</td></tr>

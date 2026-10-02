@@ -1,12 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { switchMap } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
-import { BookingService } from '../../../core/services/booking.service';
-import { PaymentService } from '../../../core/services/domain-services';
-import { PricingService, formatMoney } from '../../../core/services/pricing.service';
+import { CustomerBookingService } from '../../../core/services/customer-booking.service';
+import { AuthService } from '../../../core/services/auth.service';
+import { formatMoney } from '../../../core/services/pricing.service';
 import { FLIGHT_STATUS_MAP } from '../../../core/status-maps';
 import type { BookingDraft } from '../../../core/models/booking-flow.model';
+import type { CreateBookingPayload } from '../../../core/models/customer-booking.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
@@ -15,19 +16,17 @@ import { BOOKING_STEPS } from './passengers.component';
 
 @Component({
   selector: 'na-review-page',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, NaStepper, NaButton, NaBadge, NaAlert],
   template: `
     <div class="na-container page">
       <na-stepper [steps]="steps" [currentIndex]="4" />
-      <h1>Review & pay</h1>
-      <p class="page__sub na-text-muted">Check your trip details, then confirm and pay securely.</p>
+      <h1>Review & book</h1>
+      <p class="page__sub na-text-muted">Check your trip details, then confirm your booking.</p>
 
       @if (draft(); as d) {
         @if (holdWarning()) {
-          <na-alert tone="warning" icon="⏱" title="Seat hold expired">
-            Your seat hold has expired. Seat selections were released — you can
+          <na-alert tone="warning" icon="⏱" title="Seat selection timed out">
+            Your seat selection timed out, so the seats were released — you can
             <a routerLink="/booking/seats">choose seats again</a> or continue without reserved seats.
           </na-alert>
         }
@@ -71,58 +70,61 @@ import { BOOKING_STEPS } from './passengers.component';
               </ul>
             </section>
 
+            <section class="na-card panel" aria-labelledby="contact-h">
+              <header class="panel__head">
+                <h2 id="contact-h">Contact</h2>
+                <a routerLink="/booking/passengers">Edit</a>
+              </header>
+              <p class="na-text-small">
+                {{ d.contactEmail }}@if (d.contactPhone) { · {{ d.contactPhone }} }
+              </p>
+            </section>
+
             <section class="na-card panel" aria-labelledby="bags-h">
               <header class="panel__head">
                 <h2 id="bags-h">Baggage & extras</h2>
                 <a routerLink="/booking/extras">Edit</a>
               </header>
-              <p class="na-text-small">
-                Included: {{ d.fare.rules.checkedBaggagePieces }}× checked bag ({{ d.fare.rules.checkedBaggageWeightKg }} kg)
-                + {{ d.fare.rules.carryOnPieces }}× carry-on per passenger.
-              </p>
-              @if (totalExtraBags(d) > 0) {
-                <p class="na-text-small">Extra checked bags: {{ totalExtraBags(d) }}</p>
+              @if (d.fare.rules; as rules) {
+                <p class="na-text-small">
+                  Included: {{ rules.checkedBaggagePieces }}× checked bag ({{ rules.checkedBaggageWeightKg }} kg)
+                  + {{ rules.carryOnPieces }}× carry-on per passenger.
+                </p>
               }
-              @if (d.extras.length) {
-                <ul class="rows">
-                  @for (e of d.extras; track e.extra.id) {
-                    <li><span>{{ e.extra.name }}</span><span class="na-text-small na-text-muted">× {{ e.quantity }}</span></li>
-                  }
-                </ul>
-              } @else {
-                <p class="na-text-small na-text-muted">No add-on services selected.</p>
-              }
+              <p class="na-text-small na-text-muted">No add-on services were available for this booking.</p>
             </section>
 
-            <details class="na-card panel rules">
-              <summary>Fare rules — {{ cabinName(d.fare.cabinClass) }}</summary>
-              <ul>
-                <li>{{ d.fare.rules.description }}</li>
-                <li>{{ d.fare.rules.refundable ? 'Refundable (cancellation fee ' + d.fare.rules.cancellationFeePercent + '%)' : 'Non-refundable' }}</li>
-                <li>{{ d.fare.rules.changeAllowed ? 'Changes allowed' + (d.fare.rules.changeFee ? ' — fee ' + money(d.fare.rules.changeFee) : ' — free') : 'Changes not permitted' }}</li>
-                <li>{{ d.fare.rules.seatSelectionFee === 0 ? 'Seat selection included' : 'Seat selection fee applies' }}</li>
-                @if (d.fare.rules.priorityBoarding) { <li>Priority boarding included</li> }
-                @if (d.fare.rules.loungeAccess) { <li>Lounge access included</li> }
-              </ul>
-            </details>
+            @if (d.fare.rules; as rules) {
+              <details class="na-card panel rules">
+                <summary>Fare rules — {{ cabinName(d.fare.cabinClass) }}</summary>
+                <ul>
+                  <li>{{ rules.description }}</li>
+                  <li>{{ rules.refundable ? 'Refundable (cancellation fee ' + rules.cancellationFeePercent + '%)' : 'Non-refundable' }}</li>
+                  <li>{{ rules.changeAllowed ? 'Changes allowed' + (rules.changeFee ? ' — fee ' + money(rules.changeFee) : ' — free') : 'Changes not permitted' }}</li>
+                  @if (rules.priorityBoarding) { <li>Priority boarding included</li> }
+                  @if (rules.loungeAccess) { <li>Lounge access included</li> }
+                </ul>
+              </details>
+            }
           </div>
 
-          <aside class="na-card side" aria-label="Price and payment">
+          <aside class="na-card side" aria-label="Price and confirmation">
             <h2>Price breakdown</h2>
             @if (breakdown(); as b) {
               <table class="side__table">
                 <tbody>
-                  <tr><td>Base fare & carrier charges</td><td>{{ money(b.baseFare) }}</td></tr>
-                  <tr><td>of which taxes</td><td>{{ money(b.taxes) }}</td></tr>
-                  <tr><td>of which fees</td><td>{{ money(b.fees) }}</td></tr>
-                  @if (b.seatCharges > 0) { <tr><td>Seat selection</td><td>{{ money(b.seatCharges) }}</td></tr> }
-                  @if (b.baggage > 0) { <tr><td>Extra baggage</td><td>{{ money(b.baggage) }}</td></tr> }
-                  @if (b.extras > 0) { <tr><td>Add-ons</td><td>{{ money(b.extras) }}</td></tr> }
-                  @if (b.discount > 0) { <tr class="side__discount"><td>Promo discount ({{ d.criteria.promoCode }})</td><td>−{{ money(b.discount) }}</td></tr> }
+                  <tr><td>Base fare × {{ b.passengerCount }}</td><td>{{ money(b.base) }}</td></tr>
+                  <tr><td>Taxes × {{ b.passengerCount }}</td><td>{{ money(b.taxes) }}</td></tr>
+                  <tr><td>Fees × {{ b.passengerCount }}</td><td>{{ money(b.fees) }}</td></tr>
                   <tr class="side__total"><td>Total</td><td>{{ money(b.total) }}</td></tr>
                 </tbody>
               </table>
+              <p class="na-hint">Seats are included at no charge.</p>
             }
+
+            <p class="payment-note na-text-small na-text-muted">
+              No payment is due now — the booking will be created as <strong>pending</strong> and payment happens later.
+            </p>
 
             <div class="consent">
               <input id="consent" type="checkbox" [checked]="consent()" (change)="consent.set($any($event.target).checked)"
@@ -136,22 +138,18 @@ import { BOOKING_STEPS } from './passengers.component';
               <p class="na-error">Please accept the terms to continue.</p>
             }
 
-            <div class="pay">
-              <p class="na-text-small na-text-muted">
-                Demo checkout — no real card details are collected. Payment is simulated by the
-                <strong>mockpay</strong> provider and always uses a tokenized, idempotent charge.
-              </p>
-              @if (paymentError()) {
-                <na-alert tone="danger" icon="⚠" title="Payment failed" [retryable]="true" (retry)="pay()">
-                  {{ paymentError() }} Your booking details are preserved — you can safely retry.
+            <div class="confirm">
+              @if (submitError(); as message) {
+                <na-alert tone="danger" icon="⚠" title="Booking could not be created" [retryable]="submitErrorRetryable()" (retry)="submit()">
+                  {{ message }}
                 </na-alert>
               }
-              <na-button variant="cta" size="lg" [loading]="paying()" [disabled]="paying()" (clicked)="pay()">
-                {{ paying() ? 'Processing secure payment…' : 'Pay securely' }}
+              <na-button variant="cta" size="lg" [loading]="submitting()" [disabled]="submitting()" (clicked)="submit()">
+                {{ submitting() ? 'Creating your booking…' : 'Confirm booking' }}
               </na-button>
-              @if (paying()) {
+              @if (submitting()) {
                 <p class="na-text-small na-text-muted" aria-live="polite">
-                  Contacting the mock payment provider — do not close this page.
+                  Contacting the booking service — do not close this page.
                 </p>
               }
             </div>
@@ -180,12 +178,13 @@ import { BOOKING_STEPS } from './passengers.component';
     .side__table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); margin-bottom: var(--na-space-2); }
     .side__table td { padding: var(--na-space-1) 0; }
     .side__table td:last-child { text-align: right; font-weight: var(--na-font-medium); }
-    .side__discount td { color: var(--na-success); }
     .side__total td { border-top: 1px solid var(--na-border); padding-top: var(--na-space-2); font-size: var(--na-text-lg); font-weight: var(--na-font-bold); }
+    .payment-note { margin: var(--na-space-4) 0 0; }
     .consent { display: flex; gap: var(--na-space-2); align-items: flex-start; margin: var(--na-space-5) 0 var(--na-space-2); }
     .consent input { width: 22px; height: 22px; flex-shrink: 0; margin-top: var(--na-space-1); }
     .consent label { font-size: var(--na-text-sm); }
-    .pay { display: grid; gap: var(--na-space-3); margin-top: var(--na-space-4); border-top: 1px solid var(--na-border); padding-top: var(--na-space-4); }
+    .confirm { display: grid; gap: var(--na-space-3); margin-top: var(--na-space-4); border-top: 1px solid var(--na-border); padding-top: var(--na-space-4); }
+    .confirm na-alert { margin-bottom: 0; }
     @media (max-width: 900px) {
       .layout { grid-template-columns: 1fr; }
       .side { position: static; order: -1; }
@@ -195,33 +194,29 @@ import { BOOKING_STEPS } from './passengers.component';
 export class ReviewPage {
   private readonly router = inject(Router);
   private readonly draftApi = inject(BookingDraftService);
-  private readonly bookingApi = inject(BookingService);
-  private readonly payments = inject(PaymentService);
-  private readonly pricing = inject(PricingService);
+  private readonly bookings = inject(CustomerBookingService);
+  private readonly auth = inject(AuthService);
 
   protected readonly steps = BOOKING_STEPS;
   protected readonly draft = this.draftApi.draft;
   protected readonly consent = signal(false);
   protected readonly consentError = signal(false);
-  protected readonly paying = signal(false);
-  protected readonly paymentError = signal<string | null>(null);
+  protected readonly submitting = signal(false);
+  protected readonly submitError = signal<string | null>(null);
+  protected readonly submitErrorRetryable = signal(false);
 
-  /** Idempotency key is stable across retries so a retry never double-charges. */
-  private readonly idempotencyKey = crypto.randomUUID();
-
+  /**
+   * Server-consistent figures: the server prices a booking as fare components
+   * × passenger count. There are no seat charges, extras or discounts.
+   */
   protected readonly breakdown = computed(() => {
     const d = this.draft();
     if (!d) return null;
-    return this.pricing.computeBreakdown({
-      fare: d.fare,
-      returnFare: d.returnFare,
-      passengerTypes: d.passengers.map((p) => p.passengerType),
-      seats: d.seats,
-      returnSeats: d.returnSeats,
-      extras: d.extras,
-      extraBags: d.baggagePieces.reduce((a, b) => a + b, 0),
-      promoCode: d.criteria.promoCode,
-    });
+    const passengerCount = d.passengers.length;
+    const base = d.fare.basePrice * passengerCount;
+    const taxes = d.fare.taxAmount * passengerCount;
+    const fees = d.fare.feeAmount * passengerCount;
+    return { passengerCount, base, taxes, fees, total: base + taxes + fees };
   });
 
   protected readonly holdWarning = computed(() => {
@@ -239,52 +234,81 @@ export class ReviewPage {
     return d.seats.find((s) => s.passengerIndex === passengerIndex)?.seat.seatNumber ?? null;
   }
 
-  protected totalExtraBags(d: BookingDraft): number {
-    return d.baggagePieces.reduce((a, b) => a + b, 0);
-  }
-
-  protected pay(): void {
+  protected submit(): void {
     const d = this.draft();
-    const b = this.breakdown();
-    if (!d || !b) return;
+    if (!d || d.passengers.length === 0 || this.submitting()) return;
     if (!this.consent()) {
       this.consentError.set(true);
       return;
     }
     this.consentError.set(false);
-    this.paymentError.set(null);
-    this.paying.set(true);
+    // The route's authGuard enforces this too; redirect defensively so a guest
+    // who reached this page can log in and land back here.
+    if (!this.auth.isLoggedIn()) {
+      this.router.navigate(['/login'], { queryParams: { returnUrl: '/booking/review' } });
+      return;
+    }
 
-    this.payments
-      .tokenize()
-      .pipe(switchMap((token) => this.payments.charge(token, b.total, b.currency, this.idempotencyKey)))
-      .subscribe({
-        next: ({ providerReference }) => {
-          this.draftApi.setPaymentReference(providerReference);
-          const current = this.draft();
-          if (!current) {
-            this.paying.set(false);
-            this.paymentError.set('Your session expired after payment. Please contact support.');
-            return;
-          }
-          this.bookingApi.confirmFromDraft(current).subscribe({
-            next: (booking) => {
-              this.paying.set(false);
-              this.router.navigate(['/booking/confirmation'], {
-                queryParams: { ref: booking.bookingReference },
-              });
-            },
-            error: () => {
-              this.paying.set(false);
-              this.paymentError.set('Payment succeeded but the booking could not be saved. Please contact support.');
-            },
-          });
-        },
-        error: (err: { message?: string }) => {
-          this.paying.set(false);
-          this.paymentError.set(err?.message ?? 'The payment provider rejected the transaction.');
-        },
-      });
+    // Exactly the CreateBookingDto contract — the server owns identity (JWT),
+    // booking reference, status and totals; never send client-computed fields.
+    const payload: CreateBookingPayload = {
+      flightId: d.outbound.id,
+      cabinClass: d.fare.cabinClass,
+      seatIds: d.seats.map((s) => s.seat.id),
+      passengers: d.passengers.map((p) => ({
+        passengerType: p.passengerType,
+        firstName: p.firstName.trim(),
+        lastName: p.lastName.trim(),
+        ...(p.dateOfBirth ? { dateOfBirth: p.dateOfBirth } : {}),
+        ...(p.nationality ? { nationality: p.nationality } : {}),
+        ...(p.passportNumber ? { passportNumber: p.passportNumber } : {}),
+      })),
+      ...(d.contactEmail ? { contactEmail: d.contactEmail } : {}),
+      ...(d.contactPhone ? { contactPhone: d.contactPhone } : {}),
+    };
+
+    this.submitting.set(true);
+    this.submitError.set(null);
+    this.bookings.create(payload).subscribe({
+      next: (booking) => {
+        this.submitting.set(false);
+        this.draftApi.setConfirmedBooking(booking);
+        this.router.navigate(['/booking/confirmation'], { queryParams: { id: booking.id } });
+      },
+      error: (err: HttpErrorResponse) => this.handleCreateError(err),
+    });
+  }
+
+  private handleCreateError(err: HttpErrorResponse): void {
+    this.submitting.set(false);
+    switch (err?.status) {
+      case 401:
+        this.router.navigate(['/login'], { queryParams: { returnUrl: '/booking/review' } });
+        return;
+      case 400: {
+        const message = (err.error as { message?: string | string[] } | undefined)?.message;
+        this.submitError.set(
+          Array.isArray(message)
+            ? message.join(' ')
+            : (message ?? 'The booking details were rejected. Please review them and try again.'),
+        );
+        this.submitErrorRetryable.set(false);
+        return;
+      }
+      case 404:
+        this.submitError.set('This flight is no longer available. Please start a new search.');
+        this.submitErrorRetryable.set(false);
+        return;
+      case 409:
+        // Seat conflict: drop the local selection so the user re-picks from
+        // refreshed availability on the seats page.
+        this.draftApi.releaseHold();
+        this.router.navigate(['/booking/seats'], { state: { seatConflict: true } });
+        return;
+      default:
+        this.submitError.set('The booking could not be created right now. Your details are preserved — you can safely try again.');
+        this.submitErrorRetryable.set(true);
+    }
   }
 
   protected money(amount: number): string {

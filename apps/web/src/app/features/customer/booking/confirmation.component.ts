@@ -1,15 +1,17 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BookingService } from '../../../core/services/booking.service';
+import { Component, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { CustomerBookingService } from '../../../core/services/customer-booking.service';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
-import { flightDurationLabel } from '../../../core/services/flight.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import type { Booking } from '../../../core/models/domain.model';
+import { BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import type { CustomerBooking } from '../../../core/models/customer-booking.model';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function icsDate(iso: string): string {
   return new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
@@ -17,8 +19,6 @@ function icsDate(iso: string): string {
 
 @Component({
   selector: 'na-confirmation-page',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, NaButton, NaBadge, NaAlert, NaSkeleton, NaEmptyState],
   template: `
     <div class="na-container page">
@@ -31,29 +31,43 @@ function icsDate(iso: string): string {
       } @else if (booking(); as b) {
         <section class="hero" aria-labelledby="done-h">
           <span class="hero__icon" aria-hidden="true">✓</span>
-          <h1 id="done-h">Booking confirmed</h1>
-          <p class="hero__sub">Your trip is booked. Keep this reference handy:</p>
+          <h1 id="done-h">Booking received</h1>
+          <p class="hero__sub">
+            @if (b.status === 'PENDING') {
+              Your seats are reserved while payment is pending. Keep this reference handy:
+            } @else {
+              Your trip is booked. Keep this reference handy:
+            }
+          </p>
           <p class="hero__ref na-text-mono" aria-label="Booking reference">{{ b.bookingReference }}</p>
-          <na-badge tone="success">Confirmed</na-badge>
+          <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, b.status).tone">
+            {{ statusLabel(BOOKING_STATUS_MAP, b.status).label }}
+          </na-badge>
         </section>
 
-        <na-alert tone="info" icon="✉" title="Confirmation on its way">
-          A confirmation email with your itinerary has been queued for delivery to
-          <strong>{{ b.contactEmail }}</strong>. You can also check-in online from 24 hours before departure.
-        </na-alert>
+        @if (b.status === 'PENDING') {
+          <na-alert tone="warning" icon="⏳" title="Payment pending">
+            This booking awaits payment — no payment has been taken yet. Your seats stay held
+            @if (holdUntil(b); as until) { until <strong>{{ until }}</strong> }. You can manage or
+            cancel it anytime from <a routerLink="/bookings">My bookings</a>.
+            <a class="pay-link" [routerLink]="['/bookings', b.id]">Pay now</a>
+          </na-alert>
+        }
 
         <div class="grid">
           <section class="na-card panel" aria-labelledby="itin-h">
             <h2 id="itin-h">Itinerary</h2>
-            <p>
-              <strong>{{ b.flight.flightNumber }}</strong> —
-              {{ b.flight.route.origin.iataCode }} ({{ b.flight.route.origin.city }}) →
-              {{ b.flight.route.destination.iataCode }} ({{ b.flight.route.destination.city }})
-            </p>
-            <p class="na-text-small na-text-muted">
-              {{ fullDate(b.flight.departureTime) }} → {{ time(b.flight.arrivalTime) }} ·
-              {{ flightDurationLabel(b.flight) }} · {{ b.flight.aircraft.model }}
-            </p>
+            @if (b.flight; as f) {
+              <p>
+                <strong>{{ f.flightNumber }}</strong> —
+                {{ f.origin }} → {{ f.destination }}
+              </p>
+              <p class="na-text-small na-text-muted">
+                {{ fullDate(f.departureTime) }} → {{ time(f.arrivalTime) }}
+              </p>
+            } @else {
+              <p class="na-text-muted">Flight details are being finalized and will appear here shortly.</p>
+            }
           </section>
 
           <section class="na-card panel" aria-labelledby="pax-h">
@@ -61,32 +75,41 @@ function icsDate(iso: string): string {
             <ul class="rows">
               @for (p of b.passengers; track p.id) {
                 <li>
-                  <span>{{ p.passenger.firstName }} {{ p.passenger.lastName }}</span>
-                  <span class="na-text-small na-text-muted">
-                    {{ typeLabel(p.passengerType) }} · Seat {{ seatFor(b, p.id) ?? 'assigned at check-in' }}
-                  </span>
+                  <span>{{ p.firstName }} {{ p.lastName }}</span>
+                  <span class="na-text-small na-text-muted">{{ typeLabel(p.passengerType) }}</span>
                 </li>
               }
             </ul>
-            <p class="panel__total">Total paid: <strong>{{ money(b.totalAmount, b.currency) }}</strong></p>
+            @if (b.seats.length > 0) {
+              <p class="seats na-text-small na-text-muted">
+                Seats: <span class="na-text-mono">{{ seatNumbers(b) }}</span>
+              </p>
+            }
+            <p class="panel__total">Total: <strong>{{ money(b.totalAmount, b.currency) }}</strong></p>
           </section>
         </div>
 
         <section class="actions" aria-label="Booking actions">
           <na-button variant="secondary" (clicked)="print()">Print confirmation</na-button>
-          <na-button variant="secondary" (clicked)="downloadIcs(b)">Add to calendar (.ics)</na-button>
+          @if (b.flight) {
+            <na-button variant="secondary" (clicked)="downloadIcs(b)">Add to calendar (.ics)</na-button>
+          }
           <a class="actions__link" routerLink="/bookings">My bookings</a>
-          <a class="actions__link" routerLink="/checkin">Online check-in</a>
+          @if (b.status === 'CONFIRMED' || b.status === 'CHECKED_IN') {
+            <a class="actions__link" routerLink="/checkin">Online check-in</a>
+          }
           <a class="actions__link" routerLink="/status">Flight status</a>
         </section>
       } @else {
         <na-empty-state
           icon="🎫"
-          title="No recent booking found"
-          message="We couldn't find a freshly confirmed booking in this session. Check your bookings or start a new search."
-          actionLabel="Go to my bookings"
-          (action)="goBookings()"
+          title="Booking not found"
+          message="We couldn't find a booking for this link. It may be incomplete or belong to another account."
         />
+        <div class="actions actions--center">
+          <a class="actions__link" routerLink="/bookings">My bookings</a>
+          <a class="actions__link" routerLink="/search">Search flights</a>
+        </div>
       }
     </div>
   `,
@@ -112,9 +135,16 @@ function icsDate(iso: string): string {
     .panel h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-3); }
     .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-2); }
     .rows li { display: flex; justify-content: space-between; gap: var(--na-space-3); }
+    .seats { margin-top: var(--na-space-3); }
     .panel__total { border-top: 1px solid var(--na-border); margin-top: var(--na-space-3); padding-top: var(--na-space-3); }
     .actions { display: flex; gap: var(--na-space-3); flex-wrap: wrap; align-items: center; }
+    .actions--center { justify-content: center; margin-top: var(--na-space-4); }
     .actions__link { min-height: 44px; display: inline-flex; align-items: center; font-weight: var(--na-font-semibold); }
+    .pay-link {
+      display: inline-flex; align-items: center; min-height: 36px; margin-top: var(--na-space-2);
+      padding: 0.2rem 0.9rem; border: 1px solid currentColor; border-radius: var(--na-radius-sm);
+      color: inherit; font-weight: var(--na-font-semibold); text-decoration: none;
+    }
     @media print {
       .actions, na-alert { display: none; }
     }
@@ -125,43 +155,45 @@ function icsDate(iso: string): string {
 })
 export class ConfirmationPage {
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly bookings = inject(BookingService);
+  private readonly bookings = inject(CustomerBookingService);
   private readonly draft = inject(BookingDraftService);
 
-  protected readonly booking = signal<Booking | null>(null);
+  protected readonly booking = signal<CustomerBooking | null>(null);
   protected readonly loading = signal(true);
   protected readonly lookupError = signal(false);
 
-  protected readonly flightDurationLabel = flightDurationLabel;
+  protected readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
+  protected readonly statusLabel = statusLabel;
 
-  private readonly ref = this.route.snapshot.queryParamMap.get('ref');
+  private readonly id = this.route.snapshot.queryParamMap.get('id');
 
   constructor() {
-    const confirmed = this.draft.draft()?.confirmedBooking ?? null;
-    this.draft.clear();
-
-    if (confirmed) {
-      this.booking.set(confirmed);
+    const id = this.id;
+    if (!id || !UUID_RE.test(id)) {
       this.loading.set(false);
       return;
     }
-    if (!this.ref) {
+    const confirmed = this.draft.draft()?.confirmedBooking ?? null;
+    if (confirmed?.id === id) {
+      this.booking.set(confirmed);
       this.loading.set(false);
+      this.draft.clear();
       return;
     }
     this.lookup();
   }
 
   protected lookup(): void {
-    const ref = this.ref;
-    if (!ref) return;
+    const id = this.id;
+    if (!id) return;
     this.loading.set(true);
     this.lookupError.set(false);
-    this.bookings.findByReference(ref).subscribe({
+    this.bookings.getById(id).subscribe({
       next: (b) => {
-        this.booking.set(b ?? null);
+        this.booking.set(b);
         this.loading.set(false);
+        // The funnel is complete — a stale draft must not leak into a new search.
+        this.draft.clear();
       },
       error: () => {
         this.loading.set(false);
@@ -170,15 +202,26 @@ export class ConfirmationPage {
     });
   }
 
-  protected seatFor(b: Booking, bookingPassengerId: string): string | null {
-    return b.seats.find((s) => s.bookingPassengerId === bookingPassengerId)?.seatNumber ?? null;
+  protected seatNumbers(b: CustomerBooking): string {
+    return b.seats.map((s) => s.seatNumber).join(' · ');
+  }
+
+  protected holdUntil(b: CustomerBooking): string | null {
+    let earliest: string | null = null;
+    for (const s of b.seats) {
+      if (s.holdStatus !== 'ACTIVE') continue;
+      if (earliest === null || s.holdExpiresAt < earliest) earliest = s.holdExpiresAt;
+    }
+    return earliest === null ? null : this.fullDate(earliest);
   }
 
   protected print(): void {
     window.print();
   }
 
-  protected downloadIcs(b: Booking): void {
+  protected downloadIcs(b: CustomerBooking): void {
+    const f = b.flight;
+    if (!f) return;
     const ics = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -186,11 +229,11 @@ export class ConfirmationPage {
       'BEGIN:VEVENT',
       `UID:${b.id}@novaair.demo`,
       `DTSTAMP:${icsDate(b.bookedAt)}`,
-      `DTSTART:${icsDate(b.flight.departureTime)}`,
-      `DTEND:${icsDate(b.flight.arrivalTime)}`,
-      `SUMMARY:Flight ${b.flight.flightNumber} ${b.flight.route.origin.iataCode} → ${b.flight.route.destination.iataCode}`,
+      `DTSTART:${icsDate(f.departureTime)}`,
+      `DTEND:${icsDate(f.arrivalTime)}`,
+      `SUMMARY:Flight ${f.flightNumber} ${f.origin} → ${f.destination}`,
       `DESCRIPTION:Booking reference ${b.bookingReference}`,
-      `LOCATION:${b.flight.route.origin.name}`,
+      `LOCATION:${f.origin}`,
       'END:VEVENT',
       'END:VCALENDAR',
     ].join('\r\n');
@@ -217,9 +260,5 @@ export class ConfirmationPage {
 
   protected typeLabel(type: string): string {
     return type === 'ADULT' ? 'Adult' : type === 'CHILD' ? 'Child' : 'Infant';
-  }
-
-  protected goBookings(): void {
-    this.router.navigateByUrl('/bookings');
   }
 }

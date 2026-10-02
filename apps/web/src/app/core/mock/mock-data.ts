@@ -292,8 +292,8 @@ export const BOOKINGS: Booking[] = [
       { id: '93000000-0000-4000-8000-00000000b002', passengerId: PASSENGERS[1].id, passenger: PASSENGERS[1], passengerType: 'CHILD' },
     ],
     seats: [
-      { id: '93000000-0000-4000-8000-00000000c001', bookingPassengerId: '93000000-0000-4000-8000-00000000b001', flightSegmentId: FLIGHTS[6].segments[0].id, seatId: FLIGHTS[6].aircraft.seats[83].id, seatNumber: '14C' },
-      { id: '93000000-0000-4000-8000-00000000c002', bookingPassengerId: '93000000-0000-4000-8000-00000000b002', flightSegmentId: FLIGHTS[6].segments[0].id, seatId: FLIGHTS[6].aircraft.seats[84].id, seatNumber: '14D' },
+      { id: '93000000-0000-4000-8000-00000000c001', bookingPassengerId: '93000000-0000-4000-8000-00000000b001', flightSegmentId: FLIGHTS[6].segments[0].id, seatId: FLIGHTS[6].aircraft.seats![83].id, seatNumber: '14C' },
+      { id: '93000000-0000-4000-8000-00000000c002', bookingPassengerId: '93000000-0000-4000-8000-00000000b002', flightSegmentId: FLIGHTS[6].segments[0].id, seatId: FLIGHTS[6].aircraft.seats![84].id, seatNumber: '14D' },
     ],
     extras: [
       { id: '93000000-0000-4000-8000-00000000e001', extraServiceId: EXTRAS[0].id, extraService: EXTRAS[0], quantity: 1, price: 65 },
@@ -317,7 +317,7 @@ export const BOOKINGS: Booking[] = [
       { id: '93000000-0000-4000-8000-00000000b003', passengerId: PASSENGERS[0].id, passenger: PASSENGERS[0], passengerType: 'ADULT' },
     ],
     seats: [
-      { id: '93000000-0000-4000-8000-00000000c003', bookingPassengerId: '93000000-0000-4000-8000-00000000b003', flightSegmentId: FLIGHTS[9].segments[0].id, seatId: FLIGHTS[9].aircraft.seats[41].id, seatNumber: '7C' },
+      { id: '93000000-0000-4000-8000-00000000c003', bookingPassengerId: '93000000-0000-4000-8000-00000000b003', flightSegmentId: FLIGHTS[9].segments[0].id, seatId: FLIGHTS[9].aircraft.seats![41].id, seatNumber: '7C' },
     ],
     extras: [],
     payments: [makePayment('94000000-0000-4000-8000-000000000002', '93000000-0000-4000-8000-000000000002', 402.9, 'EUR', 5)],

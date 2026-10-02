@@ -1,15 +1,16 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FlightService, flightDurationLabel } from '../../../core/services/flight.service';
+import { ScheduleRulesService } from '../../../core/services/schedule-rules.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import { AIRCRAFT, ROUTES } from '../../../core/mock/mock-data';
 import { FLIGHT_STATUS_MAP, statusLabel } from '../../../core/status-maps';
-import type { Aircraft, Flight, FlightStatus, Route } from '../../../core/models/domain.model';
-import { ToastService } from '../../../shared/ui/toast.service';
+import type { Flight, FlightStatus } from '../../../core/models/domain.model';
+import type { GenerationSummary } from '../../../core/models/schedule-rule-api.model';
+import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
+import { toErrorMessage } from '../../../shared/utils/http-error-message';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
-import { NaDialog } from '../../../shared/ui/dialog.component';
 import { NaDataTable, type TableColumn } from '../../../shared/ui/data-table.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 
@@ -23,13 +24,7 @@ interface FlightRow {
   capacity: string;
 }
 
-interface FlightForm {
-  flightNumber: string;
-  routeId: string;
-  aircraftId: string;
-  departure: string;
-  arrival: string;
-}
+const MAX_GENERATE_RANGE_DAYS = 62;
 
 const dateTimeFmt = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
@@ -37,26 +32,21 @@ const dateTimeFmt = new Intl.DateTimeFormat('en-GB', {
 const dateFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
 const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
 
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 @Component({
   selector: 'na-admin-flights',
-  standalone: true,
-  imports: [FormsModule, NaBreadcrumbs, NaButton, NaBadge, NaDialog, NaDataTable],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, NaBreadcrumbs, NaButton, NaBadge, NaDataTable, NaSkeleton, HasPermissionDirective],
   template: `
     <div class="page">
       <na-breadcrumbs [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Flights' }]" />
       <header class="page__head">
         <div>
           <h1>Flight schedule</h1>
-          <p class="subtitle">Manage scheduled flights, cancellations, reschedules and aircraft assignment.</p>
+          <p class="subtitle">
+            Flights are created from schedule rules via generation — there is no manual flight creation or
+            per-flight editing.
+          </p>
         </div>
-        <na-button variant="cta" (clicked)="openCreate()">New flight</na-button>
+        <na-button variant="cta" *naHasPermission="'flights:manage'" (clicked)="openGenerate()">Generate flights</na-button>
       </header>
 
       <div class="filters">
@@ -87,16 +77,23 @@ function toLocalInput(iso: string): string {
         </div>
       </div>
 
-      <na-data-table
-        [columns]="columns"
-        [rows]="rows()"
-        [loading]="loading()"
-        emptyTitle="No flights match"
-        emptyMessage="Try a different search term or status filter."
-        emptyActionLabel="Clear filters"
-        (rowClick)="openDetail($event.id)"
-        (emptyAction)="clearFilters()"
-      />
+      @if (loadError()) {
+        <div class="list-error" role="alert">
+          <p>{{ loadError() }}</p>
+          <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+        </div>
+      } @else {
+        <na-data-table
+          [columns]="columns"
+          [rows]="rows()"
+          [loading]="loading()"
+          emptyTitle="No flights match"
+          emptyMessage="Try a different search term or status filter."
+          emptyActionLabel="Clear filters"
+          (rowClick)="openDetail($event.id)"
+          (emptyAction)="clearFilters()"
+        />
+      }
 
       <!-- Detail drawer -->
       @if (selected(); as f) {
@@ -121,14 +118,23 @@ function toLocalInput(iso: string): string {
             </dl>
 
             <h3>Segments</h3>
-            <ul class="segments">
-              @for (seg of f.segments; track seg.id) {
-                <li>
-                  <span class="na-text-mono">{{ seg.origin.iataCode }} → {{ seg.destination.iataCode }}</span>
-                  <span class="na-text-muted na-text-small">{{ formatTime(seg.departureTime) }} – {{ formatTime(seg.arrivalTime) }}</span>
-                </li>
-              }
-            </ul>
+            @if (detailLoading()) {
+              <na-skeleton [rows]="[1, 2]" height="1.5rem" />
+            } @else if (detailError()) {
+              <div class="list-error" role="alert">
+                <p>{{ detailError() }}</p>
+                <na-button variant="secondary" size="sm" (clicked)="retryDetail()">Retry</na-button>
+              </div>
+            } @else {
+              <ul class="segments">
+                @for (seg of f.segments; track seg.id) {
+                  <li>
+                    <span class="na-text-mono">{{ seg.origin.iataCode }} → {{ seg.destination.iataCode }}</span>
+                    <span class="na-text-muted na-text-small">{{ formatTime(seg.departureTime) }} – {{ formatTime(seg.arrivalTime) }}</span>
+                  </li>
+                }
+              </ul>
+            }
 
             <h3>Fares</h3>
             <div class="fares-wrap">
@@ -146,119 +152,81 @@ function toLocalInput(iso: string): string {
                 </tbody>
               </table>
             </div>
-
-            <h3>Actions</h3>
-            <div class="actions">
-              <na-button variant="danger" size="sm" [disabled]="f.status === 'CANCELLED'" (clicked)="cancelDialogOpen.set(true)">
-                Cancel flight
-              </na-button>
-              <na-button variant="secondary" size="sm" (clicked)="rescheduleOpen.set(!rescheduleOpen())">
-                Reschedule
-              </na-button>
-            </div>
-
-            @if (rescheduleOpen()) {
-              <form class="inline-form" (submit)="applyReschedule($event)">
-                <div class="na-field">
-                  <label class="na-label" for="reschedule-dep">New departure</label>
-                  <input id="reschedule-dep" class="na-input" type="datetime-local" name="rescheduleDep" [(ngModel)]="rescheduleDep" required />
-                </div>
-                <div class="na-field">
-                  <label class="na-label" for="reschedule-arr">New arrival</label>
-                  <input id="reschedule-arr" class="na-input" type="datetime-local" name="rescheduleArr" [(ngModel)]="rescheduleArr" required />
-                  @if (rescheduleError()) {
-                    <p class="na-error" role="alert">{{ rescheduleError() }}</p>
-                  }
-                </div>
-                <na-button variant="primary" size="sm" type="submit">Apply reschedule</na-button>
-              </form>
-            }
-
-            <div class="na-field assign">
-              <label class="na-label" for="assign-aircraft">Assign aircraft</label>
-              <div class="assign__row">
-                <select id="assign-aircraft" class="na-select" name="assignAircraft" [(ngModel)]="assignAircraftId">
-                  @for (a of aircraftOptions; track a.id) {
-                    <option [value]="a.id">{{ a.registration }} — {{ a.model }}</option>
-                  }
-                </select>
-                <na-button variant="secondary" size="sm" (clicked)="applyAircraft()">Assign</na-button>
-              </div>
-            </div>
           </div>
         </aside>
       }
 
-      <!-- New flight drawer -->
-      @if (createOpen()) {
-        <div class="backdrop" (click)="createOpen.set(false)" role="presentation"></div>
-        <aside class="drawer" role="dialog" aria-modal="true" aria-label="Create new flight">
+      <!-- Generate flights drawer -->
+      @if (generateOpen()) {
+        <div class="backdrop" (click)="closeGenerate()" role="presentation"></div>
+        <aside class="drawer" role="dialog" aria-modal="true" aria-label="Generate flights from schedule rules">
           <header class="drawer__head">
-            <h2>New flight</h2>
-            <button type="button" class="drawer__close" aria-label="Close form" (click)="createOpen.set(false)">×</button>
+            <h2>Generate flights</h2>
+            <button type="button" class="drawer__close" aria-label="Close form" (click)="closeGenerate()">×</button>
           </header>
-          <form class="drawer__body" (submit)="submitCreate($event)">
+          <form class="drawer__body" (submit)="submitGenerate($event)">
+            <p class="na-hint">
+              Creates and updates flights from the ACTIVE schedule rules whose operating days fall inside the
+              range (max {{ maxRangeDays }} days). Generation is idempotent — re-running the same range updates
+              existing flights instead of duplicating them.
+            </p>
             <div class="na-field">
-              <label class="na-label" for="nf-number">Flight number</label>
-              <input id="nf-number" class="na-input" name="nfNumber" [(ngModel)]="form.flightNumber" placeholder="e.g. NV720" required pattern="[A-Za-z]{2}[0-9]{1,4}" />
-              <p class="na-hint">Two letters followed by up to four digits.</p>
+              <label class="na-label" for="gen-from">From</label>
+              <input id="gen-from" class="na-input" type="date" name="genFrom" [(ngModel)]="generateFrom" required />
             </div>
             <div class="na-field">
-              <label class="na-label" for="nf-route">Route</label>
-              <select id="nf-route" class="na-select" name="nfRoute" [(ngModel)]="form.routeId" required>
-                <option value="" disabled>Select a route…</option>
-                @for (r of routeOptions; track r.id) {
-                  <option [value]="r.id">{{ r.origin.iataCode }} → {{ r.destination.iataCode }} ({{ r.origin.city }} – {{ r.destination.city }})</option>
-                }
-              </select>
-            </div>
-            <div class="na-field">
-              <label class="na-label" for="nf-aircraft">Aircraft</label>
-              <select id="nf-aircraft" class="na-select" name="nfAircraft" [(ngModel)]="form.aircraftId" required>
-                <option value="" disabled>Select an aircraft…</option>
-                @for (a of aircraftOptions; track a.id) {
-                  <option [value]="a.id">{{ a.registration }} — {{ a.model }} ({{ a.capacity }} seats)</option>
-                }
-              </select>
-            </div>
-            <div class="na-field">
-              <label class="na-label" for="nf-dep">Departure</label>
-              <input id="nf-dep" class="na-input" type="datetime-local" name="nfDep" [(ngModel)]="form.departure" required />
-            </div>
-            <div class="na-field">
-              <label class="na-label" for="nf-arr">Arrival</label>
-              <input id="nf-arr" class="na-input" type="datetime-local" name="nfArr" [(ngModel)]="form.arrival" required />
-              @if (createError()) {
-                <p class="na-error" role="alert">{{ createError() }}</p>
+              <label class="na-label" for="gen-to">To</label>
+              <input id="gen-to" class="na-input" type="date" name="genTo" [(ngModel)]="generateTo" required />
+              @if (generateError()) {
+                <p class="na-error" role="alert">{{ generateError() }}</p>
               }
             </div>
+
+            @if (summary(); as s) {
+              <section class="gen-summary" aria-label="Generation summary">
+                <h3>Generation summary</h3>
+                <dl class="facts">
+                  <div><dt>Rules evaluated</dt><dd>{{ s.rulesEvaluated }}</dd></div>
+                  <div><dt>Operating dates</dt><dd>{{ s.operatingDates }}</dd></div>
+                  <div><dt>Flights created</dt><dd>{{ s.flightsCreated }}</dd></div>
+                  <div><dt>Flights updated</dt><dd>{{ s.flightsUpdated }}</dd></div>
+                  <div><dt>Segments created</dt><dd>{{ s.segmentsCreated }}</dd></div>
+                  <div><dt>Segments updated</dt><dd>{{ s.segmentsUpdated }}</dd></div>
+                  <div><dt>Fares created</dt><dd>{{ s.faresCreated }}</dd></div>
+                  <div><dt>Fares updated</dt><dd>{{ s.faresUpdated }}</dd></div>
+                </dl>
+                @if (s.skippedRules.length > 0) {
+                  <h3>Skipped rules</h3>
+                  <ul class="skipped">
+                    @for (skip of s.skippedRules; track skip.flightNumber) {
+                      <li>
+                        <span class="na-text-mono">{{ skip.flightNumber }}</span>
+                        <span class="na-text-muted na-text-small">{{ skip.reason }}</span>
+                      </li>
+                    }
+                  </ul>
+                }
+              </section>
+            }
+
             <div class="drawer__actions">
-              <na-button variant="secondary" (clicked)="createOpen.set(false)">Cancel</na-button>
-              <na-button variant="cta" type="submit">Create flight</na-button>
+              <na-button variant="secondary" (clicked)="closeGenerate()">Close</na-button>
+              <na-button variant="cta" type="submit" [disabled]="generating()" [loading]="generating()">Generate</na-button>
             </div>
           </form>
         </aside>
       }
-
-      <na-dialog
-        [open]="cancelDialogOpen()"
-        title="Cancel this flight?"
-        confirmLabel="Cancel flight"
-        [confirmDanger]="true"
-        (confirmed)="confirmCancel()"
-        (cancelled)="cancelDialogOpen.set(false)"
-      >
-        Passengers on {{ selected()?.flightNumber }} will need to be notified and rebooked. This cannot be undone.
-      </na-dialog>
     </div>
   `,
   styles: `
     .page { display: flex; flex-direction: column; gap: var(--na-space-5); }
     .page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); flex-wrap: wrap; }
-    .subtitle { color: var(--na-ink-500); margin-top: var(--na-space-1); }
+    .subtitle { color: var(--na-ink-500); margin-top: var(--na-space-1); max-width: 64ch; }
     .filters { display: flex; gap: var(--na-space-4); flex-wrap: wrap; align-items: flex-end; }
     .filters .na-field { margin-bottom: 0; }
     .filters__search { flex: 1 1 260px; }
+    .list-error { display: flex; align-items: center; gap: var(--na-space-4); padding: var(--na-space-4); border: 1px solid var(--na-border); border-radius: var(--na-radius-lg); background: var(--na-surface-raised); }
+    .list-error p { margin: 0; color: var(--na-ink-500); }
     .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
       position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
@@ -283,10 +251,10 @@ function toLocalInput(iso: string): string {
     .fares { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); }
     .fares th { text-align: left; padding: var(--na-space-2); font-size: var(--na-text-xs); text-transform: uppercase; color: var(--na-ink-500); border-bottom: 1px solid var(--na-border); }
     .fares td { padding: var(--na-space-2); border-bottom: 1px solid var(--na-border); }
-    .actions { display: flex; gap: var(--na-space-3); flex-wrap: wrap; }
-    .inline-form { margin-top: var(--na-space-4); padding: var(--na-space-4); border: 1px solid var(--na-border); border-radius: var(--na-radius-md); background: var(--na-surface-sunken); }
-    .assign { margin-top: var(--na-space-5); }
-    .assign__row { display: flex; gap: var(--na-space-2); align-items: center; }
+    .gen-summary { margin-top: var(--na-space-4); padding: var(--na-space-4); border: 1px solid var(--na-border); border-radius: var(--na-radius-md); background: var(--na-surface-sunken); }
+    .gen-summary h3:first-child { margin-top: 0; }
+    .skipped { list-style: none; margin: 0; padding: 0; }
+    .skipped li { display: flex; justify-content: space-between; gap: var(--na-space-3); padding: var(--na-space-2) 0; border-bottom: 1px solid var(--na-border); }
     @media (max-width: 639px) {
       .facts { grid-template-columns: 1fr; }
       .filters { flex-direction: column; align-items: stretch; }
@@ -295,7 +263,9 @@ function toLocalInput(iso: string): string {
 })
 export class FlightsPage {
   private readonly flightService = inject(FlightService);
-  private readonly toast = inject(ToastService);
+  private readonly scheduleRules = inject(ScheduleRulesService);
+
+  readonly maxRangeDays = MAX_GENERATE_RANGE_DAYS;
 
   readonly columns: TableColumn<FlightRow>[] = [
     { key: 'flightNumber', label: 'Flight' },
@@ -313,10 +283,9 @@ export class FlightsPage {
     { key: 'capacity', label: 'Capacity', priority: 'low' },
   ];
   readonly statusOptions: FlightStatus[] = ['SCHEDULED', 'ACTIVE', 'DELAYED', 'CANCELLED', 'COMPLETED'];
-  readonly routeOptions: Route[] = ROUTES;
-  readonly aircraftOptions: Aircraft[] = AIRCRAFT;
 
   readonly loading = signal(true);
+  readonly loadError = signal<string | null>(null);
   readonly flights = signal<Flight[]>([]);
   readonly query = signal('');
   readonly statusFilter = signal<'ALL' | FlightStatus>('ALL');
@@ -324,16 +293,17 @@ export class FlightsPage {
   readonly selectedId = signal<string | null>(null);
   readonly selected = computed(() => this.flights().find((f) => f.id === this.selectedId()) ?? null);
 
-  readonly createOpen = signal(false);
-  readonly cancelDialogOpen = signal(false);
-  readonly rescheduleOpen = signal(false);
-  readonly rescheduleError = signal<string | null>(null);
-  readonly createError = signal<string | null>(null);
+  /** Full flight details (segments included) cached per id — the list endpoint omits segments. */
+  private readonly detailCache = new Map<string, Flight>();
+  readonly detailLoading = signal(false);
+  readonly detailError = signal<string | null>(null);
 
-  form: FlightForm = { flightNumber: '', routeId: '', aircraftId: '', departure: '', arrival: '' };
-  rescheduleDep = '';
-  rescheduleArr = '';
-  assignAircraftId = '';
+  readonly generateOpen = signal(false);
+  readonly generating = signal(false);
+  readonly generateError = signal<string | null>(null);
+  readonly summary = signal<GenerationSummary | null>(null);
+  generateFrom = '';
+  generateTo = '';
 
   readonly rows = computed<FlightRow[]>(() => {
     const q = this.query().trim().toLowerCase();
@@ -360,32 +330,45 @@ export class FlightsPage {
   });
 
   constructor() {
-    this.flightService.adminFlights().subscribe((flights) => {
-      this.flights.set([...flights]);
-      this.loading.set(false);
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.flightService.adminFlights().subscribe({
+      next: (flights) => {
+        this.flights.set([...flights]);
+        this.loading.set(false);
+      },
+      error: (err: unknown) => {
+        this.loadError.set(toErrorMessage(err, 'Could not load the flight schedule.'));
+        this.loading.set(false);
+      },
     });
   }
 
   openDetail(id: string): void {
     this.selectedId.set(id);
-    this.rescheduleOpen.set(false);
-    this.rescheduleError.set(null);
-    const f = this.selected();
-    if (f) {
-      this.rescheduleDep = toLocalInput(f.departureTime);
-      this.rescheduleArr = toLocalInput(f.arrivalTime);
-      this.assignAircraftId = f.aircraftId;
+    this.detailError.set(null);
+    const cached = this.detailCache.get(id);
+    if (cached) {
+      this.mergeDetail(cached);
+      this.detailLoading.set(false);
+      return;
     }
+    this.loadDetail(id);
+  }
+
+  retryDetail(): void {
+    const id = this.selectedId();
+    if (id) this.loadDetail(id);
   }
 
   closeDetail(): void {
     this.selectedId.set(null);
-  }
-
-  openCreate(): void {
-    this.form = { flightNumber: '', routeId: '', aircraftId: '', departure: '', arrival: '' };
-    this.createError.set(null);
-    this.createOpen.set(true);
+    this.detailLoading.set(false);
+    this.detailError.set(null);
   }
 
   clearFilters(): void {
@@ -393,107 +376,51 @@ export class FlightsPage {
     this.statusFilter.set('ALL');
   }
 
-  confirmCancel(): void {
-    this.cancelDialogOpen.set(false);
-    const f = this.selected();
-    if (!f) return;
-    this.patchFlight(f.id, { status: 'CANCELLED', scheduleStatus: 'CANCELLED' });
-    this.toast.success(`Flight ${f.flightNumber} cancelled. Passengers will be notified.`);
+  openGenerate(): void {
+    this.generateFrom = '';
+    this.generateTo = '';
+    this.generateError.set(null);
+    this.summary.set(null);
+    this.generateOpen.set(true);
   }
 
-  applyReschedule(event: Event): void {
+  closeGenerate(): void {
+    if (this.generating()) return;
+    this.generateOpen.set(false);
+  }
+
+  submitGenerate(event: Event): void {
     event.preventDefault();
-    const f = this.selected();
-    if (!f) return;
-    const dep = new Date(this.rescheduleDep);
-    const arr = new Date(this.rescheduleArr);
-    if (Number.isNaN(dep.getTime()) || Number.isNaN(arr.getTime())) {
-      this.rescheduleError.set('Both departure and arrival are required.');
+    if (this.generating()) return;
+    const from = this.generateFrom;
+    const to = this.generateTo;
+    if (!from || !to) {
+      this.generateError.set('Both from and to dates are required.');
       return;
     }
-    if (arr.getTime() <= dep.getTime()) {
-      this.rescheduleError.set('Arrival must be after departure.');
+    if (from > to) {
+      this.generateError.set('From must be on or before to.');
       return;
     }
-    this.rescheduleError.set(null);
-    this.rescheduleOpen.set(false);
-    this.patchFlight(f.id, { departureTime: dep.toISOString(), arrivalTime: arr.toISOString() });
-    this.toast.success(`Flight ${f.flightNumber} rescheduled to ${dateTimeFmt.format(dep)}.`);
-  }
-
-  applyAircraft(): void {
-    const f = this.selected();
-    const aircraft = AIRCRAFT.find((a) => a.id === this.assignAircraftId);
-    if (!f || !aircraft) return;
-    this.patchFlight(f.id, { aircraftId: aircraft.id, aircraft });
-    this.toast.success(`${aircraft.registration} assigned to flight ${f.flightNumber}.`);
-  }
-
-  submitCreate(event: Event): void {
-    event.preventDefault();
-    const route = ROUTES.find((r) => r.id === this.form.routeId);
-    const aircraft = AIRCRAFT.find((a) => a.id === this.form.aircraftId);
-    if (!this.form.flightNumber.trim() || !route || !aircraft || !this.form.departure || !this.form.arrival) {
-      this.createError.set('All fields are required.');
+    const rangeDays = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+    if (rangeDays > MAX_GENERATE_RANGE_DAYS) {
+      this.generateError.set(`The range cannot exceed ${MAX_GENERATE_RANGE_DAYS} days.`);
       return;
     }
-    const dep = new Date(this.form.departure);
-    const arr = new Date(this.form.arrival);
-    if (arr.getTime() <= dep.getTime()) {
-      this.createError.set('Arrival must be after departure.');
-      return;
-    }
-    const id = crypto.randomUUID();
-    const newFlight: Flight = {
-      id,
-      flightNumber: this.form.flightNumber.trim().toUpperCase(),
-      routeId: route.id,
-      route,
-      aircraftId: aircraft.id,
-      aircraft,
-      departureTime: dep.toISOString(),
-      arrivalTime: arr.toISOString(),
-      status: 'SCHEDULED',
-      scheduleStatus: 'ONTIME',
-      segments: [
-        {
-          id: `${id}-seg1`,
-          flightId: id,
-          segmentNumber: 1,
-          originAirportId: route.originAirportId,
-          origin: route.origin,
-          destinationAirportId: route.destinationAirportId,
-          destination: route.destination,
-          departureTime: dep.toISOString(),
-          arrivalTime: arr.toISOString(),
-        },
-      ],
-      fares: [
-        {
-          id: `${id}-fare-economy`,
-          flightId: id,
-          cabinClass: 'ECONOMY',
-          basePrice: 129,
-          taxAmount: 20.64,
-          feeAmount: 5.16,
-          currency: 'EUR',
-          availableCount: aircraft.capacity,
-          rules: {
-            refundable: false, changeAllowed: true, changeFee: 90, cancellationFeePercent: 100,
-            checkedBaggagePieces: 1, checkedBaggageWeightKg: 23, carryOnPieces: 1,
-            seatSelectionFee: 15, priorityBoarding: false, loungeAccess: false,
-            description: 'Economy Light — changes for a fee, non-refundable.',
-          },
-        },
-      ],
-    };
-    this.flights.update((list) => [newFlight, ...list]);
-    this.createOpen.set(false);
-    this.toast.success(`Flight ${newFlight.flightNumber} created on ${route.origin.iataCode} → ${route.destination.iataCode}.`);
-  }
-
-  private patchFlight(id: string, patch: Partial<Flight>): void {
-    this.flights.update((list) => list.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    this.generateError.set(null);
+    this.generating.set(true);
+    this.scheduleRules.generateFlights(from, to).subscribe({
+      next: (summary) => {
+        this.generating.set(false);
+        this.summary.set(summary);
+        this.detailCache.clear();
+        this.load();
+      },
+      error: (err: unknown) => {
+        this.generating.set(false);
+        this.generateError.set(toErrorMessage(err, 'Could not generate flights. Please try again.'));
+      },
+    });
   }
 
   flightStatus(f: Flight) {
@@ -518,5 +445,24 @@ export class FlightsPage {
 
   duration(f: Flight): string {
     return flightDurationLabel(f);
+  }
+
+  private loadDetail(id: string): void {
+    this.detailLoading.set(true);
+    this.detailError.set(null);
+    this.flightService.getFlight(id).subscribe((flight) => {
+      if (this.selectedId() !== id) return;
+      this.detailLoading.set(false);
+      if (!flight) {
+        this.detailError.set('Could not load the flight details. Please try again.');
+        return;
+      }
+      this.detailCache.set(id, flight);
+      this.mergeDetail(flight);
+    });
+  }
+
+  private mergeDetail(flight: Flight): void {
+    this.flights.update((list) => list.map((f) => (f.id === flight.id ? flight : f)));
   }
 }

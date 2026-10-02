@@ -1,27 +1,57 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { BookingService } from '../../../core/services/booking.service';
+import { CustomerBookingService } from '../../../core/services/customer-booking.service';
+import { AdminPaymentsService } from '../../../core/services/admin-payments.service';
+import { AuditService, type AuditLogItem } from '../../../core/services/audit.service';
+import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
-import { ToastService } from '../../../shared/ui/toast.service';
 import { HasPermissionDirective } from '../../../core/directives/has-permission.directive';
 import {
-  BOOKING_STATUS_MAP, PAYMENT_STATUS_MAP, REFUND_STATUS_MAP, statusLabel,
+  BOOKING_STATUS_MAP,
+  FLIGHT_STATUS_MAP,
+  PAYMENT_STATUS_MAP,
+  REFUND_STATUS_MAP,
+  SEAT_HOLD_STATUS_MAP,
+  statusLabel,
 } from '../../../core/status-maps';
-import { AUDIT_LOGS, NOTIFICATIONS } from '../../../core/mock/mock-data';
-import type { Booking, BookingStatus } from '../../../core/models/domain.model';
+import type { BookingStatus, CabinClass } from '../../../core/models/domain.model';
+import type {
+  AdminBookingQuery,
+  CustomerBooking,
+} from '../../../core/models/customer-booking.model';
+import type { AdminPayment, RefundPaymentPayload } from '../../../core/models/payment.model';
+import { toErrorMessage, serverMessage } from '../../../shared/utils/http-error-message';
+import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
-import { NaAlert } from '../../../shared/ui/alert.component';
-import { NaDialog } from '../../../shared/ui/dialog.component';
-import { NaTabs, TabItem } from '../../../shared/ui/tabs.component';
-import { NaDataTable, TableColumn } from '../../../shared/ui/data-table.component';
+import { NaTabs, type TabItem } from '../../../shared/ui/tabs.component';
+import { NaDataTable, type TableColumn } from '../../../shared/ui/data-table.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
+import { NaSkeleton } from '../../../shared/ui/skeleton.component';
+import { NaDialog } from '../../../shared/ui/dialog.component';
+import { NaRefundDialog, type RefundRequest } from './refund-dialog.component';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+const DATE_ONLY = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
 
 function fmtDateTime(iso: string | null | undefined): string {
   return iso ? DATE_TIME.format(new Date(iso)) : '—';
+}
+
+function fmtDate(iso: string | null | undefined): string {
+  return iso ? DATE_ONLY.format(new Date(iso)) : '—';
+}
+
+const CABIN_LABELS: Record<CabinClass, string> = {
+  FIRST: 'First',
+  BUSINESS: 'Business',
+  PREMIUM_ECONOMY: 'Premium economy',
+  ECONOMY: 'Economy',
+};
+
+function cabinLabel(cabin: CabinClass | null): string {
+  return cabin ? CABIN_LABELS[cabin] : '—';
 }
 
 interface BookingRow {
@@ -29,301 +59,525 @@ interface BookingRow {
   reference: string;
   contact: string;
   flight: string;
-  amount: string;
+  cabin: string;
+  total: string;
   bookedAt: string;
   status: string;
+  statusKey: BookingStatus;
 }
 
 @Component({
   selector: 'na-admin-bookings',
-  standalone: true,
   imports: [
-    FormsModule, HasPermissionDirective,
-    NaBreadcrumbs, NaButton, NaBadge, NaAlert, NaDialog, NaTabs, NaDataTable, NaEmptyState,
+    FormsModule,
+    HasPermissionDirective,
+    NaBreadcrumbs,
+    NaButton,
+    NaBadge,
+    NaTabs,
+    NaDataTable,
+    NaEmptyState,
+    NaSkeleton,
   ],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="page">
       <na-breadcrumbs [items]="crumbs" />
       <header class="page__head">
         <h1>Bookings</h1>
-        <p class="page__sub">Search bookings by reference, email, flight or passenger and manage their lifecycle.</p>
+        <p class="page__sub">
+          Search bookings by reference, contact email or status and review their details.
+        </p>
       </header>
 
-      <div class="filters na-card">
-        <div class="na-field filters__search">
-          <label class="na-label" for="booking-query">Search</label>
+      <form class="filters na-card" (submit)="applyFilters($event)">
+        <div class="na-field filters__reference">
+          <label class="na-label" for="booking-reference">Reference</label>
           <input
-            id="booking-query"
+            id="booking-reference"
             class="na-input"
             type="search"
-            placeholder="Reference, email, flight number or passenger name"
-            [ngModel]="query()"
-            (ngModelChange)="onQuery($event)"
+            name="reference"
+            placeholder="e.g. NVABC1"
+            [ngModel]="referenceInput()"
+            (ngModelChange)="referenceInput.set($event)"
+          />
+        </div>
+        <div class="na-field filters__email">
+          <label class="na-label" for="booking-email">Contact email</label>
+          <input
+            id="booking-email"
+            class="na-input"
+            type="search"
+            name="email"
+            placeholder="customer@example.com"
+            [ngModel]="emailInput()"
+            (ngModelChange)="emailInput.set($event)"
           />
         </div>
         <div class="na-field filters__status">
           <label class="na-label" for="booking-status">Status</label>
-          <select id="booking-status" class="na-select" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)">
+          <select
+            id="booking-status"
+            class="na-select"
+            name="status"
+            [ngModel]="statusInput()"
+            (ngModelChange)="onStatusChange($event)"
+          >
             <option value="ALL">All statuses</option>
             @for (opt of statusOptions; track opt.value) {
               <option [value]="opt.value">{{ opt.label }}</option>
             }
           </select>
         </div>
-      </div>
+        <div class="filters__actions">
+          <na-button variant="primary" type="submit">Search</na-button>
+          <na-button variant="secondary" (clicked)="clearFilters()">Clear</na-button>
+        </div>
+      </form>
 
-      <na-data-table
-        [columns]="columns"
-        [rows]="tableRows()"
-        [loading]="loading()"
-        emptyTitle="No bookings found"
-        emptyMessage="Try a different reference, email, flight number or passenger name."
-        (rowClick)="openBooking($event.id)"
-      />
+      @if (loadError()) {
+        <div class="list-error" role="alert">
+          <p>{{ loadError() }}</p>
+          <na-button variant="secondary" (clicked)="reload()">Retry</na-button>
+        </div>
+      } @else {
+        <na-data-table
+          [columns]="columns"
+          [rows]="tableRows()"
+          [loading]="loading()"
+          emptyTitle="No bookings found"
+          emptyMessage="Try a different reference, email or status filter."
+          (rowClick)="openBooking($event.id)"
+        />
+      }
 
-      @if (selected(); as booking) {
+      @if (selectedId()) {
         <div class="backdrop" (click)="closeDrawer()" role="presentation"></div>
         <aside
           class="drawer"
           role="dialog"
           aria-modal="true"
-          [attr.aria-label]="'Booking ' + booking.bookingReference"
+          [attr.aria-label]="'Booking ' + (selectedSummary()?.bookingReference ?? 'details')"
           tabindex="-1"
           (keydown.escape)="closeDrawer()"
         >
           <header class="drawer__head">
-            <div>
-              <h2 class="drawer__title">
-                <span class="na-text-mono">{{ booking.bookingReference }}</span>
-                <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, booking.status).tone">
-                  {{ statusLabel(BOOKING_STATUS_MAP, booking.status).label }}
-                </na-badge>
-              </h2>
-              <p class="na-text-muted na-text-small">Booked {{ fmt(booking.bookedAt) }} · {{ booking.contactEmail }}</p>
-            </div>
-            <button type="button" class="drawer__close" aria-label="Close booking details" (click)="closeDrawer()">×</button>
+            @if (selectedSummary(); as summary) {
+              <div>
+                <h2 class="drawer__title">
+                  <span class="na-text-mono">{{ summary.bookingReference }}</span>
+                  <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, summary.status).tone">
+                    {{ statusLabel(BOOKING_STATUS_MAP, summary.status).label }}
+                  </na-badge>
+                </h2>
+                <p class="na-text-muted na-text-small">
+                  Booked {{ fmt(summary.bookedAt) }} · {{ summary.contactEmail }}
+                </p>
+              </div>
+            }
+            <button
+              type="button"
+              class="drawer__close"
+              aria-label="Close booking details"
+              (click)="closeDrawer()"
+            >
+              ×
+            </button>
           </header>
 
-          <na-tabs [tabs]="tabs" [active]="activeTab()" ariaLabel="Booking detail sections" (tabChange)="activeTab.set($event)" />
+          <na-tabs
+            [tabs]="tabs"
+            [active]="activeTab()"
+            ariaLabel="Booking detail sections"
+            (tabChange)="onTabChange($event)"
+          />
 
           <div class="drawer__body">
-            @switch (activeTab()) {
-              @case ('itinerary') {
-                <dl class="facts">
-                  <div><dt>Flight</dt><dd>{{ booking.flight.flightNumber }} · {{ booking.flight.aircraft.model }}</dd></div>
-                  <div><dt>Route</dt><dd>{{ booking.flight.route.origin.iataCode }} ({{ booking.flight.route.origin.city }}) → {{ booking.flight.route.destination.iataCode }} ({{ booking.flight.route.destination.city }})</dd></div>
-                  <div><dt>Departure</dt><dd>{{ fmt(booking.flight.departureTime) }}</dd></div>
-                  <div><dt>Arrival</dt><dd>{{ fmt(booking.flight.arrivalTime) }}</dd></div>
-                  <div><dt>Total</dt><dd>{{ money(booking.totalAmount, booking.currency) }}</dd></div>
-                  <div><dt>Contact</dt><dd>{{ booking.contactEmail }}@if (booking.contactPhone) { · {{ booking.contactPhone }} }</dd></div>
-                </dl>
-                @if (booking.extras.length) {
-                  <h3 class="drawer__section">Extras</h3>
-                  <ul class="plain-list">
-                    @for (extra of booking.extras; track extra.id) {
-                      <li>{{ extra.quantity }}× {{ extra.extraService.name }} — {{ money(extra.price, booking.currency) }}</li>
-                    }
-                  </ul>
-                }
-              }
-              @case ('passengers') {
-                <ul class="plain-list">
-                  @for (p of booking.passengers; track p.id) {
-                    <li>
-                      <strong>{{ p.passenger.firstName }} {{ p.passenger.lastName }}</strong>
-                      <na-badge tone="neutral">{{ p.passengerType }}</na-badge>
-                      @if (seatOf(booking, p.id); as seat) {
-                        <span class="na-text-muted"> · Seat <span class="na-text-mono">{{ seat }}</span></span>
-                      }
-                    </li>
+            @if (detailLoading()) {
+              <na-skeleton [rows]="[1, 2, 3, 4]" height="1.2rem" />
+            } @else if (detailError()) {
+              <div class="list-error" role="alert">
+                <p>{{ detailError() }}</p>
+                <na-button variant="secondary" size="sm" (clicked)="retryDetail()">Retry</na-button>
+              </div>
+            } @else if (detail(); as booking) {
+              @switch (activeTab()) {
+                @case ('itinerary') {
+                  <h3 class="drawer__section">Booking</h3>
+                  <dl class="facts">
+                    <div>
+                      <dt>Reference</dt>
+                      <dd class="na-text-mono">{{ booking.bookingReference }}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>
+                        <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, booking.status).tone">
+                          {{ statusLabel(BOOKING_STATUS_MAP, booking.status).label }}
+                        </na-badge>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Booked</dt>
+                      <dd>{{ fmt(booking.bookedAt) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Cabin</dt>
+                      <dd>{{ cabin(booking.cabinClass) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Total</dt>
+                      <dd>{{ money(booking.totalAmount, booking.currency) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Per passenger</dt>
+                      <dd>
+                        {{
+                          booking.perPassengerTotal !== null
+                            ? money(booking.perPassengerTotal, booking.currency)
+                            : '—'
+                        }}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <h3 class="drawer__section">Contact</h3>
+                  <dl class="facts">
+                    <div>
+                      <dt>Email</dt>
+                      <dd>{{ booking.contactEmail }}</dd>
+                    </div>
+                    <div>
+                      <dt>Phone</dt>
+                      <dd>{{ booking.contactPhone ?? '—' }}</dd>
+                    </div>
+                  </dl>
+
+                  @if (booking.flight; as flight) {
+                    <h3 class="drawer__section">Flight</h3>
+                    <dl class="facts">
+                      <div>
+                        <dt>Flight</dt>
+                        <dd>
+                          <span class="na-text-mono">{{ flight.flightNumber }}</span>
+                          <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, flight.status).tone">
+                            {{ statusLabel(FLIGHT_STATUS_MAP, flight.status).label }}
+                          </na-badge>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Route</dt>
+                        <dd>{{ flight.origin }} → {{ flight.destination }}</dd>
+                      </div>
+                      <div>
+                        <dt>Departure</dt>
+                        <dd>{{ fmt(flight.departureTime) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Arrival</dt>
+                        <dd>{{ fmt(flight.arrivalTime) }}</dd>
+                      </div>
+                    </dl>
                   }
-                </ul>
-              }
-              @case ('payments') {
-                <h3 class="drawer__section">Payments</h3>
-                @if (booking.payments.length) {
-                  <ul class="plain-list">
-                    @for (pay of booking.payments; track pay.id) {
-                      <li>
-                        {{ money(pay.amount, pay.currency) }}
-                        <na-badge [tone]="statusLabel(PAYMENT_STATUS_MAP, pay.status).tone">{{ statusLabel(PAYMENT_STATUS_MAP, pay.status).label }}</na-badge>
-                        <span class="na-text-muted"> · {{ pay.provider }} <span class="na-text-mono">{{ pay.providerReference ?? '—' }}</span> · {{ fmt(pay.paidAt ?? pay.createdAt) }}</span>
-                      </li>
-                    }
-                  </ul>
-                } @else {
-                  <p class="na-text-muted">No payments recorded.</p>
                 }
-                <h3 class="drawer__section">Refunds</h3>
-                @if (booking.refunds.length) {
+                @case ('passengers') {
+                  <h3 class="drawer__section">Passengers</h3>
                   <ul class="plain-list">
-                    @for (ref of booking.refunds; track ref.id) {
+                    @for (p of booking.passengers; track p.id) {
                       <li>
-                        {{ money(ref.amount, ref.currency) }}
-                        <na-badge [tone]="statusLabel(REFUND_STATUS_MAP, ref.status).tone">{{ statusLabel(REFUND_STATUS_MAP, ref.status).label }}</na-badge>
-                        <span class="na-text-muted"> · {{ ref.reason ?? 'No reason given' }} · {{ fmt(ref.createdAt) }}</span>
+                        <strong>{{ p.firstName }} {{ p.lastName }}</strong>
+                        <na-badge tone="neutral">{{ p.passengerType }}</na-badge>
+                        <p class="na-text-small na-text-muted">
+                          Born {{ fmtDay(p.dateOfBirth) }} · Nationality
+                          {{ p.nationality ?? '—' }} · Passport
+                          <span class="na-text-mono">{{ p.passportNumber ?? '—' }}</span>
+                        </p>
                       </li>
                     }
                   </ul>
-                } @else {
-                  <p class="na-text-muted">No refunds.</p>
+
+                  <h3 class="drawer__section">Seats</h3>
+                  <p class="na-text-muted na-text-small">
+                    Seats are listed per booking — the API does not link seats to individual
+                    passengers.
+                  </p>
+                  @if (booking.seats.length) {
+                    <ul class="plain-list">
+                      @for (s of booking.seats; track s.seatId) {
+                        <li>
+                          Seat <span class="na-text-mono">{{ s.seatNumber }}</span>
+                          <na-badge [tone]="statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).tone">
+                            {{ statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).label }}
+                          </na-badge>
+                          @if (s.holdStatus === 'ACTIVE') {
+                            <span class="na-text-muted na-text-small">
+                              · held until {{ fmt(s.holdExpiresAt) }}</span
+                            >
+                          }
+                        </li>
+                      }
+                    </ul>
+                  } @else {
+                    <p class="na-text-muted">No seats on this booking.</p>
+                  }
                 }
-              }
-              @case ('notifications') {
-                @if (bookingNotifications().length) {
-                  <ul class="plain-list">
-                    @for (n of bookingNotifications(); track n.id) {
-                      <li>
-                        <strong>{{ n.subject ?? 'Notification' }}</strong>
-                        <span class="na-text-muted"> · {{ n.channel }} · {{ fmt(n.sentAt ?? n.createdAt) }}</span>
-                        <p class="na-text-small na-text-muted">{{ n.content }}</p>
-                      </li>
-                    }
-                  </ul>
-                } @else {
-                  <na-empty-state icon="✉" title="No notifications" message="Nothing has been sent for this booking yet." />
+                @case ('payments') {
+                  <na-empty-state
+                    icon="◈"
+                    title="Payments & refunds are not available yet"
+                    message="Payments and refunds will be available in a future phase. No payment data exists for bookings yet — bookings remain pending until payments are implemented."
+                  />
                 }
-              }
-              @case ('audit') {
-                @if (bookingAudit().length) {
-                  <ul class="plain-list">
-                    @for (log of bookingAudit(); track log.id) {
-                      <li>
-                        <span class="na-text-mono">{{ log.action }}</span>
-                        <span class="na-text-muted"> · {{ log.actorName }} · {{ fmt(log.createdAt) }}</span>
-                      </li>
+                @case ('notifications') {
+                  <na-empty-state
+                    icon="✉"
+                    title="Notifications are not available yet"
+                    message="Notifications will be available in a future phase."
+                  />
+                }
+                @case ('audit') {
+                  <span *naHasPermission="'audit:read'">
+                    @if (auditLoading()) {
+                      <na-skeleton [rows]="[1, 2, 3]" height="1.2rem" />
+                    } @else if (auditForbidden()) {
+                      <na-empty-state
+                        icon="🔒"
+                        title="No audit access"
+                        message="You don't have permission to view the audit trail."
+                      />
+                    } @else if (auditError()) {
+                      <div class="list-error" role="alert">
+                        <p>{{ auditError() }}</p>
+                        <na-button variant="secondary" size="sm" (clicked)="retryAudit()"
+                          >Retry</na-button
+                        >
+                      </div>
+                    } @else if (auditLogs().length) {
+                      <ul class="plain-list">
+                        @for (log of auditLogs(); track log.id) {
+                          <li>
+                            <span class="na-text-mono">{{ log.event }}</span>
+                            <span class="na-text-muted">
+                              · {{ log.actorType }} · {{ fmt(log.createdAt) }}</span
+                            >
+                          </li>
+                        }
+                      </ul>
+                    } @else {
+                      <na-empty-state
+                        icon="≡"
+                        title="No audit records"
+                        message="No staff actions have been logged against this booking."
+                      />
                     }
-                  </ul>
-                } @else {
-                  <na-empty-state icon="≡" title="No audit records" message="No staff actions have been logged against this booking." />
+                  </span>
                 }
               }
             }
           </div>
 
           <footer class="drawer__actions">
-            @if (booking.status !== 'CANCELLED') {
-              <na-button variant="danger" (clicked)="cancelOpen.set(true)">Cancel booking</na-button>
-            }
-            @if (booking.status !== 'CONFIRMED') {
-              <span *naHasPermission="'bookings:manage'">
-                <na-button variant="primary" (clicked)="openException()">Confirm without payment</na-button>
-              </span>
-            }
+            <span class="future-hint" *naHasPermission="'bookings:manage'">
+              <na-badge tone="info">Future phase</na-badge>
+              Admin cancellation and payment exception workflows arrive in a future backend phase.
+            </span>
           </footer>
         </aside>
       }
-
-      <na-dialog
-        [open]="cancelOpen()"
-        title="Cancel booking"
-        confirmLabel="Cancel booking"
-        [confirmDanger]="true"
-        (confirmed)="confirmCancel()"
-        (cancelled)="cancelOpen.set(false)"
-      >
-        @if (cancelEstimate(); as est) {
-          <p>
-            Estimated refund: <strong>{{ money(est.amount, selected()!.currency) }}</strong>
-            (cancellation fee {{ est.feePercent }}%{{ est.refundable ? '' : ' — this fare is non-refundable' }}).
-          </p>
-          <p class="na-text-muted na-text-small">The customer will be notified and any eligible refund will enter the refund queue.</p>
-        }
-      </na-dialog>
-
-      <na-dialog
-        [open]="exceptionOpen()"
-        title="Confirm without payment"
-        confirmLabel="Confirm booking"
-        (confirmed)="confirmException()"
-        (cancelled)="exceptionOpen.set(false)"
-      >
-        <na-alert tone="warning" title="Exception workflow (BR-14)" icon="⚠">
-          This action confirms a booking without a successful payment. The exception and your reason are
-          permanently written to the audit log.
-        </na-alert>
-        <div class="na-field" style="margin-top: var(--na-space-4);">
-          <label class="na-label" for="exception-reason">Reason (required)</label>
-          <textarea
-            id="exception-reason"
-            class="na-input"
-            rows="3"
-            placeholder="e.g. Payment provider outage — verified with customer by phone"
-            [ngModel]="exceptionReason()"
-            (ngModelChange)="exceptionReason.set($event)"
-          ></textarea>
-        </div>
-      </na-dialog>
     </section>
   `,
   styles: `
-    :host { display: block; }
-    .page { max-width: var(--na-admin-max); }
-    .page__head { margin-bottom: var(--na-space-6); }
-    .page__sub { color: var(--na-ink-500); margin-top: var(--na-space-1); }
-    .filters { display: flex; gap: var(--na-space-4); padding: var(--na-space-4); margin-bottom: var(--na-space-5); flex-wrap: wrap; }
-    .filters .na-field { margin-bottom: 0; }
-    .filters__search { flex: 1 1 320px; }
-    .filters__status { flex: 0 0 220px; }
-    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
+    :host {
+      display: block;
+    }
+    .page {
+      max-width: var(--na-admin-max);
+    }
+    .page__head {
+      margin-bottom: var(--na-space-6);
+    }
+    .page__sub {
+      color: var(--na-ink-500);
+      margin-top: var(--na-space-1);
+    }
+    .filters {
+      display: flex;
+      gap: var(--na-space-4);
+      padding: var(--na-space-4);
+      margin-bottom: var(--na-space-5);
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .filters .na-field {
+      margin-bottom: 0;
+    }
+    .filters__reference {
+      flex: 1 1 200px;
+    }
+    .filters__email {
+      flex: 1 1 240px;
+    }
+    .filters__status {
+      flex: 0 0 220px;
+    }
+    .filters__actions {
+      display: flex;
+      gap: var(--na-space-3);
+    }
+    .list-error {
+      display: flex;
+      align-items: center;
+      gap: var(--na-space-4);
+      padding: var(--na-space-4);
+      border: 1px solid var(--na-border);
+      border-radius: var(--na-radius-lg);
+      background: var(--na-surface-raised);
+    }
+    .list-error p {
+      margin: 0;
+      color: var(--na-ink-500);
+    }
+    .backdrop {
+      position: fixed;
+      inset: 0;
+      background: var(--na-overlay);
+      z-index: 99;
+    }
     .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
-      width: min(480px, 100vw); background: var(--na-surface-raised);
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 100;
+      width: min(480px, 100vw);
+      background: var(--na-surface-raised);
       border-left: 1px solid var(--na-border);
-      box-shadow: var(--na-shadow-lg); display: flex; flex-direction: column;
-      padding: var(--na-space-6); overflow-y: auto;
+      box-shadow: var(--na-shadow-lg);
+      display: flex;
+      flex-direction: column;
+      padding: var(--na-space-6);
+      overflow-y: auto;
     }
-    .drawer__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-3); margin-bottom: var(--na-space-4); }
-    .drawer__title { display: flex; align-items: center; gap: var(--na-space-3); font-size: var(--na-text-xl); }
+    .drawer__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: var(--na-space-3);
+      margin-bottom: var(--na-space-4);
+    }
+    .drawer__title {
+      display: flex;
+      align-items: center;
+      gap: var(--na-space-3);
+      font-size: var(--na-text-xl);
+    }
     .drawer__close {
-      background: none; border: none; font-size: 1.5rem; color: var(--na-ink-500);
-      min-width: 44px; min-height: 44px; border-radius: var(--na-radius-md);
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: var(--na-ink-500);
+      min-width: 44px;
+      min-height: 44px;
+      border-radius: var(--na-radius-md);
     }
-    .drawer__close:hover { background: var(--na-surface-sunken); color: var(--na-ink-900); }
-    .drawer__body { padding: var(--na-space-4) 0; flex: 1; }
-    .drawer__section { font-size: var(--na-text-base); margin: var(--na-space-4) 0 var(--na-space-2); }
-    .drawer__actions { display: flex; gap: var(--na-space-3); flex-wrap: wrap; border-top: 1px solid var(--na-border); padding-top: var(--na-space-4); }
-    .facts { margin: 0; display: grid; gap: var(--na-space-3); }
-    .facts div { display: grid; grid-template-columns: 110px 1fr; gap: var(--na-space-3); }
-    .facts dt { color: var(--na-ink-500); font-size: var(--na-text-sm); }
-    .facts dd { margin: 0; }
-    .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--na-space-3); }
-    .plain-list li { padding: var(--na-space-3); border: 1px solid var(--na-border); border-radius: var(--na-radius-md); }
+    .drawer__close:hover {
+      background: var(--na-surface-sunken);
+      color: var(--na-ink-900);
+    }
+    .drawer__body {
+      padding: var(--na-space-4) 0;
+      flex: 1;
+    }
+    .drawer__section {
+      font-size: var(--na-text-base);
+      margin: var(--na-space-4) 0 var(--na-space-2);
+    }
+    .drawer__section:first-child {
+      margin-top: 0;
+    }
+    .drawer__actions {
+      display: flex;
+      gap: var(--na-space-3);
+      flex-wrap: wrap;
+      border-top: 1px solid var(--na-border);
+      padding-top: var(--na-space-4);
+    }
+    .future-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--na-space-2);
+      color: var(--na-ink-500);
+      font-size: var(--na-text-sm);
+    }
+    .facts {
+      margin: 0;
+      display: grid;
+      gap: var(--na-space-3);
+    }
+    .facts div {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: var(--na-space-3);
+    }
+    .facts dt {
+      color: var(--na-ink-500);
+      font-size: var(--na-text-sm);
+    }
+    .facts dd {
+      margin: 0;
+    }
+    .plain-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: var(--na-space-3);
+    }
+    .plain-list li {
+      padding: var(--na-space-3);
+      border: 1px solid var(--na-border);
+      border-radius: var(--na-radius-md);
+    }
     @media (max-width: 639px) {
-      .drawer { width: 100vw; padding: var(--na-space-4); }
-      .filters__status { flex: 1 1 100%; }
+      .drawer {
+        width: 100vw;
+        padding: var(--na-space-4);
+      }
+      .filters__status {
+        flex: 1 1 100%;
+      }
     }
   `,
 })
 export class AdminBookingsPage {
-  private readonly bookingsService = inject(BookingService);
-  private readonly toast = inject(ToastService);
+  private readonly bookingsService = inject(CustomerBookingService);
+  private readonly auditService = inject(AuditService);
+  private readonly auth = inject(AuthService);
 
   readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
-  readonly PAYMENT_STATUS_MAP = PAYMENT_STATUS_MAP;
-  readonly REFUND_STATUS_MAP = REFUND_STATUS_MAP;
+  readonly FLIGHT_STATUS_MAP = FLIGHT_STATUS_MAP;
+  readonly SEAT_HOLD_STATUS_MAP = SEAT_HOLD_STATUS_MAP;
   readonly statusLabel = statusLabel;
   readonly fmt = fmtDateTime;
+  readonly fmtDay = fmtDate;
   readonly money = formatMoney;
+  readonly cabin = cabinLabel;
 
-  readonly crumbs = [
-    { label: 'Overview', link: '/admin/dashboard' },
-    { label: 'Bookings' },
-  ];
+  readonly crumbs = [{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Bookings' }];
 
   readonly columns: TableColumn<BookingRow>[] = [
     { key: 'reference', label: 'Reference' },
     { key: 'contact', label: 'Contact', priority: 'low' },
     { key: 'flight', label: 'Flight' },
-    { key: 'amount', label: 'Amount' },
+    { key: 'cabin', label: 'Cabin', priority: 'low' },
+    { key: 'total', label: 'Total' },
     { key: 'bookedAt', label: 'Booked', priority: 'low' },
     {
       key: 'status',
       label: 'Status',
       badge: (r) => ({
         text: r.status,
-        tone: Object.values(BOOKING_STATUS_MAP).find((v) => v.label === r.status)?.tone ?? 'neutral',
+        tone: statusLabel(BOOKING_STATUS_MAP, r.statusKey).tone,
       }),
     },
   ];
@@ -342,113 +596,189 @@ export class AdminBookingsPage {
   }));
 
   readonly loading = signal(true);
-  readonly bookings = signal<Booking[]>([]);
-  readonly query = signal('');
-  readonly statusFilter = signal<'ALL' | BookingStatus>('ALL');
-  readonly selected = signal<Booking | null>(null);
-  readonly activeTab = signal('itinerary');
-  readonly cancelOpen = signal(false);
-  readonly exceptionOpen = signal(false);
-  readonly exceptionReason = signal('');
+  readonly loadError = signal<string | null>(null);
+  readonly bookings = signal<CustomerBooking[]>([]);
+  readonly activeQuery = signal<AdminBookingQuery>({});
 
-  readonly tableRows = computed<BookingRow[]>(() =>
-    this.bookings()
-      .filter((b) => this.statusFilter() === 'ALL' || b.status === this.statusFilter())
-      .map((b) => ({
-        id: b.id,
-        reference: b.bookingReference,
-        contact: b.contactEmail,
-        flight: `${b.flight.flightNumber} ${b.flight.route.origin.iataCode}→${b.flight.route.destination.iataCode}`,
-        amount: formatMoney(b.totalAmount, b.currency),
-        bookedAt: fmtDateTime(b.bookedAt),
-        status: statusLabel(BOOKING_STATUS_MAP, b.status).label,
-      })),
+  readonly referenceInput = signal('');
+  readonly emailInput = signal('');
+  readonly statusInput = signal<'ALL' | BookingStatus>('ALL');
+
+  readonly selectedId = signal<string | null>(null);
+  readonly detail = signal<CustomerBooking | null>(null);
+  readonly detailLoading = signal(false);
+  readonly detailError = signal<string | null>(null);
+  private readonly detailCache = new Map<string, CustomerBooking>();
+
+  readonly activeTab = signal('itinerary');
+  readonly auditLogs = signal<AuditLogItem[]>([]);
+  readonly auditLoading = signal(false);
+  readonly auditError = signal<string | null>(null);
+  readonly auditForbidden = signal(false);
+  private readonly auditLoadedFor = signal<string | null>(null);
+
+  readonly selectedSummary = computed(
+    () => this.bookings().find((b) => b.id === this.selectedId()) ?? null,
   );
 
-  readonly bookingNotifications = computed(() => {
-    const b = this.selected();
-    return b ? NOTIFICATIONS.filter((n) => n.bookingId === b.id) : [];
-  });
-
-  readonly bookingAudit = computed(() => {
-    const b = this.selected();
-    return b ? AUDIT_LOGS.filter((l) => l.targetType === 'Booking' && l.targetId === b.id) : [];
-  });
-
-  readonly cancelEstimate = computed(() => {
-    const b = this.selected();
-    return b ? this.bookingsService.estimateCancellation(b) : null;
-  });
+  readonly tableRows = computed<BookingRow[]>(() =>
+    this.bookings().map((b) => ({
+      id: b.id,
+      reference: b.bookingReference,
+      contact: b.contactEmail,
+      flight: b.flight
+        ? `${b.flight.flightNumber} ${b.flight.origin}→${b.flight.destination}`
+        : '—',
+      cabin: cabinLabel(b.cabinClass),
+      total: formatMoney(b.totalAmount, b.currency),
+      bookedAt: fmtDateTime(b.bookedAt),
+      status: statusLabel(BOOKING_STATUS_MAP, b.status).label,
+      statusKey: b.status,
+    })),
+  );
 
   constructor() {
-    this.load();
+    this.load({});
   }
 
-  load(): void {
+  load(query: AdminBookingQuery): void {
+    this.activeQuery.set(query);
     this.loading.set(true);
-    this.bookingsService.adminBookings(this.query()).subscribe((list) => {
-      this.bookings.set(list);
-      this.loading.set(false);
+    this.loadError.set(null);
+    this.bookingsService.listAdmin(query).subscribe({
+      next: (list) => {
+        this.bookings.set(list);
+        this.loading.set(false);
+      },
+      error: (err: unknown) => {
+        this.loadError.set(toErrorMessage(err, 'Could not load bookings. Please try again.'));
+        this.loading.set(false);
+      },
     });
   }
 
-  onQuery(value: string): void {
-    this.query.set(value);
-    this.load();
+  reload(): void {
+    this.load(this.activeQuery());
+  }
+
+  applyFilters(event: Event): void {
+    event.preventDefault();
+    this.load(this.currentQuery());
+  }
+
+  onStatusChange(value: string): void {
+    this.statusInput.set(value as 'ALL' | BookingStatus);
+    this.load(this.currentQuery());
+  }
+
+  clearFilters(): void {
+    this.referenceInput.set('');
+    this.emailInput.set('');
+    this.statusInput.set('ALL');
+    this.load({});
   }
 
   openBooking(id: string): void {
-    const booking = this.bookings().find((b) => b.id === id) ?? null;
-    this.selected.set(booking);
+    this.selectedId.set(id);
     this.activeTab.set('itinerary');
+    this.resetAudit();
+    this.loadDetail(id);
   }
 
   closeDrawer(): void {
-    this.selected.set(null);
+    this.selectedId.set(null);
+    this.detail.set(null);
+    this.detailLoading.set(false);
+    this.detailError.set(null);
+    this.resetAudit();
   }
 
-  seatOf(booking: Booking, bookingPassengerId: string): string | null {
-    return booking.seats.find((s) => s.bookingPassengerId === bookingPassengerId)?.seatNumber ?? null;
+  retryDetail(): void {
+    const id = this.selectedId();
+    if (id) this.loadDetail(id);
   }
 
-  openException(): void {
-    this.exceptionReason.set('');
-    this.exceptionOpen.set(true);
+  onTabChange(tab: string): void {
+    this.activeTab.set(tab);
+    if (tab === 'audit') {
+      const id = this.selectedId();
+      if (id && this.auth.hasPermission('audit:read')) this.loadAudit(id);
+    }
   }
 
-  confirmCancel(): void {
-    const booking = this.selected();
-    if (!booking) return;
-    this.cancelOpen.set(false);
-    this.bookingsService.cancelBooking(booking.id).subscribe({
-      next: (updated) => {
-        this.replaceBooking(updated);
-        this.toast.success(`Booking ${updated.bookingReference} cancelled.`);
-      },
-      error: (err) => this.toast.error(err?.message ?? 'Could not cancel the booking.'),
-    });
+  retryAudit(): void {
+    const id = this.selectedId();
+    if (id) this.loadAudit(id, true);
   }
 
-  confirmException(): void {
-    const booking = this.selected();
-    if (!booking) return;
-    const reason = this.exceptionReason().trim();
-    if (!reason) {
-      this.toast.error('A reason is required for the exception workflow.');
+  private currentQuery(): AdminBookingQuery {
+    const query: AdminBookingQuery = {};
+    const reference = this.referenceInput().trim();
+    const email = this.emailInput().trim();
+    const status = this.statusInput();
+    if (reference) query.reference = reference;
+    if (email) query.email = email;
+    if (status !== 'ALL') query.status = status;
+    return query;
+  }
+
+  private loadDetail(id: string): void {
+    const cached = this.detailCache.get(id);
+    if (cached) {
+      this.detail.set(cached);
+      this.detailLoading.set(false);
+      this.detailError.set(null);
       return;
     }
-    this.exceptionOpen.set(false);
-    this.bookingsService.adminConfirmException(booking.id, reason).subscribe({
-      next: (updated) => {
-        this.replaceBooking(updated);
-        this.toast.success(`Booking ${updated.bookingReference} confirmed by exception — reason recorded in the audit log.`);
+    this.detail.set(null);
+    this.detailError.set(null);
+    this.detailLoading.set(true);
+    this.bookingsService.getAdmin(id).subscribe({
+      next: (booking) => {
+        this.detailCache.set(id, booking);
+        if (this.selectedId() !== id) return;
+        this.detail.set(booking);
+        this.detailLoading.set(false);
       },
-      error: (err) => this.toast.error(err?.message ?? 'Could not confirm the booking.'),
+      error: (err: unknown) => {
+        if (this.selectedId() !== id) return;
+        this.detailError.set(toErrorMessage(err, 'Could not load the booking details.'));
+        this.detailLoading.set(false);
+      },
     });
   }
 
-  private replaceBooking(updated: Booking): void {
-    this.bookings.update((list) => list.map((b) => (b.id === updated.id ? { ...updated } : b)));
-    this.selected.set({ ...updated });
+  private resetAudit(): void {
+    this.auditLogs.set([]);
+    this.auditLoading.set(false);
+    this.auditError.set(null);
+    this.auditForbidden.set(false);
+    this.auditLoadedFor.set(null);
+  }
+
+  private loadAudit(bookingId: string, force = false): void {
+    if (!force && this.auditLoadedFor() === bookingId) return;
+    this.auditLoadedFor.set(bookingId);
+    this.auditLoading.set(true);
+    this.auditError.set(null);
+    this.auditForbidden.set(false);
+    this.auditService
+      .listLogs({ targetType: 'Booking', targetId: bookingId, limit: 20 })
+      .subscribe({
+        next: (page) => {
+          if (this.selectedId() !== bookingId) return;
+          this.auditLogs.set(page.items);
+          this.auditLoading.set(false);
+        },
+        error: (err: unknown) => {
+          if (this.selectedId() !== bookingId) return;
+          if ((err as { status?: number } | null)?.status === 403) {
+            this.auditForbidden.set(true);
+          } else {
+            this.auditError.set(toErrorMessage(err, 'Could not load the audit trail.'));
+          }
+          this.auditLoading.set(false);
+        },
+      });
   }
 }

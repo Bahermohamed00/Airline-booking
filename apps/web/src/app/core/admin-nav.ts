@@ -11,6 +11,7 @@ export interface AdminNavItem {
 export const ADMIN_NAV: AdminNavItem[] = [
   { route: '/admin/dashboard', label: 'Overview', icon: '▤', permission: 'dashboard:read' },
   { route: '/admin/flights', label: 'Flights', icon: '✈', permission: 'flights:read' },
+  { route: '/admin/schedule-rules', label: 'Schedule Rules', icon: '◷', permission: 'flights:read' },
   { route: '/admin/routes', label: 'Routes', icon: '⇄', permission: 'routes:manage' },
   { route: '/admin/airports', label: 'Airports', icon: '⌂', permission: 'airports:manage' },
   { route: '/admin/aircraft', label: 'Aircraft', icon: '▲', permission: 'aircraft:manage' },

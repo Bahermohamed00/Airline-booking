@@ -48,6 +48,13 @@ function cabinLabel(c: CabinClass): string {
           <a routerLink="/search" class="summary__edit">Modify search</a>
         </div>
 
+        @if (c.tripType === 'ROUND_TRIP' && c.returnDate) {
+          <na-alert tone="info" icon="ℹ" title="Outbound flights only" class="roundtrip-note">
+            Round-trip booking isn't available yet — these results cover your outbound journey on
+            {{ prettyDate(c.departureDate) }} only. The return leg can't be booked for now.
+          </na-alert>
+        }
+
         <div class="dates" role="group" aria-label="Nearby dates">
           @for (d of adjacent(); track d.date) {
             <button
@@ -215,9 +222,11 @@ function cabinLabel(c: CabinClass): string {
                       <div class="card__fare-info">
                         @if (fareOf(f, c); as fare) {
                           <p class="card__cabin">{{ cabinName(fare.cabinClass) }}</p>
-                          <p class="na-text-muted na-text-small">
-                            {{ fare.rules.checkedBaggagePieces }}× checked bag ({{ fare.rules.checkedBaggageWeightKg }} kg) included
-                          </p>
+                          @if (fare.rules; as rules) {
+                            <p class="na-text-muted na-text-small">
+                              {{ rules.checkedBaggagePieces }}× checked bag ({{ rules.checkedBaggageWeightKg }} kg) included
+                            </p>
+                          }
                         }
                         <button
                           type="button"
@@ -246,13 +255,15 @@ function cabinLabel(c: CabinClass): string {
                           <div class="fare-row">
                             <div>
                               <strong>{{ cabinName(fare.cabinClass) }}</strong>
-                              <na-badge [tone]="fare.rules.refundable ? 'success' : 'neutral'">
-                                {{ fare.rules.refundable ? 'Refundable' : 'Non-refundable' }}
-                              </na-badge>
-                              <p class="na-text-small na-text-muted">{{ fare.rules.description }}</p>
-                              <p class="na-text-small na-text-muted">
-                                {{ fare.rules.checkedBaggagePieces }}× checked bag ({{ fare.rules.checkedBaggageWeightKg }} kg)
-                              </p>
+                              @if (fare.rules; as rules) {
+                                <na-badge [tone]="rules.refundable ? 'success' : 'neutral'">
+                                  {{ rules.refundable ? 'Refundable' : 'Non-refundable' }}
+                                </na-badge>
+                                <p class="na-text-small na-text-muted">{{ rules.description }}</p>
+                                <p class="na-text-small na-text-muted">
+                                  {{ rules.checkedBaggagePieces }}× checked bag ({{ rules.checkedBaggageWeightKg }} kg)
+                                </p>
+                              }
                             </div>
                             <div class="fare-row__buy">
                               <span class="fare-row__price">{{ fareTotal(fare) }}</span>
@@ -299,6 +310,7 @@ function cabinLabel(c: CabinClass): string {
     }
     .summary__meta { flex: 1; min-width: 200px; color: var(--na-ink-500); font-size: var(--na-text-sm); }
     .summary__edit { font-weight: var(--na-font-semibold); min-height: 44px; display: inline-flex; align-items: center; }
+    .roundtrip-note { display: block; margin-bottom: var(--na-space-5); }
     .dates { display: flex; gap: var(--na-space-2); overflow-x: auto; padding-bottom: var(--na-space-2); margin-bottom: var(--na-space-5); }
     .dates__day {
       flex: 1; min-width: 96px; display: flex; flex-direction: column; align-items: center; gap: var(--na-space-1);

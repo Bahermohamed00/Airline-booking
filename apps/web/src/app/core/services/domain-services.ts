@@ -1,34 +1,12 @@
 import { Injectable } from '@angular/core';
 import { Observable, of, delay, throwError } from 'rxjs';
 import {
-  BAGGAGE, CHECK_INS, EXTRAS, LOYALTY, NOTIFICATIONS, FLIGHTS, BOOKINGS,
+  BAGGAGE, CHECK_INS, EXTRAS, LOYALTY, NOTIFICATIONS, BOOKINGS,
 } from '../mock/mock-data';
 import type {
   Baggage, CheckIn, BoardingPass, ExtraService, LoyaltyAccount, NotificationItem,
-  Booking, Flight,
+  Booking,
 } from '../models/domain.model';
-
-@Injectable({ providedIn: 'root' })
-export class PaymentService {
-  private processedRefs = new Set<string>();
-
-  /** Mock PCI-compliant provider: accepts a token, never raw card data. */
-  charge(token: string, amount: number, currency: string, idempotencyKey: string): Observable<{ providerReference: string }> {
-    if (this.processedRefs.has(idempotencyKey)) {
-      return of({ providerReference: `mp_dup_${idempotencyKey.slice(0, 8)}` }).pipe(delay(300));
-    }
-    if (!token.startsWith('tok_')) {
-      return throwError(() => ({ status: 402, message: 'Payment token was rejected by the provider.' })).pipe(delay(800));
-    }
-    this.processedRefs.add(idempotencyKey);
-    return of({ providerReference: `mp_${idempotencyKey.slice(0, 10)}` }).pipe(delay(900));
-  }
-
-  /** Simulate a tokenization step the way a PCI provider SDK would. */
-  tokenize(): Observable<string> {
-    return of(`tok_${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`).pipe(delay(400));
-  }
-}
 
 @Injectable({ providedIn: 'root' })
 export class ExtrasService {
@@ -121,33 +99,5 @@ export class LoyaltyService {
 export class NotificationService {
   mine(): Observable<NotificationItem[]> {
     return of(NOTIFICATIONS).pipe(delay(250));
-  }
-}
-
-@Injectable({ providedIn: 'root' })
-export class AdminService {
-  dashboardKpis() {
-    const confirmed = BOOKINGS.filter((b) => b.status === 'CONFIRMED').length;
-    const revenue = BOOKINGS.filter((b) => b.status !== 'CANCELLED').reduce((s, b) => s + b.totalAmount, 0);
-    const todaysFlights = FLIGHTS.filter((f) => new Date(f.departureTime).toDateString() === new Date().toDateString());
-    return of({
-      totalFlights: FLIGHTS.length,
-      totalBookings: BOOKINGS.length,
-      confirmedBookings: confirmed,
-      passengers: BOOKINGS.reduce((s, b) => s + b.passengers.length, 0),
-      revenue,
-      currency: 'EUR',
-      occupancyPercent: 74,
-      todaysFlights,
-      delayedCount: FLIGHTS.filter((f) => f.status === 'DELAYED').length,
-      cancelledCount: FLIGHTS.filter((f) => f.status === 'CANCELLED').length,
-      completedCount: FLIGHTS.filter((f) => f.status === 'COMPLETED').length,
-      scheduledCount: FLIGHTS.filter((f) => f.status === 'SCHEDULED').length,
-      pendingRefunds: BOOKINGS.flatMap((b) => b.refunds).filter((r) => r.status === 'PENDING').length,
-      openBaggageCases: BAGGAGE.filter((b) => b.status === 'LOST' || b.status === 'DELAYED').length,
-      recentBookings: [...BOOKINGS].sort((a, b) => b.bookedAt.localeCompare(a.bookedAt)).slice(0, 5),
-      trend: [4200, 5100, 3800, 6300, 5900, 7200, 6800, 8100, 7700, 8400, 9100, 9600, 8900, 9400],
-      revenueTrend: [18200, 19400, 16800, 22100, 20900, 24500, 23100, 26800, 25200, 27900, 29600, 30400, 28800, 30100],
-    }).pipe(delay(400));
   }
 }

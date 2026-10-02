@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { BookingDraftService } from '../../../core/services/booking-draft.service';
@@ -20,7 +20,6 @@ export const BOOKING_STEPS: StepItem[] = [
   { id: 'seats', label: 'Seats' },
   { id: 'extras', label: 'Extras' },
   { id: 'review', label: 'Review' },
-  { id: 'payment', label: 'Payment' },
 ];
 
 interface TravellerOption {
@@ -35,8 +34,6 @@ interface TravellerOption {
 
 @Component({
   selector: 'na-passengers-page',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, NaStepper, NaButton, NaAlert, NaSkeleton, NaDialog],
   template: `
     <div class="na-container page">
@@ -207,6 +204,33 @@ interface TravellerOption {
           }
         </div>
 
+        <section class="na-card contact" aria-labelledby="contact-h">
+          <h2 id="contact-h">Contact details</h2>
+          <p class="na-text-muted na-text-small contact__sub">
+            The booking confirmation and any flight updates go to this email address.
+          </p>
+          <div class="pax__grid">
+            <div class="na-field">
+              <label class="na-label" for="contact-email">Email</label>
+              <input class="na-input" id="contact-email" type="email" formControlName="contactEmail" autocomplete="email"
+                [attr.aria-invalid]="contactInvalid('contactEmail')" [attr.aria-describedby]="contactInvalid('contactEmail') ? 'contact-email-err' : null" />
+              @if (contactInvalid('contactEmail')) {
+                <p class="na-error" id="contact-email-err">
+                  {{ form.controls.contactEmail.hasError('required') ? 'A contact email is required.' : 'Enter a valid email address.' }}
+                </p>
+              }
+            </div>
+            <div class="na-field">
+              <label class="na-label" for="contact-phone">Phone <span class="na-hint">(optional)</span></label>
+              <input class="na-input" id="contact-phone" type="tel" formControlName="contactPhone" autocomplete="tel"
+                [attr.aria-invalid]="contactInvalid('contactPhone')" [attr.aria-describedby]="contactInvalid('contactPhone') ? 'contact-phone-err' : null" />
+              @if (contactInvalid('contactPhone')) {
+                <p class="na-error" id="contact-phone-err">Keep the phone number under 50 characters.</p>
+              }
+            </div>
+          </div>
+        </section>
+
         @if (submitted() && form.invalid) {
           <na-alert tone="danger" icon="⚠" title="Some details are missing">
             Please correct the highlighted fields above before continuing.
@@ -304,6 +328,9 @@ interface TravellerOption {
     .travellers__hint { color: var(--na-ink-500); font-size: var(--na-text-xs); margin: 0; flex: 1 1 26ch; }
 
     .pax__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--na-space-4); }
+    .contact { padding: var(--na-space-6); margin-bottom: var(--na-space-5); }
+    .contact h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-1); }
+    .contact__sub { margin-bottom: var(--na-space-4); }
     .actions { display: flex; justify-content: space-between; gap: var(--na-space-3); margin-top: var(--na-space-6); }
     na-alert { display: block; }
     @media (max-width: 639px) {
@@ -365,6 +392,8 @@ export class PassengersPage {
 
   protected readonly form = this.fb.group({
     passengers: this.fb.array<FormGroup>([]),
+    contactEmail: ['', [Validators.required, Validators.email]],
+    contactPhone: ['', [Validators.maxLength(50)]],
   });
 
   constructor() {
@@ -376,7 +405,16 @@ export class PassengersPage {
     for (const p of d.passengers) {
       this.passengersArray.push(this.buildGroup(p));
     }
-    this.loadSaved();
+    // Prefill from the draft on re-entry, otherwise from the signed-in
+    // account. setValue keeps the control pristine/untouched.
+    this.form.controls.contactEmail.setValue(d.contactEmail || this.auth.user()?.email || '');
+    this.form.controls.contactPhone.setValue(d.contactPhone);
+    // Saved-traveller autofill is an account feature; guests enter details manually.
+    if (this.auth.isLoggedIn()) {
+      this.loadSaved();
+    } else {
+      this.savedLoading.set(false);
+    }
   }
 
   get passengersArray(): FormArray<FormGroup> {
@@ -414,6 +452,11 @@ export class PassengersPage {
   protected invalid(index: number, control: string): boolean {
     const c = this.passengersArray.at(index).get(control);
     return !!c && c.invalid && (c.touched || this.submitted());
+  }
+
+  protected contactInvalid(control: 'contactEmail' | 'contactPhone'): boolean {
+    const c = this.form.controls[control];
+    return c.invalid && (c.touched || this.submitted());
   }
 
   protected selectionFor(index: number): TravellerOption | null {
@@ -484,9 +527,15 @@ export class PassengersPage {
     this.submitted.set(true);
     if (this.form.invalid) {
       this.passengersArray.controls.forEach((c) => c.markAllAsTouched());
+      this.form.controls.contactEmail.markAsTouched();
+      this.form.controls.contactPhone.markAsTouched();
       return;
     }
     this.draft.setPassengers(this.passengersArray.getRawValue() as PassengerForm[]);
+    this.draft.setContact(
+      (this.form.controls.contactEmail.value ?? '').trim(),
+      (this.form.controls.contactPhone.value ?? '').trim(),
+    );
     this.router.navigateByUrl('/booking/seats');
   }
 

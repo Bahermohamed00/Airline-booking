@@ -1,53 +1,25 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AIRCRAFT } from '../../../core/mock/mock-data';
 import type { Aircraft, AircraftStatus, CabinClass, Seat } from '../../../core/models/domain.model';
-import type { StatusTone } from '../../../core/status-maps';
+import type { AircraftPayload } from '../../../core/models/catalog-api.model';
+import { CatalogService } from '../../../core/services/catalog.service';
+import { AIRCRAFT_STATUS_MAP, statusLabel } from '../../../core/status-maps';
+import { toErrorMessage } from '../../../shared/utils/http-error-message';
 import { ToastService } from '../../../shared/ui/toast.service';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaDialog } from '../../../shared/ui/dialog.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
-
-const STATUS_PRESENTATION: Record<AircraftStatus, { label: string; tone: StatusTone }> = {
-  ACTIVE: { label: 'Active', tone: 'success' },
-  MAINTENANCE: { label: 'Maintenance', tone: 'warning' },
-  RETIRED: { label: 'Retired', tone: 'neutral' },
-};
+import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 
 const SEAT_PREVIEW_ROWS = 15;
-
-function buildSeats(aircraftId: string, capacity: number): Seat[] {
-  const seats: Seat[] = [];
-  const cols = ['A', 'B', 'C', 'D', 'E', 'F'];
-  let count = 0;
-  for (let row = 1; count < capacity; row++) {
-    for (const col of cols) {
-      if (count >= capacity) break;
-      const cabin: CabinClass =
-        row <= 2 && capacity >= 300 ? 'FIRST' : row <= 6 && capacity >= 220 ? 'BUSINESS' : 'ECONOMY';
-      seats.push({
-        id: `${aircraftId.slice(0, 8)}-s${row}${col}`,
-        aircraftId,
-        seatNumber: `${row}${col}`,
-        cabinClass: cabin,
-        seatRow: row,
-        seatColumn: col,
-        isExitRow: row === 12 || row === 25,
-        features: {},
-      });
-      count++;
-    }
-  }
-  return seats;
-}
+const REGISTRATION_PATTERN = /^[A-Z0-9][A-Z0-9-]{2,19}$/;
+const DUPLICATE_REGISTRATION_MESSAGE = 'An aircraft with this registration already exists.';
 
 @Component({
   selector: 'na-admin-aircraft',
-  standalone: true,
-  imports: [FormsModule, NaBreadcrumbs, NaButton, NaBadge, NaDialog, NaSkeleton],
-  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule, NaBreadcrumbs, NaButton, NaBadge, NaDialog, NaSkeleton, NaEmptyState],
   template: `
     <div class="page">
       <na-breadcrumbs [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Aircraft' }]" />
@@ -65,16 +37,28 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
             <div class="na-card card"><na-skeleton [rows]="[1, 2, 3]" height="1.2rem" /></div>
           }
         </div>
+      } @else if (loadError()) {
+        <div class="list-error" role="alert">
+          <p>{{ loadError() }}</p>
+          <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+        </div>
+      } @else if (fleet().length === 0) {
+        <na-empty-state
+          title="No aircraft"
+          message="Add an aircraft to start building the fleet. The seat map is generated automatically."
+          actionLabel="Add aircraft"
+          (action)="openCreate()"
+        />
       } @else {
         <div class="grid">
           @for (a of fleet(); track a.id) {
             <button type="button" class="na-card card" (click)="openDetail(a.id)">
               <div class="card__top">
                 <span class="card__reg na-text-mono">{{ a.registration }}</span>
-                <na-badge [tone]="statusOf(a).tone">{{ statusOf(a).label }}</na-badge>
+                <na-badge [tone]="statusLabel(AIRCRAFT_STATUS_MAP, a.status).tone">{{ statusLabel(AIRCRAFT_STATUS_MAP, a.status).label }}</na-badge>
               </div>
               <p class="card__model">{{ a.model }}</p>
-              <p class="card__cap">{{ a.capacity }} seats · {{ a.seats.length }} configured</p>
+              <p class="card__cap">{{ a.capacity }} seats · {{ a.seatCount ?? '—' }} configured</p>
             </button>
           }
         </div>
@@ -93,36 +77,45 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
           </header>
           <div class="drawer__body">
             <dl class="facts">
-              <div><dt>Status</dt><dd><na-badge [tone]="statusOf(a).tone">{{ statusOf(a).label }}</na-badge></dd></div>
+              <div><dt>Status</dt><dd><na-badge [tone]="statusLabel(AIRCRAFT_STATUS_MAP, a.status).tone">{{ statusLabel(AIRCRAFT_STATUS_MAP, a.status).label }}</na-badge></dd></div>
               <div><dt>Capacity</dt><dd>{{ a.capacity }}</dd></div>
             </dl>
 
             <h3>Seat configuration</h3>
-            <ul class="cabins">
-              @for (c of cabinSummary(a); track c.cabin) {
-                <li>
-                  <span class="dot dot--{{ c.cabin.toLowerCase() }}" aria-hidden="true"></span>
-                  <span>{{ c.label }}</span>
-                  <span class="cabins__count">{{ c.count }} seats</span>
-                </li>
-              }
-            </ul>
+            @if (seatsLoading()) {
+              <na-skeleton [rows]="[1, 2, 3]" height="1.2rem" />
+            } @else if (seatsError()) {
+              <div class="list-error" role="alert">
+                <p>{{ seatsError() }}</p>
+                <na-button variant="secondary" size="sm" (clicked)="retrySeats()">Retry</na-button>
+              </div>
+            } @else {
+              <ul class="cabins">
+                @for (c of cabinSummary(); track c.cabin) {
+                  <li>
+                    <span class="dot dot--{{ c.cabin.toLowerCase() }}" aria-hidden="true"></span>
+                    <span>{{ c.label }}</span>
+                    <span class="cabins__count">{{ c.count }} seats</span>
+                  </li>
+                }
+              </ul>
 
-            <h3>Seat map preview <span class="na-text-muted na-text-small">(first {{ previewRows }} rows)</span></h3>
-            <div class="seatmap" role="img" [attr.aria-label]="'Seat map preview for ' + a.registration">
-              @for (seat of previewSeats(a); track seat.id) {
-                <span
-                  class="seat seat--{{ seat.cabinClass.toLowerCase() }}"
-                  [class.seat--exit]="seat.isExitRow"
-                  [title]="seat.seatNumber + ' · ' + seat.cabinClass.replace('_', ' ')"
-                ></span>
-              }
-            </div>
-            <div class="legend">
-              <span><span class="dot dot--first" aria-hidden="true"></span> First</span>
-              <span><span class="dot dot--business" aria-hidden="true"></span> Business</span>
-              <span><span class="dot dot--economy" aria-hidden="true"></span> Economy</span>
-            </div>
+              <h3>Seat map preview <span class="na-text-muted na-text-small">(first {{ previewRows }} rows)</span></h3>
+              <div class="seatmap" role="img" [attr.aria-label]="'Seat map preview for ' + a.registration">
+                @for (seat of previewSeats(); track seat.id) {
+                  <span
+                    class="seat seat--{{ seat.cabinClass.toLowerCase() }}"
+                    [class.seat--exit]="seat.isExitRow"
+                    [title]="seat.seatNumber + ' · ' + seat.cabinClass.replace('_', ' ')"
+                  ></span>
+                }
+              </div>
+              <div class="legend">
+                <span><span class="dot dot--first" aria-hidden="true"></span> First</span>
+                <span><span class="dot dot--business" aria-hidden="true"></span> Business</span>
+                <span><span class="dot dot--economy" aria-hidden="true"></span> Economy</span>
+              </div>
+            }
 
             <div class="actions">
               <na-button
@@ -165,9 +158,10 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
               <input id="ac-cap" class="na-input" type="number" name="acCap" [(ngModel)]="formCapacity" min="6" max="600" required />
               @if (createError()) { <p class="na-error" role="alert">{{ createError() }}</p> }
             </div>
+            <p class="na-hint">The seat map is generated automatically for the given capacity.</p>
             <div class="drawer__actions">
               <na-button variant="secondary" (clicked)="createOpen.set(false)">Cancel</na-button>
-              <na-button variant="cta" type="submit">Add aircraft</na-button>
+              <na-button variant="cta" type="submit" [disabled]="submitting()" [loading]="submitting()">Add aircraft</na-button>
             </div>
           </form>
         </aside>
@@ -197,6 +191,8 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
     .card__reg { font-weight: var(--na-font-bold); color: var(--na-ink-900); }
     .card__model { margin-top: var(--na-space-2); font-weight: var(--na-font-medium); }
     .card__cap { color: var(--na-ink-500); font-size: var(--na-text-sm); margin-top: var(--na-space-1); }
+    .list-error { display: flex; align-items: center; gap: var(--na-space-4); padding: var(--na-space-4); border: 1px solid var(--na-border); border-radius: var(--na-radius-lg); background: var(--na-surface-raised); }
+    .list-error p { margin: 0; color: var(--na-ink-500); }
     .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
     .drawer {
       position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
@@ -234,16 +230,27 @@ function buildSeats(aircraftId: string, capacity: number): Seat[] {
   `,
 })
 export class AircraftPage {
+  private readonly catalog = inject(CatalogService);
   private readonly toast = inject(ToastService);
+
+  readonly AIRCRAFT_STATUS_MAP = AIRCRAFT_STATUS_MAP;
+  readonly statusLabel = statusLabel;
 
   readonly previewRows = SEAT_PREVIEW_ROWS;
   readonly loading = signal(true);
+  readonly loadError = signal<string | null>(null);
   readonly fleet = signal<Aircraft[]>([]);
   readonly selectedId = signal<string | null>(null);
   readonly selected = computed(() => this.fleet().find((a) => a.id === this.selectedId()) ?? null);
 
+  /** Seats load lazily when the detail drawer opens — never fabricated client-side. */
+  readonly seats = signal<Seat[]>([]);
+  readonly seatsLoading = signal(false);
+  readonly seatsError = signal<string | null>(null);
+
   readonly createOpen = signal(false);
   readonly toggleDialogOpen = signal(false);
+  readonly submitting = signal(false);
   readonly createError = signal<string | null>(null);
 
   formRegistration = '';
@@ -251,25 +258,42 @@ export class AircraftPage {
   formCapacity: number | null = null;
 
   constructor() {
-    setTimeout(() => {
-      this.fleet.set(AIRCRAFT.map((a) => ({ ...a })));
-      this.loading.set(false);
-    }, 300);
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.catalog.listAircraft().subscribe({
+      next: (fleet) => {
+        this.fleet.set(fleet);
+        this.loading.set(false);
+      },
+      error: (err: unknown) => {
+        this.loadError.set(toErrorMessage(err, 'Could not load the aircraft fleet.'));
+        this.loading.set(false);
+      },
+    });
   }
 
   openDetail(id: string): void {
     this.selectedId.set(id);
+    this.loadSeats(id);
   }
 
   closeDetail(): void {
     this.selectedId.set(null);
+    this.seats.set([]);
+    this.seatsLoading.set(false);
+    this.seatsError.set(null);
   }
 
-  statusOf(a: Aircraft): { label: string; tone: StatusTone } {
-    return STATUS_PRESENTATION[a.status];
+  retrySeats(): void {
+    const id = this.selectedId();
+    if (id) this.loadSeats(id);
   }
 
-  cabinSummary(a: Aircraft): { cabin: CabinClass; label: string; count: number }[] {
+  cabinSummary(): { cabin: CabinClass; label: string; count: number }[] {
     const labels: Record<CabinClass, string> = {
       FIRST: 'First',
       BUSINESS: 'Business',
@@ -278,12 +302,12 @@ export class AircraftPage {
     };
     const order: CabinClass[] = ['FIRST', 'BUSINESS', 'PREMIUM_ECONOMY', 'ECONOMY'];
     return order
-      .map((cabin) => ({ cabin, label: labels[cabin], count: a.seats.filter((s) => s.cabinClass === cabin).length }))
+      .map((cabin) => ({ cabin, label: labels[cabin], count: this.seats().filter((s) => s.cabinClass === cabin).length }))
       .filter((c) => c.count > 0);
   }
 
-  previewSeats(a: Aircraft): Seat[] {
-    return a.seats.filter((s) => (s.seatRow ?? 0) <= SEAT_PREVIEW_ROWS);
+  previewSeats(): Seat[] {
+    return this.seats().filter((s) => (s.seatRow ?? 0) <= SEAT_PREVIEW_ROWS);
   }
 
   openCreate(): void {
@@ -303,21 +327,40 @@ export class AircraftPage {
       this.createError.set('All fields are required.');
       return;
     }
-    if (this.fleet().some((a) => a.registration.toUpperCase() === reg)) {
-      this.createError.set('An aircraft with this registration already exists.');
+    if (!REGISTRATION_PATTERN.test(reg)) {
+      this.createError.set('Registration must be 3–20 characters: letters, digits and dashes, starting with a letter or digit.');
       return;
     }
-    if (capacity < 6 || capacity > 600) {
+    if (model.length < 2 || model.length > 100) {
+      this.createError.set('Model must be between 2 and 100 characters.');
+      return;
+    }
+    if (this.fleet().some((a) => a.registration.toUpperCase() === reg)) {
+      this.createError.set(DUPLICATE_REGISTRATION_MESSAGE);
+      return;
+    }
+    if (!Number.isInteger(capacity) || capacity < 6 || capacity > 600) {
       this.createError.set('Capacity must be between 6 and 600 seats.');
       return;
     }
-    const id = crypto.randomUUID();
-    this.fleet.update((list) => [
-      ...list,
-      { id, registration: reg, model, capacity, status: 'ACTIVE', seats: buildSeats(id, capacity) },
-    ]);
-    this.createOpen.set(false);
-    this.toast.success(`Aircraft ${reg} added to the fleet.`);
+
+    // DTO fields only — the server assigns the id and generates the seat map.
+    const payload: AircraftPayload = { registration: reg, model, capacity };
+    this.submitting.set(true);
+    this.catalog.createAircraft(payload).subscribe({
+      next: (created) => {
+        this.submitting.set(false);
+        this.fleet.update((list) => [...list, created]);
+        this.createOpen.set(false);
+        this.toast.success(`Aircraft ${created.registration} added to the fleet.`);
+      },
+      error: (err: unknown) => {
+        this.submitting.set(false);
+        this.createError.set(
+          toErrorMessage(err, 'Could not add the aircraft. Please try again.', DUPLICATE_REGISTRATION_MESSAGE),
+        );
+      },
+    });
   }
 
   confirmToggle(): void {
@@ -325,11 +368,35 @@ export class AircraftPage {
     const a = this.selected();
     if (!a || a.status === 'RETIRED') return;
     const next: AircraftStatus = a.status === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE';
-    this.fleet.update((list) => list.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-    this.toast.success(
-      next === 'MAINTENANCE'
-        ? `${a.registration} sent to maintenance.`
-        : `${a.registration} returned to service.`,
-    );
+    this.catalog.updateAircraft(a.id, { status: next }).subscribe({
+      next: (updated) => {
+        this.fleet.update((list) => list.map((x) => (x.id === updated.id ? updated : x)));
+        this.toast.success(
+          next === 'MAINTENANCE'
+            ? `${a.registration} sent to maintenance.`
+            : `${a.registration} returned to service.`,
+        );
+      },
+      error: (err: unknown) =>
+        this.toast.error(toErrorMessage(err, 'Could not update the aircraft status.')),
+    });
+  }
+
+  private loadSeats(id: string): void {
+    this.seats.set([]);
+    this.seatsLoading.set(true);
+    this.seatsError.set(null);
+    this.catalog.getAircraftSeats(id).subscribe({
+      next: (seats) => {
+        if (this.selectedId() !== id) return;
+        this.seats.set(seats);
+        this.seatsLoading.set(false);
+      },
+      error: (err: unknown) => {
+        if (this.selectedId() !== id) return;
+        this.seatsError.set(toErrorMessage(err, 'Could not load the seat map.'));
+        this.seatsLoading.set(false);
+      },
+    });
   }
 }

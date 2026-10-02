@@ -1,7 +1,8 @@
-import { Injectable } from '@angular/core';
-import { Observable, of, delay } from 'rxjs';
-import { BOOKINGS, flightById } from '../mock/mock-data';
-import type { Seat, Flight } from '../models/domain.model';
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { API_CONFIG, type ApiConfig } from '../config/api-config';
+import type { Seat } from '../models/domain.model';
 
 export type SeatMapState = 'available' | 'occupied' | 'selected' | 'held' | 'blocked' | 'exit';
 
@@ -11,22 +12,38 @@ export interface SeatMapRow {
   right: Seat[];
 }
 
+/** Per-flight availability from GET /api/flights/:id/seat-availability. */
+export interface SeatAvailability {
+  flightId: string;
+  occupiedSeatIds: string[];
+  heldSeatIds: string[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class SeatService {
-  /** Seats that are already occupied on this flight via confirmed bookings. */
-  occupiedSeatIds(flight: Flight): Set<string> {
-    const ids = new Set<string>();
-    for (const booking of BOOKINGS) {
-      if (booking.flightId !== flight.id || booking.status === 'CANCELLED') continue;
-      for (const seat of booking.seats) ids.add(seat.seatId);
-    }
-    return ids;
+  private readonly http = inject(HttpClient);
+  private readonly config: ApiConfig = inject(API_CONFIG);
+
+  /** Full seat catalog of an aircraft (public endpoint), row/column ordered. */
+  seatCatalog(aircraftId: string): Observable<Seat[]> {
+    return this.http.get<Seat[]>(`${this.config.baseUrl}/aircraft/${aircraftId}/seats`);
   }
 
-  seatMapRows(flight: Flight): SeatMapRow[] {
-    const seats = [...flight.aircraft.seats].sort((a, b) => (a.seatRow ?? 0) - (b.seatRow ?? 0) || (a.seatColumn ?? '').localeCompare(b.seatColumn ?? ''));
+  /** Real per-flight occupancy: non-cancelled bookings + unexpired active holds. */
+  seatAvailability(flightId: string): Observable<SeatAvailability> {
+    return this.http.get<SeatAvailability>(
+      `${this.config.baseUrl}/flights/${flightId}/seat-availability`,
+    );
+  }
+
+  seatMapRows(seats: Seat[]): SeatMapRow[] {
+    const sorted = [...seats].sort(
+      (a, b) =>
+        (a.seatRow ?? 0) - (b.seatRow ?? 0) ||
+        (a.seatColumn ?? '').localeCompare(b.seatColumn ?? ''),
+    );
     const byRow = new Map<number, Seat[]>();
-    for (const s of seats) {
+    for (const s of sorted) {
       const row = s.seatRow ?? 0;
       if (!byRow.has(row)) byRow.set(row, []);
       byRow.get(row)!.push(s);
@@ -38,19 +55,19 @@ export class SeatService {
     }));
   }
 
-  stateOf(seat: Seat, occupied: Set<string>, selected: Set<string>, holdExpiresAt: string | null, now = Date.now()): SeatMapState {
+  stateOf(
+    seat: Seat,
+    unavailable: Set<string>,
+    selected: Set<string>,
+    holdExpiresAt: string | null,
+    now = Date.now(),
+  ): SeatMapState {
     if (seat.isExitRow) return 'exit';
-    if (occupied.has(seat.id)) return 'occupied';
+    if (unavailable.has(seat.id)) return 'occupied';
     if (selected.has(seat.id)) {
       if (holdExpiresAt && new Date(holdExpiresAt).getTime() <= now) return 'held';
       return 'selected';
     }
     return 'available';
-  }
-
-  accessibleSeatList(flight: Flight, cabin: string): Observable<Seat[]> {
-    const occupied = this.occupiedSeatIds(flight);
-    const list = flight.aircraft.seats.filter((s) => s.cabinClass === cabin && !occupied.has(s.id));
-    return of(list).pipe(delay(150));
   }
 }
