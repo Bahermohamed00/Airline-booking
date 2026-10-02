@@ -38,7 +38,11 @@ export interface AuditQueryParams {
   sortOrder?: 'asc' | 'desc';
 }
 
-/** Mirror of the backend catalog (apps/api/src/audit/audit-events.ts) for the filter dropdown. */
+/**
+ * Mirror of the backend catalog (apps/api/src/audit/audit-events.ts) for the
+ * filter dropdown. OWNERSHIP RULE: the backend catalog is the canonical source
+ * — whenever an event is added there, update this mirror in the same PR.
+ */
 export const AUDIT_EVENTS = [
   'USER_REGISTERED',
   'USER_LOGGED_IN',
@@ -71,6 +75,12 @@ export const AUDIT_EVENTS = [
   'OFFER_CREATED',
   'OFFER_UPDATED',
   'OFFER_DELETED',
+  'PAYMENT_SUCCEEDED',
+  'PAYMENT_FAILED',
+  'BOOKING_CONFIRMED',
+  'SEAT_HOLD_CONVERTED',
+  'REFUND_COMPLETED',
+  'BR14_PAYMENT_EXCEPTION',
 ] as const;
 
 const MOCK_PAGE: AuditLogPage = {
