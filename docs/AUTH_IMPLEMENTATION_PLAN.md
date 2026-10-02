@@ -237,6 +237,6 @@ Standard verification commands:
 npm run api:test          # unit (Vitest)
 npm run api:test:e2e      # e2e against real test Postgres
 npm run web:test          # Angular unit tests
-npm run lint              # eslint
+npm run lint              # oxlint (API workspace)
 npm run api:build && npm run web:build
 ```
