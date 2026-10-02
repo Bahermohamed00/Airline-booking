@@ -14,7 +14,7 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 
 | Requirement | Use Case | UI / Screen | API / Module | Service / Guard | Prisma / PostgreSQL | Test |
 |-------------|----------|-------------|--------------|-----------------|---------------------|------|
-| NFR-08 Maintainability | — | Monorepo layout (`/apps/web`, `/apps/api`, `/prisma`, `/packages/shared`) | `AppModule`, feature modules | Separation of concerns | Schema in `/prisma/schema.prisma` | Repository structure review |
+| NFR-08 Maintainability | — | Monorepo layout (`/apps/web`, `/apps/api`, `/prisma`) | `AppModule`, feature modules | Separation of concerns | Multi-file schema in `/prisma/schema/` | Repository structure review |
 | Section 19.1 Tech baseline | — | Angular 22 scaffold | NestJS 11 API | Prisma ORM | PostgreSQL schema + migrations | Build tests for both apps |
 | Section 19.5 Prisma design rules | — | — | — | — | UUID PKs, `@@map`/`@map`, unique constraints, indexes, deliberate cascade/restrict | Schema validation |
 | Section 10 Data entities | — | — | All modules | Domain services | 31 modeled entities incl. `SeatHold` | Seed script covers core entities |

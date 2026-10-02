@@ -340,7 +340,6 @@ Governance: `AuditLog`, `SystemSetting`
 | Web      | Angular 22, standalone components, signals, OnPush, lazy routes, Vitest                                   |
 | API      | NestJS 11 (ESM), passport-jwt, Argon2id, throttler, nodemailer, Vitest + e2e on a dedicated test database |
 | Data     | PostgreSQL, Prisma 6 (UUID PKs, snake_case mapping), 8 migrations                                         |
-| Shared   | `@airline/shared` types package                                                                           |
 | Monorepo | npm workspaces (`apps/*`, `packages/*`)                                                                   |
 
 ### 11.4 Source references

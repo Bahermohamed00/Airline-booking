@@ -11,11 +11,10 @@ and append to the change log. Companion docs: `PROJECT_STRUCTURE.md`
 - **API** (`apps/api`): NestJS 11 (ESM), Prisma 6, PostgreSQL, passport-jwt,
   Argon2id (legacy bcrypt rehash on login), throttler, nodemailer, Vitest + SWC.
 - **Web** (`apps/web`): Angular 22, standalone components, signals, OnPush,
-  inline SCSS, centralized lazy routes in `app.routes.ts`, Vitest + jsdom.
-- **Shared** (`packages/shared`): `@airline/shared` types package (tsc → `dist/`).
-  Currently not imported by either app — web/API keep their own model types.
+  inline SCSS, split lazy routes (`app`/`admin`/`customer.routes.ts`), Vitest + jsdom.
 - **Monorepo**: npm workspaces (`apps/*`, `packages/*`), orchestrated from the
-  root `package.json`.
+  root `package.json`. (`packages/*` is retained for future shared packages; the
+  unused `@airline/shared` was removed — see `docs/ARCHITECTURE_DECISIONS.md`.)
 
 ## Scripts (repo root)
 
@@ -23,8 +22,7 @@ and append to the change log. Companion docs: `PROJECT_STRUCTURE.md`
 | ------ | ------- |
 | `api:dev` / `api:build` / `api:test` / `api:test:e2e` | NestJS dev server, build, unit tests, e2e tests |
 | `web:dev` / `web:build` / `web:test` | Angular dev server, build, unit tests |
-| `shared:build` | Build `@airline/shared` (`tsc` → `packages/shared/dist/`) |
-| `build` / `test` | shared + api + web build / api + web unit tests |
+| `build` / `test` | api + web build / api + web unit tests |
 | `db:migrate` / `db:migrate:prod` / `db:generate` / `db:seed` / `db:studio` / `db:reset` | Prisma workflows (`db:reset` destroys data — dev only) |
 | `lint` | oxlint on the API workspace |
 | `format` | Prettier over the repo |
