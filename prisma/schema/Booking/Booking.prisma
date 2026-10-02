@@ -1,0 +1,35 @@
+model Booking {
+  id              String        @id @default(uuid()) @db.Uuid
+  bookingReference String       @unique @map("booking_reference") @db.VarChar(10)
+  userId          String        @map("user_id") @db.Uuid
+  status          BookingStatus @default(PENDING)
+  totalAmount     Decimal       @map("total_amount") @db.Decimal(12, 2)
+  currency        String        @db.VarChar(3)
+  bookedAt        DateTime      @default(now()) @map("booked_at") @db.Timestamptz(6)
+  contactEmail    String        @map("contact_email") @db.VarChar(255)
+  contactPhone    String?       @map("contact_phone") @db.VarChar(50)
+  fareRulesSnapshot Json?       @map("fare_rules_snapshot") @db.JsonB
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  bookingPassengers BookingPassenger[]
+  bookingExtras    BookingExtra[]
+  payments         Payment[]
+  refunds          Refund[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  seatHolds        SeatHold[]
+
+  @@index([userId, bookedAt])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  CHECKED_IN
+  BOARDED
+  NO_SHOW
+
+  @@map("booking_status")
+}

@@ -1,0 +1,18 @@
+model FlightSegment {
+  id                   String   @id @default(uuid()) @db.Uuid
+  flightId             String   @map("flight_id") @db.Uuid
+  segmentNumber        Int      @map("segment_number")
+  originAirportId      String   @map("origin_airport_id") @db.Uuid
+  destinationAirportId String   @map("destination_airport_id") @db.Uuid
+  departureTime        DateTime @map("departure_time") @db.Timestamptz(6)
+  arrivalTime          DateTime @map("arrival_time") @db.Timestamptz(6)
+
+  flight                Flight          @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  originAirport         Airport         @relation("FlightSegmentOrigin", fields: [originAirportId], references: [id], onDelete: Restrict)
+  destinationAirport    Airport         @relation("FlightSegmentDestination", fields: [destinationAirportId], references: [id], onDelete: Restrict)
+  bookingSeats          BookingSeat[]
+  checkIns              CheckIn[]
+
+  @@unique([flightId, segmentNumber])
+  @@map("flight_segments")
+}

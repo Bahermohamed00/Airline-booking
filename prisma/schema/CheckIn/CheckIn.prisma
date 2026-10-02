@@ -1,0 +1,21 @@
+model CheckIn {
+  id                 String @id @default(uuid()) @db.Uuid
+  bookingPassengerId String @map("booking_passenger_id") @db.Uuid
+  flightSegmentId    String @map("flight_segment_id") @db.Uuid
+  checkInTime        DateTime @default(now()) @map("check_in_time") @db.Timestamptz(6)
+  status             CheckInStatus @default(COMPLETED)
+
+  bookingPassenger BookingPassenger @relation(fields: [bookingPassengerId], references: [id], onDelete: Cascade)
+  flightSegment    FlightSegment    @relation(fields: [flightSegmentId], references: [id], onDelete: Restrict)
+  boardingPass     BoardingPass?
+
+  @@unique([bookingPassengerId, flightSegmentId])
+  @@map("check_ins")
+}
+
+enum CheckInStatus {
+  COMPLETED
+  CANCELLED
+
+  @@map("check_in_status")
+}

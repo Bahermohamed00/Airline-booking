@@ -1,0 +1,15 @@
+model BookingSeat {
+  id                 String @id @default(uuid()) @db.Uuid
+  bookingPassengerId String @map("booking_passenger_id") @db.Uuid
+  flightSegmentId    String @map("flight_segment_id") @db.Uuid
+  seatId             String @map("seat_id") @db.Uuid
+  seatNumber         String @map("seat_number") @db.VarChar(10)
+
+  bookingPassenger BookingPassenger @relation(fields: [bookingPassengerId], references: [id], onDelete: Cascade)
+  flightSegment    FlightSegment    @relation(fields: [flightSegmentId], references: [id], onDelete: Restrict)
+  seat             Seat             @relation(fields: [seatId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingPassengerId, flightSegmentId])
+  @@unique([flightSegmentId, seatId])
+  @@map("booking_seats")
+}

@@ -1,0 +1,26 @@
+model Seat {
+  id          String     @id @default(uuid()) @db.Uuid
+  aircraftId  String     @map("aircraft_id") @db.Uuid
+  seatNumber  String     @map("seat_number") @db.VarChar(10)
+  cabinClass  CabinClass @map("cabin_class")
+  seatRow     Int?       @map("seat_row")
+  seatColumn  String?    @map("seat_column") @db.VarChar(5)
+  features    Json?      @db.JsonB
+  isExitRow   Boolean    @default(false) @map("is_exit_row")
+
+  aircraft    Aircraft    @relation(fields: [aircraftId], references: [id], onDelete: Cascade)
+  seatHolds   SeatHold[]
+  bookingSeats BookingSeat[]
+
+  @@unique([aircraftId, seatNumber])
+  @@map("seats")
+}
+
+enum CabinClass {
+  ECONOMY
+  PREMIUM_ECONOMY
+  BUSINESS
+  FIRST
+
+  @@map("cabin_class")
+}

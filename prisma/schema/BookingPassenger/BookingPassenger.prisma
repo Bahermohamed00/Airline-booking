@@ -1,0 +1,15 @@
+model BookingPassenger {
+  id            String @id @default(uuid()) @db.Uuid
+  bookingId     String @map("booking_id") @db.Uuid
+  passengerId   String @map("passenger_id") @db.Uuid
+  passengerType PassengerType @default(ADULT) @map("passenger_type")
+
+  booking   Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger Passenger  @relation(fields: [passengerId], references: [id], onDelete: Restrict)
+  seats     BookingSeat[]
+  baggage   Baggage[]
+  checkIns  CheckIn[]
+
+  @@unique([bookingId, passengerId])
+  @@map("booking_passengers")
+}

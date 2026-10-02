@@ -1,0 +1,22 @@
+model LoyaltyTransaction {
+  id               String @id @default(uuid()) @db.Uuid
+  loyaltyAccountId String @map("loyalty_account_id") @db.Uuid
+  bookingId        String? @map("booking_id") @db.Uuid
+  amount           Int
+  type             LoyaltyTransactionType
+  description      String? @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  loyaltyAccount LoyaltyAccount @relation(fields: [loyaltyAccountId], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_transactions")
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  BURN
+  ADJUSTMENT
+  EXPIRY
+
+  @@map("loyalty_transaction_type")
+}

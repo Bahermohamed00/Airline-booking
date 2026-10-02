@@ -1,0 +1,39 @@
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+
+  @@map("weekday")
+}
+
+enum ScheduleRuleStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("schedule_rule_status")
+}
+
+model ScheduleRule {
+  id                 String             @id @default(uuid()) @db.Uuid
+  routeId            String             @map("route_id") @db.Uuid
+  aircraftId         String             @map("aircraft_id") @db.Uuid
+  flightNumber       String             @unique @map("flight_number") @db.VarChar(20)
+  // Wall-clock departure at the origin airport, "HH:mm" 24h.
+  departureTimeLocal String             @map("departure_time_local") @db.VarChar(5)
+  operatingDays      Weekday[]          @map("operating_days")
+  effectiveFrom      DateTime           @map("effective_from") @db.Date
+  effectiveTo        DateTime           @map("effective_to") @db.Date
+  status             ScheduleRuleStatus @default(ACTIVE) @map("status")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  route    Route    @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  aircraft Aircraft @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  flights  Flight[]
+
+  @@map("schedule_rules")
+}

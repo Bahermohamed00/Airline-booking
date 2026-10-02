@@ -1,0 +1,11 @@
+model NotificationTemplate {
+  id      String  @id @default(uuid()) @db.Uuid
+  code    String  @unique @db.VarChar(50)
+  subject String? @db.VarChar(255)
+  body    String  @db.Text
+  channel NotificationChannel @default(EMAIL)
+
+  notifications Notification[]
+
+  @@map("notification_templates")
+}

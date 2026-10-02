@@ -1,0 +1,26 @@
+model Airport {
+  id        String   @id @default(uuid()) @db.Uuid
+  iataCode  String   @unique @map("iata_code") @db.VarChar(3)
+  icaoCode  String?  @map("icao_code") @db.VarChar(4)
+  name      String   @db.VarChar(200)
+  city      String   @db.VarChar(100)
+  country   String   @db.VarChar(100)
+  timezone  String   @db.VarChar(100)
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
+  status    AirportStatus @default(ACTIVE)
+
+  routesOrigin      Route[]         @relation("RouteOrigin")
+  routesDestination Route[]         @relation("RouteDestination")
+  flightSegmentsOrigin      FlightSegment[] @relation("FlightSegmentOrigin")
+  flightSegmentsDestination FlightSegment[] @relation("FlightSegmentDestination")
+
+  @@map("airports")
+}
+
+enum AirportStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("airport_status")
+}

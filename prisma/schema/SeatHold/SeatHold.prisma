@@ -1,0 +1,30 @@
+model SeatHold {
+  id        String      @id @default(uuid()) @db.Uuid
+  flightId  String      @map("flight_id") @db.Uuid
+  seatId    String      @map("seat_id") @db.Uuid
+  userId    String?     @map("user_id") @db.Uuid
+  bookingId String?     @map("booking_id") @db.Uuid
+  sessionId String?     @map("session_id") @db.VarChar(255)
+  status    SeatHoldStatus @default(ACTIVE)
+  expiresAt DateTime    @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  flight  Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  seat    Seat     @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([status, expiresAt])
+  @@index([flightId, seatId])
+  @@map("seat_holds")
+}
+
+enum SeatHoldStatus {
+  ACTIVE
+  EXPIRED
+  CONVERTED
+  RELEASED
+
+  @@map("seat_hold_status")
+}

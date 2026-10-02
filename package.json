@@ -16,14 +16,20 @@
     "web:dev": "npm run start --workspace=apps/web",
     "web:build": "npm run build --workspace=apps/web",
     "web:test": "npm run test --workspace=apps/web",
-    "db:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
-    "db:migrate:prod": "prisma migrate deploy --schema=prisma/schema.prisma",
-    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "shared:build": "npm run build --workspace=packages/shared",
+    "build": "npm run shared:build && npm run api:build && npm run web:build",
+    "test": "npm run api:test && npm run web:test",
+    "db:migrate": "prisma migrate dev --schema=prisma/schema",
+    "db:migrate:prod": "prisma migrate deploy --schema=prisma/schema",
+    "db:generate": "prisma generate --schema=prisma/schema",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio --schema=prisma/schema.prisma",
-    "db:reset": "prisma migrate reset --schema=prisma/schema.prisma --force",
-    "lint": "eslint . --ext .ts,.tsx",
+    "db:studio": "prisma studio --schema=prisma/schema",
+    "db:reset": "prisma migrate reset --schema=prisma/schema --force",
+    "lint": "npm run lint --workspace=apps/api",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
+  },
+  "prisma": {
+    "schema": "prisma/schema"
   },
   "devDependencies": {
     "@types/node": "^22.15.18",

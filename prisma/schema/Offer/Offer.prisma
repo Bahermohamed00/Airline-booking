@@ -1,0 +1,28 @@
+enum OfferStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  EXPIRED
+
+  @@map("offer_status")
+}
+
+model Offer {
+  id          String      @id @default(uuid()) @db.Uuid
+  // Marketing/catalog data only — deliberately no relation to fares/bookings.
+  title       String      @unique @db.VarChar(120)
+  description String      @db.VarChar(600)
+  badge       String?     @db.VarChar(60)
+  destination String?     @db.VarChar(120)
+  offerValue  String?     @map("offer_value") @db.VarChar(60)
+  terms       String?     @db.VarChar(600)
+  imageUrl    String?     @map("image_url") @db.VarChar(500)
+  status      OfferStatus @default(DRAFT)
+  validFrom   DateTime    @map("valid_from") @db.Date
+  validUntil  DateTime    @map("valid_until") @db.Date
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, validFrom, validUntil])
+  @@map("offers")
+}

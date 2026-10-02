@@ -1,0 +1,13 @@
+model BaggageEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  baggageId String   @map("baggage_id") @db.Uuid
+  eventType String   @map("event_type") @db.VarChar(50)
+  location  String?  @db.VarChar(100)
+  metadata  Json?    @db.JsonB
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  baggage Baggage @relation(fields: [baggageId], references: [id], onDelete: Cascade)
+
+  @@index([baggageId, occurredAt])
+  @@map("baggage_events")
+}

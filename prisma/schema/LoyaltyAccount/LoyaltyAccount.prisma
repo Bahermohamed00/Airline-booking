@@ -1,0 +1,23 @@
+model LoyaltyAccount {
+  id           String @id @default(uuid()) @db.Uuid
+  userId       String @unique @map("user_id") @db.Uuid
+  memberNumber String @unique @map("member_number") @db.VarChar(50)
+  tier         LoyaltyTier @default(MEMBER)
+  balance      Int    @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions LoyaltyTransaction[]
+
+  @@map("loyalty_accounts")
+}
+
+enum LoyaltyTier {
+  MEMBER
+  SILVER
+  GOLD
+  HON_CIRCLE
+
+  @@map("loyalty_tier")
+}

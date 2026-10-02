@@ -1,0 +1,23 @@
+model Route {
+  id                   String @id @default(uuid()) @db.Uuid
+  originAirportId      String @map("origin_airport_id") @db.Uuid
+  destinationAirportId String @map("destination_airport_id") @db.Uuid
+  distanceKm           Int?   @map("distance_km")
+  durationMinutes      Int?   @map("duration_minutes")
+  status               RouteStatus @default(ACTIVE)
+
+  originAirport      Airport   @relation("RouteOrigin", fields: [originAirportId], references: [id], onDelete: Restrict)
+  destinationAirport Airport   @relation("RouteDestination", fields: [destinationAirportId], references: [id], onDelete: Restrict)
+  flights            Flight[]
+  scheduleRules      ScheduleRule[]
+
+  @@unique([originAirportId, destinationAirportId])
+  @@map("routes")
+}
+
+enum RouteStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("route_status")
+}

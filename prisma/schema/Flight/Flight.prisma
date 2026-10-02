@@ -1,0 +1,47 @@
+model Flight {
+  id             String      @id @default(uuid()) @db.Uuid
+  flightNumber   String      @map("flight_number") @db.VarChar(20)
+  routeId        String      @map("route_id") @db.Uuid
+  aircraftId     String      @map("aircraft_id") @db.Uuid
+  scheduleRuleId String?     @map("schedule_rule_id") @db.Uuid
+  // Origin-local calendar date this flight operates on; with scheduleRuleId it
+  // forms the idempotency key for rule-based generation.
+  operatingDate  DateTime?   @map("operating_date") @db.Date
+  departureTime  DateTime    @map("departure_time") @db.Timestamptz(6)
+  arrivalTime    DateTime    @map("arrival_time") @db.Timestamptz(6)
+  status         FlightStatus @default(SCHEDULED)
+  scheduleStatus FlightScheduleStatus @default(ONTIME) @map("schedule_status")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  route        Route          @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  aircraft     Aircraft       @relation(fields: [aircraftId], references: [id], onDelete: Restrict)
+  scheduleRule ScheduleRule?  @relation(fields: [scheduleRuleId], references: [id], onDelete: SetNull)
+  segments     FlightSegment[]
+  fares        Fare[]
+  seatHolds    SeatHold[]
+
+  @@unique([scheduleRuleId, operatingDate])
+  @@index([operatingDate])
+  @@index([departureTime])
+  @@index([status])
+  @@map("flights")
+}
+
+enum FlightStatus {
+  SCHEDULED
+  ACTIVE
+  DELAYED
+  CANCELLED
+  COMPLETED
+
+  @@map("flight_status")
+}
+
+enum FlightScheduleStatus {
+  ONTIME
+  DELAYED
+  CANCELLED
+
+  @@map("flight_schedule_status")
+}

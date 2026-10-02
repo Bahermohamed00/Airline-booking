@@ -1,0 +1,23 @@
+model Aircraft {
+  id         String   @id @default(uuid()) @db.Uuid
+  registration String @unique @db.VarChar(50)
+  model      String   @db.VarChar(100)
+  capacity   Int
+  status     AircraftStatus @default(ACTIVE)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  seats   Seat[]
+  flights Flight[]
+  scheduleRules ScheduleRule[]
+
+  @@map("aircraft")
+}
+
+enum AircraftStatus {
+  ACTIVE
+  MAINTENANCE
+  RETIRED
+
+  @@map("aircraft_status")
+}

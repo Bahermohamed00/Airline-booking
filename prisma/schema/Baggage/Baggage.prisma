@@ -1,0 +1,34 @@
+model Baggage {
+  id                 String @id @default(uuid()) @db.Uuid
+  bookingPassengerId String @map("booking_passenger_id") @db.Uuid
+  type               BaggageType @default(CHECKED)
+  weightKg           Int?   @map("weight_kg")
+  pieces             Int    @default(1)
+  tagNumber          String? @unique @map("tag_number") @db.VarChar(50)
+  status             BaggageStatus @default(CHECKED_IN)
+
+  bookingPassenger BookingPassenger @relation(fields: [bookingPassengerId], references: [id], onDelete: Cascade)
+  events           BaggageEvent[]
+
+  @@map("baggage")
+}
+
+enum BaggageType {
+  CARRY_ON
+  CHECKED
+  SPECIAL
+
+  @@map("baggage_type")
+}
+
+enum BaggageStatus {
+  CHECKED_IN
+  LOADED
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
+  LOST
+  DELAYED
+
+  @@map("baggage_status")
+}
