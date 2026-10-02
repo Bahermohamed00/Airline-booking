@@ -51,7 +51,7 @@ npm run db:migrate
 For the test database (required for e2e tests):
 
 ```bash
-DATABASE_URL=postgresql://airline:AymanAnwar24@@localhost:5432/airline_booking_test?schema=public npx prisma migrate deploy --schema=prisma/schema.prisma
+DATABASE_URL=postgresql://airline:airline@localhost:5432/airline_booking_test?schema=public npx prisma migrate deploy --schema=prisma/schema
 ```
 
 ## 5. Seed the database
