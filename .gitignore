@@ -46,10 +46,7 @@ testem.log
 .DS_Store
 Thumbs.db
 
-# Env
-.env
-.env.*
-!.env.example
+
 
 # Logs
 logs
@@ -59,3 +56,5 @@ logs
 prisma/test.db
 *.sqlite
 *.sqlite3
+
+.github
