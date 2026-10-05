@@ -1,8 +1,7 @@
 # ============================================================================
 # NovaAir CODEOWNERS — two-developer ownership model
 #
-# Replace these placeholders with the real GitHub usernames of the two
-# developers (they could not be verified from repository metadata):
+# Developers:
 #   @aymananwar602-cmyk  — Customer & Revenue
 #   @Bahermohamed00  — Operations & Platform
 #
@@ -13,72 +12,72 @@
 # ============================================================================
 
 # ---- Default: Operations & Platform owns anything not overridden below ----
-*                                                          @DEVELOPER_B
+*                                                          @Bahermohamed00
 
 # ---- Shared / cross-cutting (either owner may approve) ----
-/apps/api/src/app.module.ts                                @DEVELOPER_A @DEVELOPER_B
-/apps/web/src/app/app.routes.ts                            @DEVELOPER_A @DEVELOPER_B
-/package.json                                              @DEVELOPER_A @DEVELOPER_B
-/package-lock.json                                         @DEVELOPER_A @DEVELOPER_B
-/docs/                                                     @DEVELOPER_A @DEVELOPER_B
-/.github/                                                  @DEVELOPER_A @DEVELOPER_B
-/prisma/migrations/                                        @DEVELOPER_A @DEVELOPER_B
+/apps/api/src/app.module.ts                                @aymananwar602-cmyk @Bahermohamed00
+/apps/web/src/app/app.routes.ts                            @aymananwar602-cmyk @Bahermohamed00
+/package.json                                              @aymananwar602-cmyk @Bahermohamed00
+/package-lock.json                                         @aymananwar602-cmyk @Bahermohamed00
+/docs/                                                     @aymananwar602-cmyk @Bahermohamed00
+/.github/                                                  @aymananwar602-cmyk @Bahermohamed00
+/prisma/migrations/                                        @aymananwar602-cmyk @Bahermohamed00
 
 # ============================================================================
 # Developer A — Customer & Revenue
 # ============================================================================
 # API modules
-/apps/api/src/bookings/                                    @DEVELOPER_A
-/apps/api/src/payments/                                    @DEVELOPER_A
-/apps/api/src/offers/                                      @DEVELOPER_A
-/apps/api/src/notifications/                               @DEVELOPER_A
+/apps/api/src/bookings/                                    @aymananwar602-cmyk
+/apps/api/src/payments/                                    @aymananwar602-cmyk
+/apps/api/src/offers/                                      @aymananwar602-cmyk
+/apps/api/src/notifications/                               @aymananwar602-cmyk
 
 # Web — customer router + customer-domain pages (booking funnel, account,
 # offers). Note: these are flat component files, not subdirectories.
-/apps/web/src/app/customer.routes.ts                       @DEVELOPER_A
-/apps/web/src/app/features/customer/booking/               @DEVELOPER_A
-/apps/web/src/app/features/customer/my-bookings.component.*    @DEVELOPER_A
-/apps/web/src/app/features/customer/manage-booking.component.* @DEVELOPER_A
-/apps/web/src/app/features/customer/manage-lookup.component.*  @DEVELOPER_A
-/apps/web/src/app/features/customer/offers.component.*         @DEVELOPER_A
+/apps/web/src/app/customer.routes.ts                       @aymananwar602-cmyk
+/apps/web/src/app/features/customer/booking/               @aymananwar602-cmyk
+/apps/web/src/app/features/customer/my-bookings.component.*    @aymananwar602-cmyk
+/apps/web/src/app/features/customer/manage-booking.component.* @aymananwar602-cmyk
+/apps/web/src/app/features/customer/manage-lookup.component.*  @aymananwar602-cmyk
+/apps/web/src/app/features/customer/offers.component.*         @aymananwar602-cmyk
 
 # Prisma — Developer A model files. Every other prisma/schema/<Model>/ defaults
 # to Developer B via the catch-all above. Enums are owned with their model file.
-/prisma/schema/Booking/                                    @DEVELOPER_A
-/prisma/schema/Passenger/                                  @DEVELOPER_A
-/prisma/schema/BookingPassenger/                           @DEVELOPER_A
-/prisma/schema/BookingSeat/                                @DEVELOPER_A
-/prisma/schema/SeatHold/                                   @DEVELOPER_A
-/prisma/schema/Payment/                                    @DEVELOPER_A
-/prisma/schema/Refund/                                     @DEVELOPER_A
-/prisma/schema/Offer/                                      @DEVELOPER_A
-/prisma/schema/ExtraService/                               @DEVELOPER_A
-/prisma/schema/BookingExtra/                               @DEVELOPER_A
-/prisma/schema/Notification/                               @DEVELOPER_A
-/prisma/schema/NotificationTemplate/                       @DEVELOPER_A
+/prisma/schema/Booking/                                    @aymananwar602-cmyk
+/prisma/schema/Passenger/                                  @aymananwar602-cmyk
+/prisma/schema/BookingPassenger/                           @aymananwar602-cmyk
+/prisma/schema/BookingSeat/                                @aymananwar602-cmyk
+/prisma/schema/SeatHold/                                   @aymananwar602-cmyk
+/prisma/schema/Payment/                                    @aymananwar602-cmyk
+/prisma/schema/Refund/                                     @aymananwar602-cmyk
+/prisma/schema/Offer/                                      @aymananwar602-cmyk
+/prisma/schema/ExtraService/                               @aymananwar602-cmyk
+/prisma/schema/BookingExtra/                               @aymananwar602-cmyk
+/prisma/schema/Notification/                               @aymananwar602-cmyk
+/prisma/schema/NotificationTemplate/                       @aymananwar602-cmyk
 
 # ============================================================================
 # Developer B — Operations & Platform
 # (explicit for clarity; these are also covered by the catch-all default)
 # ============================================================================
-/apps/api/src/auth/                                        @DEVELOPER_B
-/apps/api/src/users/                                       @DEVELOPER_B
-/apps/api/src/roles/                                       @DEVELOPER_B
-/apps/api/src/airports/                                    @DEVELOPER_B
-/apps/api/src/aircraft/                                    @DEVELOPER_B
-/apps/api/src/routes/                                      @DEVELOPER_B
-/apps/api/src/schedule-rules/                              @DEVELOPER_B
-/apps/api/src/flights/                                     @DEVELOPER_B
-/apps/api/src/dashboard/                                   @DEVELOPER_B
-/apps/api/src/audit/                                       @DEVELOPER_B
-/apps/api/src/prisma/                                      @DEVELOPER_B
-/apps/api/src/mail/                                        @DEVELOPER_B
-/apps/api/test/                                            @DEVELOPER_B
-/prisma/seed.ts                                            @DEVELOPER_B
-/prisma/seed/                                              @DEVELOPER_B
-/apps/web/src/app/admin.routes.ts                          @DEVELOPER_B
-/apps/web/src/app/features/admin/                          @DEVELOPER_B
-/apps/web/src/app/shared/                                  @DEVELOPER_B
-/apps/web/src/app/core/guards/                             @DEVELOPER_B
-/apps/web/src/app/core/interceptors/                       @DEVELOPER_B
-/apps/web/src/app/core/config/                             @DEVELOPER_B
+/apps/api/src/auth/                                        @Bahermohamed00
+/apps/api/src/users/                                       @Bahermohamed00
+/apps/api/src/roles/                                       @Bahermohamed00
+/apps/api/src/airports/                                    @Bahermohamed00
+/apps/api/src/aircraft/                                    @Bahermohamed00
+/apps/api/src/routes/                                      @Bahermohamed00
+/apps/api/src/schedule-rules/                              @Bahermohamed00
+/apps/api/src/flights/                                     @Bahermohamed00
+/apps/api/src/dashboard/                                   @Bahermohamed00
+/apps/api/src/audit/                                       @Bahermohamed00
+/apps/api/src/prisma/                                      @Bahermohamed00
+/apps/api/src/mail/                                        @Bahermohamed00
+/apps/api/test/                                            @Bahermohamed00
+/prisma/seed.ts                                            @Bahermohamed00
+/prisma/seed/                                              @Bahermohamed00
+/apps/web/src/app/admin.routes.ts                          @Bahermohamed00
+/apps/web/src/app/features/admin/                          @Bahermohamed00
+/apps/web/src/app/shared/                                  @Bahermohamed00
+/apps/web/src/app/core/guards/                             @Bahermohamed00
+/apps/web/src/app/core/interceptors/                       @Bahermohamed00
+/apps/web/src/app/core/config/                             @Bahermohamed00
