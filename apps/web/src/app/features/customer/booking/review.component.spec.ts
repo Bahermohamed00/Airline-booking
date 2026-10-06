@@ -21,6 +21,16 @@ const SEAT: Seat = {
   isExitRow: false,
 };
 
+const SEAT_B: Seat = {
+  id: 's-e-10b',
+  aircraftId: 'ac-1',
+  seatNumber: '10B',
+  cabinClass: 'ECONOMY',
+  seatRow: 10,
+  seatColumn: 'B',
+  isExitRow: false,
+};
+
 const FLIGHT = {
   id: 'fl-1',
   flightNumber: 'NV100',
@@ -95,7 +105,7 @@ function makeDraft(overrides: Partial<BookingDraft> = {}): BookingDraft {
     ],
     contactEmail: 'aya@example.com',
     contactPhone: '',
-    seats: [{ passengerIndex: 0, seat: SEAT }],
+    seats: [{ passengerIndex: 0, seat: SEAT }, { passengerIndex: 1, seat: SEAT_B }],
     returnSeats: [],
     extras: [],
     baggagePieces: [0, 0],
@@ -185,9 +195,10 @@ describe('ReviewPage', () => {
     expect(bookingService.create).toHaveBeenCalledOnce();
     const payload = bookingService.create.mock.calls[0][0] as CreateBookingPayload;
     expect(payload).toEqual({
+      idempotencyKey: expect.any(String),
       flightId: 'fl-1',
       cabinClass: 'ECONOMY',
-      seatIds: ['s-e-10a'],
+      seatIds: ['s-e-10a', 's-e-10b'],
       passengers: [
         {
           passengerType: 'ADULT',
@@ -201,9 +212,23 @@ describe('ReviewPage', () => {
       ],
       contactEmail: 'aya@example.com',
     });
-    expect(Object.keys(payload).sort()).toEqual(['cabinClass', 'contactEmail', 'flightId', 'passengers', 'seatIds']);
+    // UUID v4 — the server validates the format strictly.
+    expect(payload.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(Object.keys(payload).sort()).toEqual(['cabinClass', 'contactEmail', 'flightId', 'idempotencyKey', 'passengers', 'seatIds']);
     for (const forbidden of ['userId', 'status', 'totalAmount', 'bookingReference', 'payments', 'extras', 'promo', 'flightSegmentId', 'passengerId']) {
       expect(payload).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it('sends the user back to seat selection instead of calling the API when seats are missing', async () => {
+    const cases: BookingDraft['seats'][] = [[], [{ passengerIndex: 0, seat: SEAT }]];
+    for (const seats of cases) {
+      TestBed.resetTestingModule();
+      const { fixture, el, bookingService, navigateSpy } = await setup({ draft: makeDraft({ seats }) });
+      await consentAndSubmit(fixture, el);
+
+      expect(bookingService.create).not.toHaveBeenCalled();
+      expect(navigateSpy).toHaveBeenCalledWith(['/booking/seats']);
     }
   });
 
@@ -293,6 +318,42 @@ describe('ReviewPage', () => {
 
     expect(el.textContent).toContain('could not be created');
     expect(el.querySelector('.confirm .alert__retry')).not.toBeNull();
+  });
+
+  it('reuses the same idempotency key when a retryable failure is retried', async () => {
+    const create = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ status: 500 })))
+      .mockReturnValueOnce(of(BOOKING));
+    const { fixture, el, navigateSpy } = await setup({ create });
+    await consentAndSubmit(fixture, el);
+
+    (el.querySelector('.confirm .alert__retry') as HTMLButtonElement).click();
+    await settle(fixture);
+
+    expect(create).toHaveBeenCalledTimes(2);
+    const first = create.mock.calls[0][0] as CreateBookingPayload;
+    const second = create.mock.calls[1][0] as CreateBookingPayload;
+    expect(second.idempotencyKey).toBe(first.idempotencyKey);
+    expect(navigateSpy).toHaveBeenCalledWith(['/booking/confirmation'], { queryParams: { id: 'bk-1' } });
+  });
+
+  it('generates a fresh idempotency key after a non-retryable rejection', async () => {
+    const create = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ status: 400, error: { message: 'bad request' } })))
+      .mockReturnValueOnce(of(BOOKING));
+    const { fixture, el } = await setup({ create });
+    await consentAndSubmit(fixture, el);
+
+    // The user can correct and resubmit — that is a new logical request.
+    confirmButton(el).click();
+    await settle(fixture);
+
+    expect(create).toHaveBeenCalledTimes(2);
+    const first = create.mock.calls[0][0] as CreateBookingPayload;
+    const second = create.mock.calls[1][0] as CreateBookingPayload;
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
   });
 
   it('requires the terms acknowledgement before submitting', async () => {

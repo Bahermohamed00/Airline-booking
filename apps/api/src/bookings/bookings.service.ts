@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { generateBookingReference } from './booking-reference.js';
+import { hashCreateBookingRequest } from './booking-idempotency.js';
+import { resolveSeatHoldMinutes } from './seat-hold-config.js';
 import { refundPolicyFromFareRules } from '../payments/refund-policy.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
 import { AdminBookingQueryDto } from './dto/admin-booking-query.dto.js';
@@ -49,10 +51,19 @@ export class BookingsService {
   // ---------- Customer ----------
 
   async create(user: AuthUser, dto: CreateBookingDto) {
+    const requestHash = hashCreateBookingRequest(dto);
+    // Idempotent replay: same customer + same key returns the original booking;
+    // the same key with a materially different request conflicts. Lookups are
+    // scoped to the authenticated user, so a key never leaks across customers.
+    const existing = await this.findByIdempotencyKey(user.userId, dto.idempotencyKey);
+    if (existing) {
+      return this.replayIdempotent(existing, requestHash);
+    }
+
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS; attempt++) {
       try {
-        const booking = await this.createAttempt(user, dto);
+        const booking = await this.createAttempt(user, dto, requestHash);
         const flightNumber = booking.seatHolds[0]?.flight.flightNumber;
         await this.logBookingEvent('BOOKING_CREATED', user, booking, { flightNumber });
         await this.logBookingEvent('SEAT_HELD', user, booking, {
@@ -63,6 +74,16 @@ export class BookingsService {
         return this.toView(booking);
       } catch (error) {
         lastError = error;
+        if (this.isIdempotencyConflict(error)) {
+          // Lost a concurrent same-key race: the (user_id, idempotency_key)
+          // unique index serializes the inserts, so the winning booking is
+          // already committed here. Replay it — exactly one booking exists.
+          const winner = await this.findByIdempotencyKey(user.userId, dto.idempotencyKey);
+          if (winner) {
+            return this.replayIdempotent(winner, requestHash);
+          }
+          throw new ConflictException('A booking with this idempotency key is being created concurrently — retry the request');
+        }
         if (attempt < MAX_REFERENCE_ATTEMPTS - 1 && this.isReferenceConflict(error)) continue;
         throw error;
       }
@@ -103,13 +124,45 @@ export class BookingsService {
     }
 
     const released = await this.prisma.$transaction(async (tx) => {
-      await tx.booking.update({ where: { id: booking.id }, data: { status: 'CANCELLED' } });
+      // Atomic compare-and-set: the status predicate is part of the UPDATE, so
+      // a booking confirmed concurrently (PENDING→CONFIRMED by payment) never
+      // matches — exactly one of the two transitions can win. An unconditional
+      // update-by-id would be a TOCTOU race against payment confirmation.
+      const cas = await tx.booking.updateMany({
+        where: { id: booking.id, userId: user.userId, status: 'PENDING' },
+        data: { status: 'CANCELLED' },
+      });
+      if (cas.count !== 1) {
+        return null;
+      }
+      // A cancelled booking must never hold seat inventory. PENDING bookings
+      // have no BookingSeat rows by construction (they are created only at
+      // payment confirmation); the scoped delete enforces the invariant
+      // unconditionally. Booking, passenger and payment history are preserved.
+      await tx.bookingSeat.deleteMany({
+        where: { bookingPassenger: { bookingId: booking.id } },
+      });
       const holds = await tx.seatHold.updateMany({
         where: { bookingId: booking.id, status: 'ACTIVE' },
         data: { status: 'RELEASED' },
       });
       return holds.count;
     });
+
+    if (released === null) {
+      // The CAS lost a concurrent race — report the transition that won.
+      const current = await this.prisma.booking.findFirst({
+        where: { id: booking.id },
+        select: { status: true },
+      });
+      if (!current) {
+        throw new NotFoundException('Booking not found');
+      }
+      if (current.status === 'CANCELLED') {
+        throw new ConflictException('Booking is already cancelled');
+      }
+      throw new ConflictException('Only bookings awaiting payment can be cancelled at this time');
+    }
 
     await this.logBookingEvent('BOOKING_CANCELLED', user, booking);
     if (released > 0) {
@@ -152,9 +205,9 @@ export class BookingsService {
 
   // ---------- Creation internals ----------
 
-  private createAttempt(user: AuthUser, dto: CreateBookingDto): Promise<BookingWithRelations> {
+  private createAttempt(user: AuthUser, dto: CreateBookingDto, requestHash: string): Promise<BookingWithRelations> {
     const bookingReference = generateBookingReference();
-    const holdMinutes = Number(this.config.get('SEAT_HOLD_MINUTES') ?? 15);
+    const holdMinutes = resolveSeatHoldMinutes(this.config.get('SEAT_HOLD_MINUTES'));
     const holdExpiresAt = new Date(Date.now() + holdMinutes * 60000);
 
     return this.prisma.$transaction(async (tx) => {
@@ -163,7 +216,9 @@ export class BookingsService {
         include: {
           route: true,
           fares: { where: { cabinClass: dto.cabinClass } },
-          segments: { where: { segmentNumber: 1 }, select: { id: true } },
+          // Payment confirmation creates BookingSeat rows for EVERY segment, so
+          // creation must validate seat availability against all of them too.
+          segments: { orderBy: { segmentNumber: 'asc' }, select: { id: true } },
         },
       })) as FlightForValidation | null;
       if (!flight) {
@@ -174,6 +229,11 @@ export class BookingsService {
       }
       if (flight.departureTime.getTime() <= Date.now()) {
         throw new ConflictException(`Flight ${flight.flightNumber} has already departed`);
+      }
+      if (flight.segments.length === 0) {
+        // Same precondition as payment confirmation — a segmentless flight
+        // could never receive BookingSeat rows, so reject it at creation.
+        throw new ConflictException(`Flight ${flight.flightNumber} has no segments — seats cannot be assigned`);
       }
       const fare = flight.fares[0];
       if (!fare) {
@@ -244,6 +304,8 @@ export class BookingsService {
         data: {
           bookingReference,
           userId: user.userId,
+          idempotencyKey: dto.idempotencyKey,
+          idempotencyRequestHash: requestHash,
           status: 'PENDING',
           totalAmount,
           currency: fare.currency,
@@ -310,6 +372,28 @@ export class BookingsService {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
     const target = (error.meta as { target?: unknown } | undefined)?.target;
     return Array.isArray(target) && target.includes('booking_reference');
+  }
+
+  /** P2002 on the (user_id, idempotency_key) unique index — a concurrent same-key create won. */
+  private isIdempotencyConflict(error: unknown): boolean {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
+    const target = (error.meta as { target?: unknown } | undefined)?.target;
+    return Array.isArray(target) && target.includes('idempotency_key');
+  }
+
+  private findByIdempotencyKey(userId: string, idempotencyKey: string): Promise<BookingWithRelations | null> {
+    return this.prisma.booking.findUnique({
+      where: { userId_idempotencyKey: { userId, idempotencyKey } },
+      include: BOOKING_INCLUDE,
+    }) as Promise<BookingWithRelations | null>;
+  }
+
+  /** Replays a booking found by idempotency key; identical requests get the original result, different ones conflict. */
+  private replayIdempotent(existing: BookingWithRelations, requestHash: string) {
+    if (existing.idempotencyRequestHash !== requestHash) {
+      throw new ConflictException('Idempotency key was already used with a different booking request');
+    }
+    return this.toView(existing);
   }
 
   private async logBookingEvent(action: string, user: AuthUser, booking: Booking, metadata?: Record<string, unknown>): Promise<void> {

@@ -231,6 +231,18 @@ describe('PassengersPage saved-traveller autofill', () => {
     expect(cards.length).toBe(1);
     expect(cards[0].textContent).toContain('Your profile');
   });
+
+  it('shows special assistance as coming soon, disabled, and keeps the form valid', async () => {
+    const { fixture, el } = await setup();
+    const input = el.querySelector<HTMLInputElement>('#sa-0');
+    expect(input).not.toBeNull();
+    expect(input!.disabled).toBe(true);
+    expect(el.querySelector('label[for="sa-0"]')?.textContent).toContain('Coming soon');
+
+    cardFor(el, 'Lena Hoffmann').click();
+    await settle(fixture);
+    expect(fixture.componentInstance.passengersArray.at(0).valid).toBe(true);
+  });
 });
 
 // `form` is protected on PassengersPage; reach it through a structural view

@@ -6,9 +6,15 @@ model Booking {
   totalAmount     Decimal       @map("total_amount") @db.Decimal(12, 2)
   currency        String        @db.VarChar(3)
   bookedAt        DateTime      @default(now()) @map("booked_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   contactEmail    String        @map("contact_email") @db.VarChar(255)
   contactPhone    String?       @map("contact_phone") @db.VarChar(50)
   fareRulesSnapshot Json?       @map("fare_rules_snapshot") @db.JsonB
+  // Client-supplied creation idempotency key (UUID v4) + a hash of the logical
+  // request. Unique per customer so retries replay, collisions across users are
+  // impossible, and key reuse with a different payload conflicts.
+  idempotencyKey  String?       @map("idempotency_key") @db.VarChar(36)
+  idempotencyRequestHash String? @map("idempotency_request_hash") @db.VarChar(64)
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   bookingPassengers BookingPassenger[]
@@ -19,6 +25,7 @@ model Booking {
   auditLogs        AuditLog[]
   seatHolds        SeatHold[]
 
+  @@unique([userId, idempotencyKey])
   @@index([userId, bookedAt])
   @@map("bookings")
 }

@@ -27,7 +27,7 @@ const STATE_LABELS: Record<SeatMapState, string> = {
     <div class="na-container page">
       <na-stepper [steps]="steps" [currentIndex]="2" />
       <h1>Choose your seats</h1>
-      <p class="page__sub na-text-muted">Select a seat for each traveller, or skip and we'll assign seats at check-in.</p>
+      <p class="page__sub na-text-muted">Select a seat for each traveller to continue.</p>
 
       @if (conflictNotice()) {
         <na-alert tone="danger" icon="⚠" title="Those seats were just taken" [dismissible]="true" (dismissed)="conflictNotice.set(false)">
@@ -160,9 +160,11 @@ const STATE_LABELS: Record<SeatMapState, string> = {
             }
           </ul>
           <p class="side__note na-text-small">Seats are included at no charge.</p>
+          <p class="side__progress na-text-small" aria-live="polite">{{ selectedCount() }} of {{ passengers().length }} selected</p>
+          @if (!canContinue()) { <p class="na-hint">Select a seat for each traveller to continue.</p> }
           <div class="side__actions">
             <na-button variant="secondary" (clicked)="back()">Back</na-button>
-            <na-button variant="cta" (clicked)="continue()">Continue to extras</na-button>
+            <na-button variant="cta" [disabled]="!canContinue()" (clicked)="continue()">Continue to extras</na-button>
           </div>
         </aside>
       </div>
@@ -253,6 +255,13 @@ export class SeatsPage {
   protected readonly rows = computed(() => this.seatsApi.seatMapRows(this.catalog()));
 
   protected readonly selectedIds = computed(() => new Set(this.selections().map((s) => s.seat.id)));
+
+  protected readonly selectedCount = computed(() => this.selections().length);
+
+  protected readonly canContinue = computed(() => {
+    const n = this.passengers().length;
+    return n > 0 && this.selections().length === n;
+  });
 
   protected readonly holdExpires = this.draft.seatHoldExpiresAt;
 
@@ -381,6 +390,7 @@ export class SeatsPage {
   }
 
   protected continue(): void {
+    if (!this.canContinue()) return;
     this.draft.setSeats(this.selections(), []);
     this.router.navigateByUrl('/booking/extras');
   }

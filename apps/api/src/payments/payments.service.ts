@@ -462,8 +462,9 @@ export class PaymentsService {
 
   /**
    * Admin cancellation. PENDING bookings release their holds; CONFIRMED
-   * bookings keep their BookingSeat history but the seat inventory is freed by
-   * the CANCELLED status (seat availability excludes cancelled bookings).
+   * bookings additionally release their BookingSeat rows inside the same
+   * transaction, so the physical seats become resalable immediately — the
+   * booking record, passenger history, payments and refunds are all preserved.
    * A successful payment is auto-refunded per the fare refund policy snapshot
    * (BR-15); when no policy is configured, payment data is preserved untouched
    * and the response explains that a manual refund is required.
@@ -526,7 +527,7 @@ export class PaymentsService {
     // Transaction 1: cancel the booking and record the refund as PENDING under
     // the payment row lock — before any money moves at the provider. A provider
     // refund can never be un-done, so it must never precede the database record.
-    const { releasedCount, refund } = await this.prisma.$transaction(
+    const { releasedCount, releasedSeatCount, refund } = await this.prisma.$transaction(
       async (tx) => {
         const cas = await tx.booking.updateMany({
           where: { id: booking.id, status: { in: ['PENDING', 'CONFIRMED'] } },
@@ -537,6 +538,14 @@ export class PaymentsService {
             'Booking was modified concurrently — reload and try again',
           );
         }
+        // Release the seat inventory in the same transaction as the CAS: only
+        // this booking's BookingSeat rows are removed (CONFIRMED bookings only;
+        // a PENDING booking has none), so a cancelled booking can never keep
+        // blocking a physical seat. The unique(flightSegmentId, seatId)
+        // constraint then lets a new confirmed booking take the released seat.
+        const seats = await tx.bookingSeat.deleteMany({
+          where: { bookingPassenger: { bookingId: booking.id } },
+        });
         const released = await tx.seatHold.updateMany({
           where: { bookingId: booking.id, status: 'ACTIVE' },
           data: { status: 'RELEASED' },
@@ -577,7 +586,7 @@ export class PaymentsService {
             },
           });
         }
-        return { releasedCount: released.count, refund };
+        return { releasedCount: released.count, releasedSeatCount: seats.count, refund };
       },
     );
 
@@ -647,6 +656,7 @@ export class PaymentsService {
     const view = await this.bookings.getBookingView(booking.id);
     await this.logBookingEvent('BOOKING_CANCELLED', staff, booking, {
       reason: dto.reason,
+      releasedSeatCount,
     });
     if (releasedCount > 0) {
       await this.logBookingEvent('SEAT_HOLD_RELEASED', staff, booking, {

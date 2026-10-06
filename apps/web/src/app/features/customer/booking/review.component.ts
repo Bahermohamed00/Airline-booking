@@ -26,8 +26,8 @@ import { BOOKING_STEPS } from './passengers.component';
       @if (draft(); as d) {
         @if (holdWarning()) {
           <na-alert tone="warning" icon="⏱" title="Seat selection timed out">
-            Your seat selection timed out, so the seats were released — you can
-            <a routerLink="/booking/seats">choose seats again</a> or continue without reserved seats.
+            Your seat selection timed out. You can
+            <a routerLink="/booking/seats">choose your seats again</a>; availability is checked when you confirm.
           </na-alert>
         }
 
@@ -206,6 +206,15 @@ export class ReviewPage {
   protected readonly submitErrorRetryable = signal(false);
 
   /**
+   * Idempotency key for booking creation, generated once per submit attempt
+   * and reused verbatim when a retryable failure is retried — the server then
+   * replays the original booking instead of creating a duplicate. Cleared on
+   * success and whenever the payload must change (4xx), so a changed request
+   * always gets a fresh key.
+   */
+  private idempotencyKey: string | null = null;
+
+  /**
    * Server-consistent figures: the server prices a booking as fare components
    * × passenger count. There are no seat charges, extras or discounts.
    */
@@ -249,9 +258,17 @@ export class ReviewPage {
       return;
     }
 
+    // The API rejects empty/short seatIds with 400, and payment requires holds == passengers.
+    if (d.seats.length !== d.passengers.length) {
+      this.router.navigate(['/booking/seats']);
+      return;
+    }
+
     // Exactly the CreateBookingDto contract — the server owns identity (JWT),
     // booking reference, status and totals; never send client-computed fields.
+    this.idempotencyKey ??= crypto.randomUUID();
     const payload: CreateBookingPayload = {
+      idempotencyKey: this.idempotencyKey,
       flightId: d.outbound.id,
       cabinClass: d.fare.cabinClass,
       seatIds: d.seats.map((s) => s.seat.id),
@@ -272,6 +289,7 @@ export class ReviewPage {
     this.bookings.create(payload).subscribe({
       next: (booking) => {
         this.submitting.set(false);
+        this.idempotencyKey = null;
         this.draftApi.setConfirmedBooking(booking);
         this.router.navigate(['/booking/confirmation'], { queryParams: { id: booking.id } });
       },
@@ -286,6 +304,8 @@ export class ReviewPage {
         this.router.navigate(['/login'], { queryParams: { returnUrl: '/booking/review' } });
         return;
       case 400: {
+        // The payload itself was rejected — a corrected request needs a new key.
+        this.idempotencyKey = null;
         const message = (err.error as { message?: string | string[] } | undefined)?.message;
         this.submitError.set(
           Array.isArray(message)
@@ -296,16 +316,20 @@ export class ReviewPage {
         return;
       }
       case 404:
+        this.idempotencyKey = null;
         this.submitError.set('This flight is no longer available. Please start a new search.');
         this.submitErrorRetryable.set(false);
         return;
       case 409:
         // Seat conflict: drop the local selection so the user re-picks from
-        // refreshed availability on the seats page.
+        // refreshed availability on the seats page — a changed seat selection
+        // is a different request and needs a new key.
+        this.idempotencyKey = null;
         this.draftApi.releaseHold();
         this.router.navigate(['/booking/seats'], { state: { seatConflict: true } });
         return;
       default:
+        // Retryable (network/5xx): keep the key so the retry replays idempotently.
         this.submitError.set('The booking could not be created right now. Your details are preserved — you can safely try again.');
         this.submitErrorRetryable.set(true);
     }

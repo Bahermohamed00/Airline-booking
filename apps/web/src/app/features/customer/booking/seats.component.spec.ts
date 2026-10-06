@@ -95,6 +95,15 @@ function seatButton(el: HTMLElement, no: string): HTMLButtonElement {
   return btn;
 }
 
+function continueButton(el: HTMLElement): HTMLButtonElement {
+  const host = Array.from(el.querySelectorAll<HTMLElement>('na-button')).find((b) =>
+    b.textContent?.includes('Continue to extras'),
+  );
+  const btn = host?.querySelector('button');
+  if (!btn) throw new Error('continue button not rendered');
+  return btn;
+}
+
 describe('SeatsPage', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
@@ -153,18 +162,52 @@ describe('SeatsPage', () => {
     expect(summaryRows[1].textContent).toContain('10A');
   });
 
-  it('stores the selection in the draft and continues to extras', async () => {
+  it('stores one seat per traveller in the draft and continues to extras', async () => {
     const { fixture, el, draftService, navigateSpy } = await setup();
     seatButton(el, '10A').click();
     await settle(fixture);
-
-    const continueHost = Array.from(el.querySelectorAll<HTMLElement>('na-button')).find((b) =>
-      b.textContent?.includes('Continue to extras'),
-    )!;
-    continueHost.querySelector('button')!.click();
+    seatButton(el, '10D').click();
     await settle(fixture);
 
-    expect(draftService.setSeats).toHaveBeenCalledWith([{ passengerIndex: 0, seat: ECO_10A }], []);
+    continueButton(el).click();
+    await settle(fixture);
+
+    expect(draftService.setSeats).toHaveBeenCalledWith(
+      [
+        { passengerIndex: 0, seat: ECO_10A },
+        { passengerIndex: 1, seat: ECO_10D },
+      ],
+      [],
+    );
     expect(navigateSpy).toHaveBeenCalledWith('/booking/extras');
+  });
+
+  it('no longer promises that seats can be skipped', async () => {
+    const { el } = await setup();
+    expect(el.textContent).not.toMatch(/skip/i);
+    expect(el.textContent).toContain('Select a seat for each traveller');
+  });
+
+  it('disables Continue and shows progress until every traveller has a seat', async () => {
+    const { fixture, el } = await setup();
+    expect(el.querySelector('.side__progress')?.textContent).toContain('0 of 2 selected');
+    expect(continueButton(el).disabled).toBe(true);
+
+    seatButton(el, '10A').click();
+    await settle(fixture);
+    expect(el.querySelector('.side__progress')?.textContent).toContain('1 of 2 selected');
+    expect(continueButton(el).disabled).toBe(true);
+
+    seatButton(el, '10D').click();
+    await settle(fixture);
+    expect(el.querySelector('.side__progress')?.textContent).toContain('2 of 2 selected');
+    expect(continueButton(el).disabled).toBe(false);
+  });
+
+  it('continue() itself refuses to proceed with missing seats', async () => {
+    const { fixture, draftService, navigateSpy } = await setup();
+    (fixture.componentInstance as any).continue();
+    expect(draftService.setSeats).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 });

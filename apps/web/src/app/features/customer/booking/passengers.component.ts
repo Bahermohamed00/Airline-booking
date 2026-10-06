@@ -196,8 +196,8 @@ interface TravellerOption {
                   }
                 </div>
                 <div class="na-field">
-                  <label class="na-label" [attr.for]="'sa-' + i">Special assistance <span class="na-hint">(optional)</span></label>
-                  <input class="na-input" [id]="'sa-' + i" type="text" formControlName="specialAssistance" placeholder="e.g. Wheelchair, dietary needs" />
+                  <label class="na-label" [attr.for]="'sa-' + i">Special assistance <span class="na-hint">(Coming soon)</span></label>
+                  <input class="na-input" [id]="'sa-' + i" type="text" formControlName="specialAssistance" placeholder="Not available yet" />
                 </div>
               </div>
             </section>
@@ -577,7 +577,7 @@ export class PassengersPage {
           ? [Validators.pattern(PASSPORT_PATTERN)]
           : [Validators.required, Validators.pattern(PASSPORT_PATTERN)],
       ],
-      specialAssistance: [p.specialAssistance ?? ''],
+      specialAssistance: [{ value: '', disabled: true }],
     });
   }
 }

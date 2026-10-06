@@ -19,6 +19,7 @@ export interface BookingPassengerPayload {
 }
 
 export interface CreateBookingPayload {
+  idempotencyKey: string;
   flightId: string;
   cabinClass: CabinClass;
   seatIds: string[];

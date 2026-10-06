@@ -110,7 +110,7 @@ const createMockPrisma = () => {
       findUniqueOrThrow: vi.fn(),
     },
     flightSegment: { findMany: vi.fn().mockResolvedValue([{ id: 'seg-1' }]) },
-    bookingSeat: { create: vi.fn().mockResolvedValue({}) },
+    bookingSeat: { create: vi.fn().mockResolvedValue({}), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     payment: { create: vi.fn(), update: vi.fn().mockResolvedValue({}) },
     refund: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -695,6 +695,27 @@ describe('PaymentsService', () => {
       const actions = audit.log.mock.calls.map((c) => c[0].action);
       expect(actions).toContain('BOOKING_CANCELLED');
       expect(actions).toContain('REFUND_COMPLETED');
+    });
+
+    it('releases the BookingSeat rows of a cancelled CONFIRMED booking so the seats can be resold', async () => {
+      const payment = paymentFixture({ amount: 505, refunds: [] });
+      prisma.booking.findUnique.mockResolvedValue(
+        bookingFixture({ status: 'CONFIRMED', payments: [payment] }),
+      );
+      prisma.__tx.booking.updateMany.mockResolvedValue({ count: 1 });
+      prisma.__tx.seatHold.updateMany.mockResolvedValue({ count: 0 });
+      prisma.__tx.bookingSeat.deleteMany.mockResolvedValue({ count: 2 });
+      prisma.__tx.refund.create.mockResolvedValue({ id: 'refund-1' });
+
+      await service.adminCancelBooking(bookingManager, 'booking-1', { reason: 'Schedule change' });
+
+      // Only this booking's seat assignments are deleted, inside the same
+      // transaction as the CAS; the booking row itself is preserved.
+      expect(prisma.__tx.bookingSeat.deleteMany).toHaveBeenCalledWith({
+        where: { bookingPassenger: { bookingId: 'booking-1' } },
+      });
+      const cancelAudit = audit.log.mock.calls.find((c) => c[0].action === 'BOOKING_CANCELLED');
+      expect(cancelAudit![0].metadata).toMatchObject({ releasedSeatCount: 2 });
     });
 
     it('keeps the booking cancelled and flags manual handling when the provider refund fails', async () => {

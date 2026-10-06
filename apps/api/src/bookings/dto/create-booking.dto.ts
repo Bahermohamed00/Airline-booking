@@ -1,8 +1,14 @@
-import { ArrayNotEmpty, IsArray, IsEmail, IsEnum, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsEmail, IsEnum, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CabinClass, PassengerType } from '@prisma/client';
 import { NormalizeEmail, TrimString } from '../../auth/dto/transforms.js';
 import { ISO_DATE_PATTERN } from '../../schedule-rules/dto/create-schedule-rule.dto.js';
+
+/**
+ * Maximum passengers (and therefore seats) per booking. Matches the standard
+ * airline single-PNR limit; larger groups must book in multiple bookings.
+ */
+export const MAX_BOOKING_PASSENGERS = 9;
 
 export class BookingPassengerDto {
   @IsOptional()
@@ -38,6 +44,14 @@ export class BookingPassengerDto {
 }
 
 export class CreateBookingDto {
+  /**
+   * Client-generated idempotency key (UUID v4). Identical retries must reuse it
+   * — the server replays the original booking; reusing it with a different
+   * request is rejected with 409. Never used as identity or booking reference.
+   */
+  @IsUUID('4')
+  idempotencyKey!: string;
+
   @IsUUID('4')
   flightId!: string;
 
@@ -46,11 +60,13 @@ export class CreateBookingDto {
 
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_BOOKING_PASSENGERS)
   @IsUUID('4', { each: true })
   seatIds!: string[];
 
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_BOOKING_PASSENGERS)
   @ValidateNested({ each: true })
   @Type(() => BookingPassengerDto)
   passengers!: BookingPassengerDto[];
