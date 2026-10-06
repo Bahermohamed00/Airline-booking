@@ -1,0 +1,218 @@
+<div class="page">
+  <na-breadcrumbs [items]="[{ label: 'Overview' }]" />
+  <header class="page__head">
+    <div>
+      <h1>Operations overview</h1>
+      <p class="subtitle">Network performance, today's operations and alerts at a glance.</p>
+    </div>
+    <na-segmented
+      [options]="rangeOptions"
+      [value]="range()"
+      ariaLabel="Trend time range"
+      (valueChange)="setRange($event)"
+    />
+  </header>
+
+  @if (loading()) {
+    <div class="kpi-grid">
+      @for (i of [1, 2, 3, 4, 5, 6, 7, 8, 9]; track i) {
+        <div class="na-card kpi"><na-skeleton [rows]="[1, 2]" height="1.2rem" /></div>
+      }
+    </div>
+  } @else if (loadError()) {
+    <div class="na-card load-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else if (kpis(); as k) {
+    <!-- KPI grid -->
+    <section class="kpi-grid" aria-label="Key performance indicators">
+      @for (card of kpiCards(); track card.key) {
+        <div class="na-card kpi" [class.kpi--accent]="card.accent">
+          <p class="kpi__label">{{ card.label }}</p>
+          <p class="kpi__value">{{ card.value }}</p>
+          <p class="kpi__hint">{{ card.hint }}</p>
+        </div>
+      }
+      <ng-container *naHasPermission="'payments:read'">
+        <div class="na-card kpi kpi--accent">
+          <p class="kpi__label">Revenue</p>
+          <p class="kpi__value">
+            {{ k.revenue === null ? '—' : formatMoney(k.revenue, k.currency) }}
+          </p>
+          <p class="kpi__hint">
+            {{
+              k.revenue === null ? 'Available once payments are implemented' : revenueDeltaHint()
+            }}
+          </p>
+        </div>
+      </ng-container>
+    </section>
+
+    <!-- Trends -->
+    <ng-container *naHasPermission="'payments:read'">
+      <section class="trends">
+        <div class="na-card chart-card">
+          <h3>Revenue trend</h3>
+          <p class="chart-card__sub">Gross bookings revenue · last {{ range() }}</p>
+          @if (k.revenueTrend === null) {
+            <na-empty-state
+              title="No payment data yet"
+              message="Revenue trends will appear here once payment processing is implemented."
+            />
+          } @else {
+            <div
+              class="chart"
+              role="img"
+              [attr.aria-label]="
+                'Revenue bar chart, peak ' + formatMoney(maxOf(revenueBars()), k.currency)
+              "
+            >
+              <svg [attr.viewBox]="viewBox()" preserveAspectRatio="none" aria-hidden="true">
+                @for (bar of revenueBars(); track bar.label; let i = $index) {
+                  <rect
+                    class="bar bar--cta"
+                    [attr.x]="barX(i)"
+                    [attr.y]="100 - bar.heightPct"
+                    [attr.width]="barWidth()"
+                    [attr.height]="bar.heightPct"
+                    rx="1.5"
+                  >
+                    <title>{{ bar.tooltip }}</title>
+                  </rect>
+                }
+              </svg>
+            </div>
+          }
+        </div>
+        <div class="na-card chart-card">
+          <h3>Bookings trend</h3>
+          <p class="chart-card__sub">Bookings per day · last {{ range() }}</p>
+          <div
+            class="chart"
+            role="img"
+            [attr.aria-label]="'Bookings bar chart, peak ' + maxOf(bookingBars()) + ' bookings'"
+          >
+            <svg [attr.viewBox]="viewBox()" preserveAspectRatio="none" aria-hidden="true">
+              @for (bar of bookingBars(); track bar.label; let i = $index) {
+                <rect
+                  class="bar bar--navy"
+                  [attr.x]="barX(i)"
+                  [attr.y]="100 - bar.heightPct"
+                  [attr.width]="barWidth()"
+                  [attr.height]="bar.heightPct"
+                  rx="1.5"
+                >
+                  <title>{{ bar.tooltip }}</title>
+                </rect>
+              }
+            </svg>
+          </div>
+        </div>
+      </section>
+    </ng-container>
+    @if (!canViewRevenue()) {
+      <div class="na-card denied">
+        <na-empty-state
+          icon="🔒"
+          title="Financial data restricted"
+          message="Your role does not include the payments:read permission, so revenue KPIs and trends are hidden."
+        />
+      </div>
+    }
+
+    <div class="columns">
+      <!-- Today's operations -->
+      <section class="na-card ops">
+        <h3>Today's operations</h3>
+        <div class="chips" aria-label="Flight status counts">
+          <na-badge tone="info">{{ k.scheduledCount }} scheduled</na-badge>
+          <na-badge tone="warning">{{ k.delayedCount }} delayed</na-badge>
+          <na-badge tone="danger">{{ k.cancelledCount }} cancelled</na-badge>
+          <na-badge tone="success">{{ k.completedCount }} completed</na-badge>
+        </div>
+        @if (k.todaysFlights.length === 0) {
+          <na-empty-state
+            title="No flights today"
+            message="There are no departures scheduled for today."
+          />
+        } @else {
+          <div class="ops__table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Flight</th>
+                  <th>Route</th>
+                  <th>Time</th>
+                  <th>Aircraft</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (f of k.todaysFlights; track f.id) {
+                  <tr>
+                    <td class="na-text-mono">{{ f.flightNumber }}</td>
+                    <td>{{ f.originIata }} → {{ f.destinationIata }}</td>
+                    <td>{{ formatTime(f.departureTime) }}</td>
+                    <td>{{ f.aircraftRegistration }}</td>
+                    <td>
+                      <na-badge [tone]="flightStatus(f).tone">{{ flightStatus(f).label }}</na-badge>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+
+      <div class="side">
+        <!-- Recent bookings -->
+        <section class="na-card recent">
+          <h3>Recent bookings</h3>
+          @if (k.recentBookings.length === 0) {
+            <na-empty-state
+              title="No bookings yet"
+              message="New bookings will appear here as customers book flights."
+            />
+          } @else {
+            <ul>
+              @for (b of k.recentBookings; track b.id) {
+                <li>
+                  <span class="na-text-mono">{{ b.bookingReference }}</span>
+                  <span class="recent__amount">{{ formatMoney(b.totalAmount, b.currency) }}</span>
+                  <na-badge [tone]="bookingStatus(b).tone">{{ bookingStatus(b).label }}</na-badge>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <!-- Alerts -->
+        <section class="alerts" aria-label="Operational alerts">
+          @if (k.delayedCount > 0) {
+            <na-alert tone="warning" title="Delayed flights" icon="⚠">
+              {{ k.delayedCount }} flight(s) are currently delayed. Review knock-on effects for
+              connections.
+            </na-alert>
+          }
+          @if (k.pendingRefunds > 0) {
+            <na-alert tone="warning" title="Pending refunds" icon="↩">
+              {{ k.pendingRefunds }} refund request(s) are waiting for approval.
+            </na-alert>
+          }
+          @if (k.cancelledCount > 0) {
+            <na-alert tone="danger" title="Cancelled flights" icon="✕">
+              {{ k.cancelledCount }} flight(s) cancelled. Affected passengers may need rebooking.
+            </na-alert>
+          }
+          @if (k.delayedCount === 0 && k.pendingRefunds === 0 && k.cancelledCount === 0) {
+            <na-alert tone="success" title="All clear" icon="✓">
+              No operational issues require attention right now.
+            </na-alert>
+          }
+        </section>
+      </div>
+    </div>
+  }
+</div>

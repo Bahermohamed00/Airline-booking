@@ -1,0 +1,304 @@
+<div class="na-container page">
+  <na-stepper [steps]="steps" [currentIndex]="1" />
+  <h1>Who is travelling?</h1>
+  <p class="na-text-muted">
+    Enter details exactly as they appear on each traveller's travel document.
+  </p>
+
+  <form [formGroup]="form" (ngSubmit)="continue()" novalidate>
+    @if (savedError()) {
+      <na-alert
+        tone="warning"
+        icon="⚠"
+        title="Saved travellers unavailable"
+        retryable
+        (retry)="loadSaved()"
+        class="saved-alert"
+      >
+        We could not load your saved travellers. You can try again, or simply enter the details
+        manually below.
+      </na-alert>
+    }
+
+    <div formArrayName="passengers" class="pax-list">
+      @for (group of passengersArray.controls; track $index; let i = $index) {
+        <section class="na-card pax" [formGroupName]="i" [attr.aria-labelledby]="'pax-h-' + i">
+          <header class="pax__head">
+            <h2 [id]="'pax-h-' + i">{{ passengerTitle(i) }}</h2>
+            @if (selectionFor(i); as sel) {
+              <span class="pax__source">{{
+                sel.source === 'profile' ? 'Your profile' : 'Saved traveller'
+              }}</span>
+            }
+          </header>
+
+          @if (savedLoading()) {
+            <div class="pax__loading">
+              <na-skeleton [rows]="[1]" height="4rem" />
+            </div>
+          } @else if (options().length) {
+            <div class="travellers">
+              @if (selectionFor(i); as sel) {
+                @if (!isPickerOpen(i)) {
+                  <div class="travellers__summary">
+                    <span class="travellers__avatar" aria-hidden="true">{{ initialsOf(sel) }}</span>
+                    <span class="travellers__who">
+                      <strong>{{ sel.firstName }} {{ sel.lastName }}</strong>
+                      <small>
+                        {{
+                          sel.source === 'profile'
+                            ? 'Filled from your profile'
+                            : 'Filled from saved travellers'
+                        }}
+                        @if (sel.nationality) {
+                          · {{ sel.nationality }}
+                        }
+                      </small>
+                    </span>
+                    <na-button
+                      variant="ghost"
+                      size="sm"
+                      (clicked)="openPicker(i)"
+                      [attr.aria-label]="'Choose another traveller for ' + passengerTitle(i)"
+                      >Change traveller</na-button
+                    >
+                  </div>
+                  @if (missingFor(i).length) {
+                    <p class="travellers__missing">
+                      This profile has no {{ missingFor(i).join(' · ') }} yet — please complete
+                      {{ missingFor(i).length === 1 ? 'it' : 'them' }} below.
+                    </p>
+                  }
+                }
+              }
+
+              @if (!selectionFor(i) || isPickerOpen(i)) {
+                <p class="travellers__title" [id]="'tw-title-' + i">
+                  Autofill from saved travellers <span class="na-hint">(optional)</span>
+                </p>
+                <div class="travellers__grid" role="group" [attr.aria-labelledby]="'tw-title-' + i">
+                  @for (t of options(); track t.id) {
+                    @let usedBy = usedElsewhere(i, t.id);
+                    @let selected = selections()[i] === t.id;
+                    <button
+                      type="button"
+                      class="tcard"
+                      [class.tcard--selected]="selected"
+                      [attr.aria-pressed]="selected"
+                      [disabled]="usedBy !== null"
+                      (click)="selectTraveller(i, t)"
+                    >
+                      <span class="tcard__avatar" aria-hidden="true">{{ initialsOf(t) }}</span>
+                      <span class="tcard__body">
+                        <span class="tcard__name">{{ t.firstName }} {{ t.lastName }}</span>
+                        <span class="tcard__meta">
+                          @if (usedBy) {
+                            Already selected for {{ usedBy }}
+                          } @else if (t.source === 'profile') {
+                            Your profile
+                          } @else if (t.nationality) {
+                            {{ t.nationality }}
+                          } @else {
+                            Saved traveller
+                          }
+                        </span>
+                      </span>
+                      @if (selected) {
+                        <span class="tcard__check" aria-hidden="true">✓</span>
+                      }
+                    </button>
+                  }
+                </div>
+                <div class="travellers__foot">
+                  <p class="travellers__hint">
+                    Fills name, date of birth, nationality and passport / ID for you — document
+                    numbers are never shown here. Everything stays editable afterwards.
+                  </p>
+                  @if (selectionFor(i)) {
+                    <na-button variant="ghost" size="sm" (clicked)="closePicker(i)"
+                      >Keep current selection</na-button
+                    >
+                  }
+                </div>
+              }
+            </div>
+          }
+
+          <div class="pax__grid">
+            <div class="na-field">
+              <label class="na-label" [attr.for]="'fn-' + i">First name</label>
+              <input
+                class="na-input"
+                [id]="'fn-' + i"
+                type="text"
+                formControlName="firstName"
+                autocomplete="given-name"
+                [attr.aria-invalid]="invalid(i, 'firstName')"
+                [attr.aria-describedby]="invalid(i, 'firstName') ? 'fn-err-' + i : null"
+              />
+              @if (invalid(i, 'firstName')) {
+                <p class="na-error" [id]="'fn-err-' + i">First name is required.</p>
+              }
+            </div>
+            <div class="na-field">
+              <label class="na-label" [attr.for]="'ln-' + i">Last name</label>
+              <input
+                class="na-input"
+                [id]="'ln-' + i"
+                type="text"
+                formControlName="lastName"
+                autocomplete="family-name"
+                [attr.aria-invalid]="invalid(i, 'lastName')"
+                [attr.aria-describedby]="invalid(i, 'lastName') ? 'ln-err-' + i : null"
+              />
+              @if (invalid(i, 'lastName')) {
+                <p class="na-error" [id]="'ln-err-' + i">Last name is required.</p>
+              }
+            </div>
+            <div class="na-field">
+              <label class="na-label" [attr.for]="'dob-' + i">Date of birth</label>
+              <input
+                class="na-input"
+                [id]="'dob-' + i"
+                type="date"
+                formControlName="dateOfBirth"
+                max="2099-12-31"
+                [attr.aria-invalid]="invalid(i, 'dateOfBirth')"
+                [attr.aria-describedby]="invalid(i, 'dateOfBirth') ? 'dob-err-' + i : null"
+              />
+              @if (invalid(i, 'dateOfBirth')) {
+                <p class="na-error" [id]="'dob-err-' + i">Date of birth is required.</p>
+              }
+            </div>
+            <div class="na-field">
+              <label class="na-label" [attr.for]="'nat-' + i">Nationality</label>
+              <input
+                class="na-input"
+                [id]="'nat-' + i"
+                type="text"
+                formControlName="nationality"
+                placeholder="e.g. Germany"
+                [attr.aria-invalid]="invalid(i, 'nationality')"
+                [attr.aria-describedby]="invalid(i, 'nationality') ? 'nat-err-' + i : null"
+              />
+              @if (invalid(i, 'nationality')) {
+                <p class="na-error" [id]="'nat-err-' + i">Nationality is required.</p>
+              }
+            </div>
+            <div class="na-field">
+              <label class="na-label" [attr.for]="'pp-' + i">
+                Passport / ID number
+                @if (typeOf(i) === 'INFANT') {
+                  <span class="na-hint">(optional for infants)</span>
+                }
+              </label>
+              <input
+                class="na-input"
+                [id]="'pp-' + i"
+                type="text"
+                formControlName="passportNumber"
+                autocomplete="off"
+                [attr.aria-invalid]="invalid(i, 'passportNumber')"
+                [attr.aria-describedby]="invalid(i, 'passportNumber') ? 'pp-err-' + i : null"
+              />
+              @if (invalid(i, 'passportNumber')) {
+                <p class="na-error" [id]="'pp-err-' + i">
+                  {{
+                    typeOf(i) === 'INFANT'
+                      ? 'Use 6–12 letters or digits.'
+                      : 'A passport number (6–12 letters or digits) is required.'
+                  }}
+                </p>
+              }
+            </div>
+            <div class="na-field">
+              <label class="na-label" [attr.for]="'sa-' + i"
+                >Special assistance <span class="na-hint">(optional)</span></label
+              >
+              <input
+                class="na-input"
+                [id]="'sa-' + i"
+                type="text"
+                formControlName="specialAssistance"
+                placeholder="e.g. Wheelchair, dietary needs"
+              />
+            </div>
+          </div>
+        </section>
+      }
+    </div>
+
+    <section class="na-card contact" aria-labelledby="contact-h">
+      <h2 id="contact-h">Contact details</h2>
+      <p class="na-text-muted na-text-small contact__sub">
+        The booking confirmation and any flight updates go to this email address.
+      </p>
+      <div class="pax__grid">
+        <div class="na-field">
+          <label class="na-label" for="contact-email">Email</label>
+          <input
+            class="na-input"
+            id="contact-email"
+            type="email"
+            formControlName="contactEmail"
+            autocomplete="email"
+            [attr.aria-invalid]="contactInvalid('contactEmail')"
+            [attr.aria-describedby]="contactInvalid('contactEmail') ? 'contact-email-err' : null"
+          />
+          @if (contactInvalid('contactEmail')) {
+            <p class="na-error" id="contact-email-err">
+              {{
+                form.controls.contactEmail.hasError('required')
+                  ? 'A contact email is required.'
+                  : 'Enter a valid email address.'
+              }}
+            </p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="contact-phone"
+            >Phone <span class="na-hint">(optional)</span></label
+          >
+          <input
+            class="na-input"
+            id="contact-phone"
+            type="tel"
+            formControlName="contactPhone"
+            autocomplete="tel"
+            [attr.aria-invalid]="contactInvalid('contactPhone')"
+            [attr.aria-describedby]="contactInvalid('contactPhone') ? 'contact-phone-err' : null"
+          />
+          @if (contactInvalid('contactPhone')) {
+            <p class="na-error" id="contact-phone-err">
+              Keep the phone number under 50 characters.
+            </p>
+          }
+        </div>
+      </div>
+    </section>
+
+    @if (submitted() && form.invalid) {
+      <na-alert tone="danger" icon="⚠" title="Some details are missing">
+        Please correct the highlighted fields above before continuing.
+      </na-alert>
+    }
+
+    <div class="actions">
+      <na-button variant="secondary" (clicked)="back()">Back</na-button>
+      <na-button variant="cta" type="submit">Continue to seat selection</na-button>
+    </div>
+  </form>
+</div>
+
+<na-dialog
+  [open]="pendingFill() !== null"
+  title="Replace traveller details?"
+  confirmLabel="Replace details"
+  (confirmed)="confirmFill()"
+  (cancelled)="pendingFill.set(null)"
+>
+  @if (pendingFill(); as p) {
+    This replaces the details you already entered for {{ passengerTitle(p.index) }} with the saved
+    information for {{ optionName(p.optionId) }}.
+  }
+</na-dialog>

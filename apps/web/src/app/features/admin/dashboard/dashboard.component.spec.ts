@@ -3,7 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { DashboardPage } from './dashboard.component';
-import { DashboardService, type DashboardData } from '../../../core/services/dashboard.service';
+import { DashboardService, type DashboardData } from './dashboard.service';
 import { AuthService } from '../../../core/services/auth.service';
 
 function data(partial: Partial<DashboardData> = {}): DashboardData {

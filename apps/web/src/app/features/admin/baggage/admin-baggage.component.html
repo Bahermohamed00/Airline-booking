@@ -1,0 +1,116 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>Baggage</h1>
+    <p class="page__sub">Track checked baggage and record handling events.</p>
+  </header>
+
+  @if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3]" height="2.5rem" />
+  } @else if (loadError(); as err) {
+    <na-alert tone="danger" title="Could not load baggage" retryable (retry)="loadBags()">{{
+      err
+    }}</na-alert>
+  } @else if (items().length === 0) {
+    <na-empty-state
+      icon="◫"
+      title="No baggage records"
+      message="No checked baggage is currently in the system."
+    />
+  } @else {
+    <div class="layout">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tag number</th>
+              <th>Type</th>
+              <th>Weight</th>
+              <th>Pieces</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (bag of items(); track bag.id) {
+              <tr
+                tabindex="0"
+                [class.row--active]="selected()?.id === bag.id"
+                (click)="select(bag)"
+                (keydown.enter)="select(bag)"
+              >
+                <td data-label="Tag number" class="na-text-mono">{{ bag.tagNumber ?? '—' }}</td>
+                <td data-label="Type">{{ bag.type }}</td>
+                <td data-label="Weight">
+                  {{ bag.weightKg != null ? bag.weightKg + ' kg' : '—' }}
+                </td>
+                <td data-label="Pieces">{{ bag.pieces }}</td>
+                <td data-label="Status">
+                  <na-badge [tone]="statusLabel(BAGGAGE_STATUS_MAP, bag.status).tone">
+                    {{ statusLabel(BAGGAGE_STATUS_MAP, bag.status).label }}
+                  </na-badge>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (selected(); as bag) {
+        <aside class="panel na-card" aria-label="Baggage details">
+          <header class="panel__head">
+            <h2 class="panel__title na-text-mono">{{ bag.tagNumber }}</h2>
+            <button
+              type="button"
+              class="panel__close"
+              aria-label="Close baggage details"
+              (click)="selected.set(null)"
+            >
+              ×
+            </button>
+          </header>
+          <p class="na-text-muted na-text-small">
+            {{ bag.bookingPassenger.passenger.firstName }}
+            {{ bag.bookingPassenger.passenger.lastName }} · Booking
+            {{ bag.bookingPassenger.booking.bookingReference }}
+          </p>
+
+          <h3 class="panel__section">Event history</h3>
+          <na-timeline [events]="timelineOf(bag)" />
+
+          <h3 class="panel__section">Record event</h3>
+          <form (ngSubmit)="recordEvent(bag)">
+            <div class="na-field">
+              <label class="na-label" for="event-type">Event type</label>
+              <select
+                id="event-type"
+                class="na-select"
+                [ngModel]="eventType()"
+                (ngModelChange)="eventType.set($event)"
+                name="eventType"
+              >
+                @for (opt of eventOptions; track opt) {
+                  <option [value]="opt">
+                    {{ statusLabel(BAGGAGE_STATUS_MAP, opt).label }}
+                  </option>
+                }
+              </select>
+            </div>
+            <div class="na-field">
+              <label class="na-label" for="event-location">Location</label>
+              <input
+                id="event-location"
+                class="na-input"
+                placeholder="e.g. JFK Baggage Services"
+                required
+                [ngModel]="eventLocation()"
+                (ngModelChange)="eventLocation.set($event)"
+                name="eventLocation"
+              />
+            </div>
+            <na-button variant="primary" type="submit" size="sm">Record event</na-button>
+          </form>
+        </aside>
+      }
+    </div>
+  }
+</section>

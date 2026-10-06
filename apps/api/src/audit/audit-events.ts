@@ -47,6 +47,10 @@ export const AUDIT_EVENTS = [
   'SEAT_HOLD_CONVERTED',
   'REFUND_COMPLETED',
   'BR14_PAYMENT_EXCEPTION',
+  // Platform configuration.
+  'SETTING_UPDATED',
+  // Baggage operations.
+  'BAGGAGE_EVENT_RECORDED',
 ] as const;
 
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];

@@ -1,0 +1,241 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Airports' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Airports</h1>
+      <p class="subtitle">Airport catalog served by the NovaAir network.</p>
+    </div>
+    <na-button variant="cta" (clicked)="openCreate()">Add airport</na-button>
+  </header>
+
+  @if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4, 5]" height="2.5rem" />
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      emptyTitle="No airports"
+      emptyMessage="The airport catalog is empty."
+      (rowClick)="openDetail($event.id)"
+    />
+  }
+
+  <!-- Detail drawer -->
+  @if (selected(); as a) {
+    <div class="backdrop" (click)="closeDetail()" role="presentation"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" [attr.aria-label]="a.name + ' details'">
+      <header class="drawer__head">
+        <div>
+          <h2>{{ a.iataCode }} — {{ a.city }}</h2>
+          <p class="subtitle">{{ a.name }}</p>
+        </div>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close details"
+          (click)="closeDetail()"
+        >
+          ×
+        </button>
+      </header>
+      <div class="drawer__body">
+        <dl class="facts">
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <na-badge [tone]="statusTone(a)">{{
+                a.status === 'ACTIVE' ? 'Active' : 'Inactive'
+              }}</na-badge>
+            </dd>
+          </div>
+          <div>
+            <dt>ICAO code</dt>
+            <dd>{{ a.icaoCode ?? '—' }}</dd>
+          </div>
+          <div>
+            <dt>Country</dt>
+            <dd>{{ a.country }}</dd>
+          </div>
+          <div>
+            <dt>Timezone</dt>
+            <dd>{{ a.timezone }}</dd>
+          </div>
+          <div>
+            <dt>Routes from here</dt>
+            <dd>{{ routeCount(a, 'origin') }}</dd>
+          </div>
+          <div>
+            <dt>Routes to here</dt>
+            <dd>{{ routeCount(a, 'destination') }}</dd>
+          </div>
+        </dl>
+
+        @if (associatedRoutes(a).length > 0) {
+          <h3>Associated routes</h3>
+          <ul class="routes">
+            @for (r of associatedRoutes(a); track r.id) {
+              <li class="na-text-mono">{{ r.origin.iataCode }} → {{ r.destination.iataCode }}</li>
+            }
+          </ul>
+        }
+
+        <div class="actions">
+          <na-button
+            [variant]="a.status === 'ACTIVE' ? 'danger' : 'primary'"
+            size="sm"
+            (clicked)="toggleDialogOpen.set(true)"
+          >
+            {{ a.status === 'ACTIVE' ? 'Deactivate airport' : 'Reactivate airport' }}
+          </na-button>
+        </div>
+      </div>
+    </aside>
+  }
+
+  <!-- Add airport drawer -->
+  @if (createOpen()) {
+    <div class="backdrop" (click)="createOpen.set(false)" role="presentation"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="Add airport">
+      <header class="drawer__head">
+        <h2>Add airport</h2>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close form"
+          (click)="createOpen.set(false)"
+        >
+          ×
+        </button>
+      </header>
+      <form class="drawer__body" (submit)="submitCreate($event)">
+        <div class="na-field">
+          <label class="na-label" for="ap-iata">IATA code</label>
+          <input
+            id="ap-iata"
+            class="na-input"
+            name="apIata"
+            [(ngModel)]="form.iataCode"
+            placeholder="FRA"
+            required
+            pattern="[A-Z]{3}"
+            maxlength="3"
+            [attr.aria-invalid]="errors().iataCode ? 'true' : null"
+          />
+          @if (errors().iataCode) {
+            <p class="na-error" role="alert">{{ errors().iataCode }}</p>
+          }
+          <p class="na-hint">Exactly three uppercase letters.</p>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ap-icao"
+            >ICAO code <span class="na-hint">(optional)</span></label
+          >
+          <input
+            id="ap-icao"
+            class="na-input"
+            name="apIcao"
+            [(ngModel)]="form.icaoCode"
+            placeholder="EDDF"
+            pattern="[A-Z]{4}"
+            maxlength="4"
+            [attr.aria-invalid]="errors().icaoCode ? 'true' : null"
+          />
+          @if (errors().icaoCode) {
+            <p class="na-error" role="alert">{{ errors().icaoCode }}</p>
+          }
+          <p class="na-hint">Four uppercase letters when provided.</p>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ap-name">Airport name</label>
+          <input
+            id="ap-name"
+            class="na-input"
+            name="apName"
+            [(ngModel)]="form.name"
+            required
+            [attr.aria-invalid]="errors().name ? 'true' : null"
+          />
+          @if (errors().name) {
+            <p class="na-error" role="alert">{{ errors().name }}</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ap-city">City</label>
+          <input
+            id="ap-city"
+            class="na-input"
+            name="apCity"
+            [(ngModel)]="form.city"
+            required
+            [attr.aria-invalid]="errors().city ? 'true' : null"
+          />
+          @if (errors().city) {
+            <p class="na-error" role="alert">{{ errors().city }}</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ap-country">Country</label>
+          <input
+            id="ap-country"
+            class="na-input"
+            name="apCountry"
+            [(ngModel)]="form.country"
+            required
+            [attr.aria-invalid]="errors().country ? 'true' : null"
+          />
+          @if (errors().country) {
+            <p class="na-error" role="alert">{{ errors().country }}</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ap-tz">Timezone</label>
+          <select
+            id="ap-tz"
+            class="na-select"
+            name="apTz"
+            [(ngModel)]="form.timezone"
+            required
+            [attr.aria-invalid]="errors().timezone ? 'true' : null"
+          >
+            <option value="" disabled>Select a timezone…</option>
+            @for (tz of timezones; track tz) {
+              <option [value]="tz">{{ tz }}</option>
+            }
+          </select>
+          @if (errors().timezone) {
+            <p class="na-error" role="alert">{{ errors().timezone }}</p>
+          }
+        </div>
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="createOpen.set(false)">Cancel</na-button>
+          <na-button variant="cta" type="submit" [disabled]="submitting()" [loading]="submitting()"
+            >Add airport</na-button
+          >
+        </div>
+      </form>
+    </aside>
+  }
+
+  <na-dialog
+    [open]="toggleDialogOpen()"
+    [title]="selected()?.status === 'ACTIVE' ? 'Deactivate airport?' : 'Reactivate airport?'"
+    [confirmLabel]="selected()?.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'"
+    [confirmDanger]="selected()?.status === 'ACTIVE'"
+    (confirmed)="confirmToggle()"
+    (cancelled)="toggleDialogOpen.set(false)"
+  >
+    {{ selected()?.iataCode }} ({{ selected()?.name }}) will
+    {{
+      selected()?.status === 'ACTIVE'
+        ? 'no longer be available for new routes and flights'
+        : 'become available for scheduling again'
+    }}.
+  </na-dialog>
+</div>

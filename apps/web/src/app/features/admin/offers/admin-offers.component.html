@@ -1,0 +1,234 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <div>
+      <h1>Offers</h1>
+      <p class="page__sub">
+        Marketing offers shown on the public /offers page. Deletion deactivates an offer.
+      </p>
+    </div>
+    @if (canManage() && !loading()) {
+      <na-button variant="cta" (clicked)="openCreate()">New offer</na-button>
+    }
+  </header>
+
+  @if (!canManage()) {
+    <na-empty-state
+      icon="🔒"
+      title="Access restricted"
+      message="You need the offers:manage permission to administer offers. Contact a Super Admin."
+    />
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3]" height="2.5rem" />
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <div class="filters">
+      <label class="na-label" for="status-filter">Status</label>
+      <select id="status-filter" class="na-select" (change)="setFilter($any($event.target).value)">
+        <option value="">All statuses</option>
+        @for (s of statuses; track s) {
+          <option [value]="s" [selected]="filter() === s">{{ s }}</option>
+        }
+      </select>
+    </div>
+
+    @if (offers().length === 0) {
+      <na-empty-state
+        icon="✈"
+        title="No offers"
+        message="Create the first marketing offer for the /offers page."
+      />
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Destination</th>
+              <th>Value</th>
+              <th>Status</th>
+              <th>Validity</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (o of offers(); track o.id) {
+              <tr>
+                <td data-label="Title">
+                  <div class="title-cell">
+                    <strong>{{ o.title }}</strong>
+                    @if (o.badge) {
+                      <small>{{ o.badge }}</small>
+                    }
+                  </div>
+                </td>
+                <td data-label="Destination">{{ o.destination ?? '—' }}</td>
+                <td data-label="Value">{{ o.offerValue ?? '—' }}</td>
+                <td data-label="Status">
+                  <na-badge [tone]="toneOf(o.status)">{{ o.status }}</na-badge>
+                </td>
+                <td data-label="Validity">
+                  {{ dateOf(o.validFrom) }} → {{ dateOf(o.validUntil) }}
+                </td>
+                <td data-label="Actions">
+                  <div class="row-actions">
+                    <na-button variant="secondary" size="sm" (clicked)="openEdit(o)"
+                      >Edit</na-button
+                    >
+                    @if (o.status !== 'INACTIVE') {
+                      <na-button variant="danger" size="sm" (clicked)="askDelete(o)"
+                        >Delete</na-button
+                      >
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  @if (drawerOpen()) {
+    <div class="backdrop" (click)="closeDrawer()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="editing() ? 'Edit offer' : 'New offer'"
+      tabindex="-1"
+      (keydown.escape)="closeDrawer()"
+    >
+      <header class="drawer__head">
+        <h2>{{ editing() ? 'Edit offer' : 'New offer' }}</h2>
+        <button type="button" class="drawer__close" aria-label="Close" (click)="closeDrawer()">
+          ×
+        </button>
+      </header>
+      <form [formGroup]="form" (ngSubmit)="save()">
+        <div class="na-field">
+          <label class="na-label" for="of-title">Title</label>
+          <input id="of-title" class="na-input" formControlName="title" />
+          @if (showError('title')) {
+            <p class="na-error">Title is required (3–120 characters).</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="of-desc">Description</label>
+          <textarea id="of-desc" class="na-input" rows="3" formControlName="description"></textarea>
+          @if (showError('description')) {
+            <p class="na-error">Description is required (10–600 characters).</p>
+          }
+        </div>
+        <div class="form-grid">
+          <div class="na-field">
+            <label class="na-label" for="of-badge"
+              >Badge <span class="na-hint">(optional)</span></label
+            >
+            <input
+              id="of-badge"
+              class="na-input"
+              formControlName="badge"
+              placeholder="e.g. Winter sun"
+            />
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="of-value"
+              >Display value <span class="na-hint">(optional)</span></label
+            >
+            <input
+              id="of-value"
+              class="na-input"
+              formControlName="offerValue"
+              placeholder="e.g. from €349"
+            />
+          </div>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="of-dest"
+            >Destination text <span class="na-hint">(optional)</span></label
+          >
+          <input
+            id="of-dest"
+            class="na-input"
+            formControlName="destination"
+            placeholder="e.g. Frankfurt → Dubai"
+          />
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="of-img"
+            >Image <span class="na-hint">(assets/… path or https:// URL)</span></label
+          >
+          <input
+            id="of-img"
+            class="na-input"
+            formControlName="imageUrl"
+            placeholder="assets/img/dest-dubai.jpg"
+          />
+          @if (showError('imageUrl')) {
+            <p class="na-error">Use an assets/… path or an https:// URL.</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="of-terms"
+            >Terms <span class="na-hint">(optional)</span></label
+          >
+          <textarea id="of-terms" class="na-input" rows="2" formControlName="terms"></textarea>
+        </div>
+        <div class="form-grid">
+          <div class="na-field">
+            <label class="na-label" for="of-from">Valid from</label>
+            <input id="of-from" class="na-input" type="date" formControlName="validFrom" />
+            @if (showError('validFrom')) {
+              <p class="na-error">Required.</p>
+            }
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="of-until">Valid until</label>
+            <input id="of-until" class="na-input" type="date" formControlName="validUntil" />
+            @if (showError('validUntil')) {
+              <p class="na-error">Required.</p>
+            }
+          </div>
+        </div>
+        @if (rangeError()) {
+          <p class="na-error" role="alert">Valid from must be on or before valid until.</p>
+        }
+        <div class="na-field">
+          <label class="na-label" for="of-status">Status</label>
+          <select id="of-status" class="na-select" formControlName="status">
+            @for (s of statuses; track s) {
+              <option [value]="s">{{ s }}</option>
+            }
+          </select>
+          <p class="na-hint">Only ACTIVE offers inside the validity window appear on /offers.</p>
+        </div>
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="closeDrawer()">Cancel</na-button>
+          <na-button variant="cta" type="submit" [loading]="saving()">{{
+            editing() ? 'Save changes' : 'Create offer'
+          }}</na-button>
+        </div>
+      </form>
+    </aside>
+  }
+</section>
+
+<na-dialog
+  [open]="deleting() !== null"
+  title="Delete offer?"
+  confirmLabel="Delete offer"
+  [confirmDanger]="true"
+  (confirmed)="confirmDelete()"
+  (cancelled)="deleting.set(null)"
+>
+  @if (deleting(); as o) {
+    Deleting <strong>{{ o.title }}</strong> deactivates it immediately — it disappears from the
+    public /offers page but stays in the catalog history. This action is audit-logged.
+  }
+</na-dialog>

@@ -1,0 +1,169 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <div>
+      <h1>Staff</h1>
+      <p class="page__sub">Manage staff accounts and their assigned roles.</p>
+    </div>
+    @if (canManage() && !loading()) {
+      <na-button variant="cta" (clicked)="openDrawer()">Add staff</na-button>
+    }
+  </header>
+
+  @if (!canManage()) {
+    <na-empty-state
+      icon="🔒"
+      title="Access restricted"
+      message="You need the staff:manage permission to administer staff accounts. Contact a Super Admin."
+    />
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4]" height="2.5rem" />
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="loadStaff()">Retry</na-button>
+    </div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>MFA</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of staff(); track user.id) {
+            <tr>
+              <td data-label="Name">{{ user.firstName }} {{ user.lastName }}</td>
+              <td data-label="Email">{{ user.email }}</td>
+              <td data-label="Status">
+                <na-badge [tone]="statusLabel(USER_STATUS_MAP, user.status).tone">
+                  {{ statusLabel(USER_STATUS_MAP, user.status).label }}
+                </na-badge>
+              </td>
+              <td data-label="MFA">{{ user.mfaEnabled ? '✓' : '—' }}</td>
+              <td data-label="Role">{{ user.roles.join(', ') || '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  @if (drawerOpen()) {
+    <div class="backdrop" (click)="closeDrawer()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Add staff member"
+      tabindex="-1"
+      (keydown.escape)="closeDrawer()"
+    >
+      <header class="drawer__head">
+        <h2>Add staff member</h2>
+        <button type="button" class="drawer__close" aria-label="Close" (click)="closeDrawer()">
+          ×
+        </button>
+      </header>
+      <form [formGroup]="form" (ngSubmit)="addStaff()">
+        <div class="na-field">
+          <label class="na-label" for="staff-first">First name</label>
+          <input
+            id="staff-first"
+            class="na-input"
+            formControlName="firstName"
+            autocomplete="given-name"
+          />
+          @if (showError('firstName')) {
+            <p class="na-error">First name is required.</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="staff-last">Last name</label>
+          <input
+            id="staff-last"
+            class="na-input"
+            formControlName="lastName"
+            autocomplete="family-name"
+          />
+          @if (showError('lastName')) {
+            <p class="na-error">Last name is required.</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="staff-email">Email</label>
+          <input
+            id="staff-email"
+            class="na-input"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+          />
+          @if (showError('email')) {
+            <p class="na-error">A valid email address is required.</p>
+          }
+          <p class="na-hint">
+            The account is active immediately — share the password with the staff member through a
+            secure channel.
+          </p>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="staff-password">Password</label>
+          <input
+            id="staff-password"
+            class="na-input"
+            type="password"
+            formControlName="password"
+            autocomplete="new-password"
+          />
+          @if (showError('password')) {
+            <p class="na-error">Password must be at least 12 characters.</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="staff-confirm">Confirm password</label>
+          <input
+            id="staff-confirm"
+            class="na-input"
+            type="password"
+            formControlName="confirmPassword"
+            autocomplete="new-password"
+          />
+          @if (confirmTouched() && form.hasError('passwordsMatch')) {
+            <p class="na-error">Passwords do not match.</p>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="staff-role">Role</label>
+          <select id="staff-role" class="na-select" formControlName="roleId">
+            <option value="" disabled>Select a role…</option>
+            @for (r of staffRoles(); track r.id) {
+              <option [value]="r.id">{{ r.name }}</option>
+            }
+          </select>
+          @if (roleTouched() && form.controls.roleId.invalid) {
+            <p class="na-error">Please select a role.</p>
+          }
+        </div>
+        @if (formError()) {
+          <p class="na-error" role="alert">{{ formError() }}</p>
+        }
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="closeDrawer()">Cancel</na-button>
+          <na-button
+            variant="primary"
+            type="submit"
+            [disabled]="submitting()"
+            [loading]="submitting()"
+            >Create account</na-button
+          >
+        </div>
+      </form>
+    </aside>
+  }
+</section>

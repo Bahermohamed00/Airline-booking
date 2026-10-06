@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
@@ -341,11 +341,19 @@ export class ReviewPage {
   }
 
   protected time(iso: string): string {
-    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(
+      new Date(iso),
+    );
   }
 
   protected fullDate(iso: string): string {
-    return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(iso));
   }
 
   protected cabinName(cabin: string): string {

@@ -42,6 +42,8 @@ and append to the change log. Companion docs: `PROJECT_STRUCTURE.md`
 | `payments` | customer: `POST /bookings/:id/payment`, `GET /bookings/:id/payments`; staff: `/admin/payments` (+`/:id/refund`), `/admin/refunds`, `POST /admin/bookings/:id/cancel` (BR-15 auto-refund), `POST /admin/bookings/:id/confirm-exception` (BR-14) |
 | `offers` | public `GET /offers`; admin CRUD `/admin/offers` |
 | `dashboard` | `GET /admin/dashboard?range=7d|30d|90d` — real aggregates (KPIs, trends, revenue) |
+| `settings` | `GET /settings`, `PATCH /settings/:key` — seed-managed keys, edits audit-logged (`SETTING_UPDATED`) |
+| `baggage` | staff: `GET /admin/baggage`, `POST /admin/baggage/:id/events` — event recording flips status, audit-logged (`BAGGAGE_EVENT_RECORDED`) |
 | `mail` | notification adapter: `mock` (console) or `smtp` via env |
 
 Authorization: JWT access/refresh + sessions, DB-resolved roles/permissions per

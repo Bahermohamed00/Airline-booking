@@ -8,12 +8,15 @@ export type RouteStatus = 'ACTIVE' | 'INACTIVE';
 export type AircraftStatus = 'ACTIVE' | 'MAINTENANCE' | 'RETIRED';
 export type FlightStatus = 'SCHEDULED' | 'ACTIVE' | 'DELAYED' | 'CANCELLED' | 'COMPLETED';
 export type SeatHoldStatus = 'ACTIVE' | 'EXPIRED' | 'CONVERTED' | 'RELEASED';
-export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'BOARDED' | 'NO_SHOW';
-export type PaymentStatus = 'PENDING' | 'AUTHORIZED' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
+export type BookingStatus =
+  'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'BOARDED' | 'NO_SHOW';
+export type PaymentStatus =
+  'PENDING' | 'AUTHORIZED' | 'SUCCESS' | 'FAILED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
 export type RefundStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSED';
 export type PassengerType = 'ADULT' | 'CHILD' | 'INFANT';
 export type BaggageType = 'CARRY_ON' | 'CHECKED' | 'SPECIAL';
-export type BaggageStatus = 'CHECKED_IN' | 'LOADED' | 'IN_TRANSIT' | 'ARRIVED' | 'DELIVERED' | 'LOST' | 'DELAYED';
+export type BaggageStatus =
+  'CHECKED_IN' | 'LOADED' | 'IN_TRANSIT' | 'ARRIVED' | 'DELIVERED' | 'LOST' | 'DELAYED';
 export type CheckInStatus = 'COMPLETED' | 'CANCELLED';
 export type NotificationChannel = 'EMAIL' | 'SMS' | 'PUSH' | 'IN_APP';
 export type NotificationStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'FAILED' | 'RETRYING';
@@ -27,6 +30,7 @@ export interface User {
   firstName: string;
   lastName: string;
   phone?: string | null;
+  dateOfBirth?: string | null;
   emailVerified: boolean;
   mfaEnabled: boolean;
   status: UserStatus;

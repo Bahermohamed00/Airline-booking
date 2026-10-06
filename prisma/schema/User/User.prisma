@@ -5,6 +5,7 @@ model User {
   firstName      String    @map("first_name") @db.VarChar(100)
   lastName       String    @map("last_name") @db.VarChar(100)
   phone          String?   @db.VarChar(50)
+  dateOfBirth    DateTime? @map("date_of_birth") @db.Date
   emailVerified  Boolean   @default(false) @map("email_verified")
   mfaSecret      String?   @map("mfa_secret") @db.VarChar(255)
   mfaEnabled     Boolean   @default(false) @map("mfa_enabled")

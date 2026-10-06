@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FlightService, flightDurationLabel } from '../../../core/services/flight.service';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import type { CabinClass, Fare, Flight } from '../../../core/models/domain.model';
 import type { SearchCriteria } from '../../../core/models/booking-flow.model';

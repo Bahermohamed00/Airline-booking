@@ -3,7 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { computed, signal } from '@angular/core';
 import { ExtrasPage } from './extras.component';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import type { BookingDraft, PassengerForm } from '../../../core/models/booking-flow.model';
 import type { Fare, FareRule } from '../../../core/models/domain.model';
 

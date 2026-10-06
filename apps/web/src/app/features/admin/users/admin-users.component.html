@@ -1,0 +1,150 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>Users &amp; Passengers</h1>
+    <p class="page__sub">Customer and staff accounts, their roles and security posture.</p>
+  </header>
+
+  @if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4, 5]" height="2.5rem" />
+  } @else if (loadError(); as err) {
+    <na-alert tone="danger" title="Could not load users" retryable (retry)="loadUsers()">{{
+      err
+    }}</na-alert>
+  } @else if (users().length === 0) {
+    <na-empty-state icon="◔" title="No users" message="There are no accounts to display." />
+  } @else {
+    <div class="layout">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Roles</th>
+              <th>Status</th>
+              <th><span class="na-visually-hidden">MFA enabled</span>MFA</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (user of users(); track user.id) {
+              <tr
+                tabindex="0"
+                [class.row--active]="selected()?.id === user.id"
+                (click)="select(user)"
+                (keydown.enter)="select(user)"
+              >
+                <td data-label="Name">{{ user.firstName }} {{ user.lastName }}</td>
+                <td data-label="Email">{{ user.email }}</td>
+                <td data-label="Roles">{{ user.roles.join(', ') }}</td>
+                <td data-label="Status">
+                  <na-badge [tone]="statusLabel(USER_STATUS_MAP, user.status).tone">
+                    {{ statusLabel(USER_STATUS_MAP, user.status).label }}
+                  </na-badge>
+                </td>
+                <td data-label="MFA">
+                  @if (user.mfaEnabled) {
+                    <span
+                      class="mfa mfa--on"
+                      role="img"
+                      aria-label="MFA enabled"
+                      title="MFA enabled"
+                      >✓</span
+                    >
+                  } @else {
+                    <span
+                      class="mfa"
+                      role="img"
+                      aria-label="MFA not enabled"
+                      title="MFA not enabled"
+                      >—</span
+                    >
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      @if (selected(); as user) {
+        <aside class="panel na-card" aria-label="User details">
+          <header class="panel__head">
+            <h2 class="panel__title">{{ user.firstName }} {{ user.lastName }}</h2>
+            <button
+              type="button"
+              class="panel__close"
+              aria-label="Close user details"
+              (click)="selected.set(null)"
+            >
+              ×
+            </button>
+          </header>
+          <p class="na-text-muted na-text-small">{{ user.email }}</p>
+          <p class="na-text-small">
+            {{ user.emailVerified ? 'Email verified' : 'Email not verified' }} ·
+            {{ user.mfaEnabled ? 'MFA enabled' : 'MFA not enabled' }}
+          </p>
+
+          <h3 class="panel__section">Roles</h3>
+          <div class="chips">
+            @for (role of user.roles; track role) {
+              <na-badge [tone]="role === 'Super Admin' ? 'warning' : 'info'">{{ role }}</na-badge>
+            }
+          </div>
+
+          <h3 class="panel__section">Permissions</h3>
+          @if (effectivePermissions(user).length) {
+            <div class="chips">
+              @for (perm of effectivePermissions(user); track perm) {
+                <span class="chip na-text-mono">{{ perm }}</span>
+              }
+            </div>
+          } @else {
+            <p class="na-text-muted na-text-small">No staff permissions — customer account.</p>
+          }
+
+          <h3 class="panel__section">Activity</h3>
+          <p class="na-text-small">
+            <a [routerLink]="['/admin/bookings']">View booking history →</a>
+          </p>
+
+          <div class="panel__actions">
+            @if (user.status === 'ACTIVE') {
+              <na-button variant="danger" size="sm" (clicked)="askToggle(user)"
+                >Suspend account</na-button
+              >
+            } @else {
+              <na-button variant="primary" size="sm" (clicked)="askToggle(user)"
+                >Activate account</na-button
+              >
+            }
+          </div>
+        </aside>
+      }
+    </div>
+  }
+
+  <na-dialog
+    [open]="pendingUser() !== null"
+    [title]="pendingUser()?.status === 'ACTIVE' ? 'Suspend account' : 'Activate account'"
+    [confirmLabel]="pendingUser()?.status === 'ACTIVE' ? 'Suspend' : 'Activate'"
+    [confirmDanger]="pendingUser()?.status === 'ACTIVE'"
+    (confirmed)="confirmToggle()"
+    (cancelled)="pendingUser.set(null)"
+  >
+    @if (pendingUser(); as user) {
+      <p>
+        {{ user.status === 'ACTIVE' ? 'Suspend' : 'Activate' }} the account of
+        <strong>{{ user.firstName }} {{ user.lastName }}</strong> ({{ user.email }})?
+      </p>
+      <p class="na-text-muted na-text-small">
+        {{
+          user.status === 'ACTIVE'
+            ? 'A suspended user cannot sign in. Active sessions are revoked.'
+            : 'The user will be able to sign in again immediately.'
+        }}
+      </p>
+    }
+  </na-dialog>
+</section>

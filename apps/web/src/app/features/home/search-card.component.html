@@ -1,0 +1,154 @@
+<div class="card" role="search" aria-label="Flight search">
+  <div class="card__tabs" role="group" aria-label="Trip type">
+    <button
+      type="button"
+      class="tab"
+      [class.tab--active]="tripType() === 'ROUND_TRIP'"
+      [attr.aria-pressed]="tripType() === 'ROUND_TRIP'"
+      (click)="tripType.set('ROUND_TRIP')"
+    >
+      Round trip
+    </button>
+    <button
+      type="button"
+      class="tab"
+      [class.tab--active]="tripType() === 'ONE_WAY'"
+      [attr.aria-pressed]="tripType() === 'ONE_WAY'"
+      (click)="tripType.set('ONE_WAY')"
+    >
+      One way
+    </button>
+  </div>
+
+  <form
+    class="card__grid"
+    [class.card__grid--oneway]="tripType() === 'ONE_WAY'"
+    (submit)="submit($event)"
+  >
+    <div class="field">
+      <label class="field__label" for="hs-from">From</label>
+      <select
+        id="hs-from"
+        class="field__control"
+        [value]="origin()"
+        [disabled]="airportsLoading() || airportsError()"
+        (change)="origin.set($any($event.target).value)"
+      >
+        <option value="" disabled>
+          {{ airportsLoading() ? 'Loading airports…' : 'Select origin' }}
+        </option>
+        @for (a of airports(); track a.iataCode) {
+          <option [value]="a.iataCode">{{ a.city }} ({{ a.iataCode }})</option>
+        }
+      </select>
+    </div>
+
+    <button
+      type="button"
+      class="card__swap"
+      aria-label="Swap origin and destination"
+      (click)="swap()"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <path
+          d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+
+    <div class="field">
+      <label class="field__label" for="hs-to">To</label>
+      <select
+        id="hs-to"
+        class="field__control"
+        [value]="destination()"
+        [disabled]="airportsLoading() || airportsError()"
+        (change)="destination.set($any($event.target).value)"
+      >
+        <option value="" disabled>
+          {{ airportsLoading() ? 'Loading airports…' : 'Select destination' }}
+        </option>
+        @for (a of airports(); track a.iataCode) {
+          <option [value]="a.iataCode">{{ a.city }} ({{ a.iataCode }})</option>
+        }
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="hs-depart">Departure</label>
+      <input
+        id="hs-depart"
+        class="field__control"
+        type="date"
+        [min]="minDate"
+        [value]="departure()"
+        (change)="onDepartureChange($any($event.target).value)"
+      />
+    </div>
+
+    @if (tripType() === 'ROUND_TRIP') {
+      <div class="field">
+        <label class="field__label" for="hs-return">Return</label>
+        <input
+          id="hs-return"
+          class="field__control"
+          type="date"
+          [min]="departure()"
+          [value]="returnDate()"
+          (change)="returnDate.set($any($event.target).value)"
+        />
+      </div>
+    }
+
+    <div class="field">
+      <label class="field__label" for="hs-pax">Passengers</label>
+      <select
+        id="hs-pax"
+        class="field__control"
+        [value]="passengers()"
+        (change)="passengers.set(+$any($event.target).value)"
+      >
+        @for (n of passengerOptions; track n) {
+          <option [value]="n">{{ n }} {{ n === 1 ? 'passenger' : 'passengers' }}</option>
+        }
+      </select>
+    </div>
+
+    <button type="submit" class="card__submit">
+      Search flights
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+  </form>
+
+  @if (airportsError()) {
+    <p class="card__error" role="alert">
+      We couldn't load the airport list.
+      <button type="button" class="card__retry" (click)="loadAirports()">Try again</button>
+    </p>
+  } @else if (!airportsLoading() && airports().length === 0) {
+    <p class="card__error" role="status">
+      No airports are available right now.
+      <button type="button" class="card__retry" (click)="loadAirports()">Try again</button>
+    </p>
+  }
+
+  @if (error()) {
+    <p class="card__error" role="alert">{{ error() }}</p>
+  }
+</div>

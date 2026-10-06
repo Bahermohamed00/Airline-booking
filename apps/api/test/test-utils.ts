@@ -145,7 +145,9 @@ export async function registerVerifiedUser(
   app: INestApplication<App>,
   user: { email: string; password: string; firstName: string; lastName: string },
 ): Promise<void> {
-  await request(app.getHttpServer()).post('/api/auth/register').send(user);
+  await request(app.getHttpServer())
+    .post('/api/auth/register')
+    .send({ ...user, dateOfBirth: '1990-01-01' });
   await prismaTestClient.user.update({
     where: { email: user.email },
     data: { status: 'ACTIVE', emailVerified: true },

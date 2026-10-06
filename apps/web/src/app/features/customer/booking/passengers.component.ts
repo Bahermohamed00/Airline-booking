@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { AuthService } from '../../../core/services/auth.service';
 import type { Passenger } from '../../../core/models/domain.model';
 import type { PassengerForm } from '../../../core/models/booking-flow.model';
@@ -383,7 +383,12 @@ export class PassengersPage {
 
     if (user && !savedOptions.some((o) => o.source === 'profile')) {
       return [
-        { id: PROFILE_OPTION_ID, source: 'profile', firstName: user.firstName, lastName: user.lastName },
+        {
+          id: PROFILE_OPTION_ID,
+          source: 'profile',
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
         ...savedOptions,
       ];
     }

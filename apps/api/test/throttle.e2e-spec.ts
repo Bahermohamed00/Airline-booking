@@ -13,6 +13,7 @@ const TEST_USER = {
   password: 'Password123!',
   firstName: 'Throttle',
   lastName: 'Tester',
+  dateOfBirth: '1990-01-01',
 };
 
 /** Calls fn until a 429 appears (max `maxAttempts`), returning the status sequence. */

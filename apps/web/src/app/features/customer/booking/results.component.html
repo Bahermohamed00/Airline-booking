@@ -1,0 +1,292 @@
+<div class="na-container page">
+  @if (criteria(); as c) {
+    <h1>Flight results</h1>
+    <p class="page__sub na-text-muted">Pick the flight and fare that suit you best.</p>
+
+    <div class="summary">
+      <na-route-line [origin]="c.originCode" [destination]="c.destinationCode" />
+      <p class="summary__meta">
+        {{ prettyDate(c.departureDate) }}
+        @if (c.returnDate) {
+          – {{ prettyDate(c.returnDate) }}
+        }
+        · {{ passengerLabel(c) }} · {{ cabinName(c.cabinClass) }}
+      </p>
+      <a routerLink="/search" class="summary__edit">Modify search</a>
+    </div>
+
+    @if (c.tripType === 'ROUND_TRIP' && c.returnDate) {
+      <na-alert tone="info" icon="ℹ" title="Outbound flights only" class="roundtrip-note">
+        Round-trip booking isn't available yet — these results cover your outbound journey on
+        {{ prettyDate(c.departureDate) }} only. The return leg can't be booked for now.
+      </na-alert>
+    }
+
+    <div class="dates" role="group" aria-label="Nearby dates">
+      @for (d of adjacent(); track d.date) {
+        <button
+          type="button"
+          class="dates__day"
+          [class.dates__day--active]="d.date === c.departureDate"
+          [attr.aria-pressed]="d.date === c.departureDate"
+          [disabled]="d.minPrice === null && d.date !== c.departureDate"
+          (click)="pickDate(d.date)"
+        >
+          <span class="dates__dow">{{ weekday(d.date) }}</span>
+          <span class="dates__date">{{ shortDate(d.date) }}</span>
+          <span class="dates__price">{{ d.minPrice === null ? '—' : money(d.minPrice) }}</span>
+        </button>
+      }
+    </div>
+
+    <div class="layout">
+      <aside
+        id="filters-panel"
+        class="na-card filters"
+        [class.filters--open]="filtersOpen()"
+        aria-label="Filters"
+        [attr.role]="filtersOpen() ? 'dialog' : null"
+        [attr.aria-modal]="filtersOpen() ? 'true' : null"
+      >
+        <div class="filters__head">
+          <h2 class="filters__title">Filters</h2>
+          <button
+            #filtersClose
+            type="button"
+            class="filters__close"
+            aria-label="Close filters"
+            (click)="closeFilters()"
+          >
+            ×
+          </button>
+        </div>
+        <div class="filters__group">
+          <div class="na-field">
+            <label class="na-label" for="maxPrice">Max price (EUR)</label>
+            <input
+              id="maxPrice"
+              class="na-input"
+              type="number"
+              min="0"
+              placeholder="No limit"
+              [value]="filters().maxPrice ?? ''"
+              (input)="setMaxPrice($any($event.target).value)"
+            />
+          </div>
+        </div>
+        <div class="filters__group">
+          <div class="na-field">
+            <span class="na-label" id="window-label">Departure window</span>
+            <na-segmented
+              ariaLabel="Departure window"
+              [options]="windowOptions"
+              [value]="filters().departureWindow ?? 'any'"
+              (valueChange)="setWindow($event)"
+            />
+          </div>
+        </div>
+        <div class="filters__group">
+          <div class="filters__check">
+            <input
+              id="refundable"
+              type="checkbox"
+              [checked]="filters().refundableOnly"
+              (change)="setRefundable($any($event.target).checked)"
+            />
+            <label for="refundable">Refundable fares only</label>
+          </div>
+        </div>
+        @if (filtersActive()) {
+          <na-button variant="ghost" size="sm" (clicked)="resetFilters()">Reset filters</na-button>
+        }
+      </aside>
+
+      <section class="results" aria-label="Flight results" aria-live="polite">
+        <div class="filters-open">
+          <na-button variant="secondary" (clicked)="openFilters()">Filters</na-button>
+        </div>
+
+        <div class="results__bar">
+          <p class="na-text-muted na-text-small">
+            @if (flights() !== null) {
+              {{ visibleFlights().length }} of {{ flights()!.length }} flights
+            }
+          </p>
+          <div class="na-field results__sort">
+            <label class="na-label" for="sort">Sort by</label>
+            <select
+              id="sort"
+              class="na-select"
+              [value]="sort()"
+              (change)="sort.set($any($event.target).value)"
+            >
+              <option value="recommended">Recommended</option>
+              <option value="price">Lowest price</option>
+              <option value="duration">Shortest duration</option>
+              <option value="departure">Earliest departure</option>
+            </select>
+          </div>
+        </div>
+
+        @if (error()) {
+          <na-alert
+            tone="danger"
+            icon="⚠"
+            title="We couldn't load flights for this route"
+            [retryable]="true"
+            (retry)="runSearch()"
+          >
+            Try again in a moment.
+          </na-alert>
+        } @else if (flights() === null) {
+          <div class="skel" aria-hidden="true">
+            @for (i of skeletons; track i) {
+              <div class="na-card skel__card">
+                <na-skeleton [rows]="[1]" height="0.75rem" width="36%" />
+                <na-skeleton [rows]="[1]" height="1.75rem" width="64%" />
+                <na-skeleton [rows]="[1]" height="0.75rem" width="48%" />
+              </div>
+            }
+          </div>
+          <span class="na-visually-hidden">Loading flights…</span>
+        } @else if (visibleFlights().length === 0) {
+          <na-empty-state
+            icon="✈"
+            title="No flights match your search"
+            message="Try a nearby date above, or adjust your filters to see more options."
+            actionLabel="Reset filters"
+            (action)="resetFilters()"
+          />
+        } @else {
+          <ol class="cards" role="list">
+            @for (f of visibleFlights(); track f.id) {
+              <li class="na-card card">
+                <div class="card__top">
+                  <p class="card__airline">
+                    NovaAir · {{ f.flightNumber }} · {{ f.aircraft.model }}
+                  </p>
+                  <div class="card__badges">
+                    @if (f.scheduleStatus === 'DELAYED') {
+                      <na-badge tone="warning">Delayed</na-badge>
+                    }
+                    @if (fareOf(f, c); as fare) {
+                      @if (fare.availableCount < 5) {
+                        <na-badge tone="warning"
+                          >Only {{ fare.availableCount }} seats left at this fare</na-badge
+                        >
+                      }
+                    }
+                  </div>
+                </div>
+
+                <div class="card__journey">
+                  <na-route-line
+                    size="lg"
+                    [origin]="f.route.origin.iataCode"
+                    [destination]="f.route.destination.iataCode"
+                    [originCity]="f.route.origin.city"
+                    [destinationCity]="f.route.destination.city"
+                  />
+                  <div class="card__schedule">
+                    <div class="card__when">
+                      <span class="card__time">{{ time(f.departureTime) }}</span>
+                      <span class="card__date">{{ shortDate(f.departureTime) }}</span>
+                    </div>
+                    <p class="card__duration">
+                      {{ duration(f) }} ·
+                      {{ f.segments.length > 1 ? f.segments.length - 1 + ' stop' : 'Nonstop' }}
+                    </p>
+                    <div class="card__when card__when--to">
+                      <span class="card__time">{{ time(f.arrivalTime) }}</span>
+                      <span class="card__date">{{ shortDate(f.arrivalTime) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card__bottom">
+                  <div class="card__fare-info">
+                    @if (fareOf(f, c); as fare) {
+                      <p class="card__cabin">{{ cabinName(fare.cabinClass) }}</p>
+                      @if (fare.rules; as rules) {
+                        <p class="na-text-muted na-text-small">
+                          {{ rules.checkedBaggagePieces }}× checked bag ({{
+                            rules.checkedBaggageWeightKg
+                          }}
+                          kg) included
+                        </p>
+                      }
+                    }
+                    <button
+                      type="button"
+                      class="card__toggle"
+                      [attr.aria-expanded]="expanded().has(f.id)"
+                      [attr.aria-controls]="'fares-' + f.id"
+                      (click)="toggleExpand(f.id)"
+                    >
+                      {{ expanded().has(f.id) ? 'Hide fares' : 'Compare fares' }}
+                    </button>
+                  </div>
+                  <div class="card__buy">
+                    @if (fareOf(f, c); as fare) {
+                      <p class="card__from">From</p>
+                      <p class="card__price">{{ fareTotal(fare) }}</p>
+                      <p class="card__per">per adult</p>
+                      <na-button variant="cta" (clicked)="select(f, fare)">Select</na-button>
+                    }
+                  </div>
+                </div>
+
+                @if (expanded().has(f.id)) {
+                  <div class="card__fares" [id]="'fares-' + f.id">
+                    <h3 class="na-text-small">Fare options</h3>
+                    @for (fare of f.fares; track fare.id) {
+                      <div class="fare-row">
+                        <div>
+                          <strong>{{ cabinName(fare.cabinClass) }}</strong>
+                          @if (fare.rules; as rules) {
+                            <na-badge [tone]="rules.refundable ? 'success' : 'neutral'">
+                              {{ rules.refundable ? 'Refundable' : 'Non-refundable' }}
+                            </na-badge>
+                            <p class="na-text-small na-text-muted">{{ rules.description }}</p>
+                            <p class="na-text-small na-text-muted">
+                              {{ rules.checkedBaggagePieces }}× checked bag ({{
+                                rules.checkedBaggageWeightKg
+                              }}
+                              kg)
+                            </p>
+                          }
+                        </div>
+                        <div class="fare-row__buy">
+                          <span class="fare-row__price">{{ fareTotal(fare) }}</span>
+                          <na-button
+                            variant="secondary"
+                            size="sm"
+                            [disabled]="fare.availableCount === 0"
+                            (clicked)="select(f, fare)"
+                            >{{ fare.availableCount === 0 ? 'Sold out' : 'Select' }}</na-button
+                          >
+                        </div>
+                      </div>
+                    }
+                  </div>
+                }
+              </li>
+            }
+          </ol>
+        }
+      </section>
+    </div>
+
+    @if (filtersOpen()) {
+      <div class="backdrop" role="presentation" (click)="closeFilters()"></div>
+    }
+  } @else {
+    <na-empty-state
+      icon="🔎"
+      title="Start with a search"
+      message="Search for a route and dates to see live fares here."
+      actionLabel="Search flights"
+      (action)="goSearch()"
+    />
+  }
+</div>

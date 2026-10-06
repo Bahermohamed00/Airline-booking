@@ -4,10 +4,10 @@ import { provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { FlightsPage } from './flights.component';
 import { FlightService } from '../../../core/services/flight.service';
-import { ScheduleRulesService } from '../../../core/services/schedule-rules.service';
+import { ScheduleRulesService } from './schedule-rules.service';
 import { AuthService } from '../../../core/services/auth.service';
 import type { Airport, Flight } from '../../../core/models/domain.model';
-import type { GenerationSummary } from '../../../core/models/schedule-rule-api.model';
+import type { GenerationSummary } from './schedule-rule-api.model';
 
 const FRA: Airport = {
   id: 'a1',

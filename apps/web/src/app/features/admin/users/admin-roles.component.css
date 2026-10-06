@@ -1,0 +1,95 @@
+:host {
+  display: block;
+}
+.page {
+  max-width: var(--na-admin-max);
+}
+.page__head {
+  margin-bottom: var(--na-space-6);
+}
+.page__sub {
+  color: var(--na-ink-500);
+  margin-top: var(--na-space-1);
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--na-space-4);
+  margin: var(--na-space-5) 0 var(--na-space-8);
+}
+.role-card {
+  padding: var(--na-space-5);
+}
+.role-card--super {
+  border-color: var(--na-warning);
+  background: var(--na-warning-bg);
+}
+.role-card--super .chip {
+  background: var(--na-surface-raised);
+}
+.role-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--na-space-2);
+  margin-bottom: var(--na-space-2);
+}
+.role-card__name {
+  font-size: var(--na-text-lg);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--na-space-2);
+  margin-top: var(--na-space-3);
+}
+.chip {
+  background: var(--na-surface-sunken);
+  border: 1px solid var(--na-border);
+  border-radius: var(--na-radius-full);
+  padding: 0.15rem 0.55rem;
+  font-size: var(--na-text-xs);
+}
+.matrix__title {
+  font-size: var(--na-text-xl);
+  margin-bottom: var(--na-space-4);
+}
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--na-border);
+  border-radius: var(--na-radius-lg);
+  background: var(--na-surface-raised);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--na-text-sm);
+}
+th {
+  text-align: left;
+  padding: var(--na-space-3) var(--na-space-4);
+  font-size: var(--na-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--na-ink-500);
+  border-bottom: 1px solid var(--na-border);
+  background: var(--na-surface-sunken);
+  white-space: nowrap;
+}
+td {
+  padding: var(--na-space-3) var(--na-space-4);
+  border-bottom: 1px solid var(--na-border);
+}
+.col--super {
+  color: var(--na-warning);
+}
+.matrix__cell {
+  text-align: center;
+}
+.matrix__check {
+  color: var(--na-success);
+  font-weight: var(--na-font-bold);
+}
+.matrix__dash {
+  color: var(--na-ink-300);
+}

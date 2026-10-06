@@ -1,0 +1,304 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>Bookings</h1>
+    <p class="page__sub">
+      Search bookings by reference, contact email or status and review their details.
+    </p>
+  </header>
+
+  <form class="filters na-card" (submit)="applyFilters($event)">
+    <div class="na-field filters__reference">
+      <label class="na-label" for="booking-reference">Reference</label>
+      <input
+        id="booking-reference"
+        class="na-input"
+        type="search"
+        name="reference"
+        placeholder="e.g. NVABC1"
+        [ngModel]="referenceInput()"
+        (ngModelChange)="referenceInput.set($event)"
+      />
+    </div>
+    <div class="na-field filters__email">
+      <label class="na-label" for="booking-email">Contact email</label>
+      <input
+        id="booking-email"
+        class="na-input"
+        type="search"
+        name="email"
+        placeholder="customer@example.com"
+        [ngModel]="emailInput()"
+        (ngModelChange)="emailInput.set($event)"
+      />
+    </div>
+    <div class="na-field filters__status">
+      <label class="na-label" for="booking-status">Status</label>
+      <select
+        id="booking-status"
+        class="na-select"
+        name="status"
+        [ngModel]="statusInput()"
+        (ngModelChange)="onStatusChange($event)"
+      >
+        <option value="ALL">All statuses</option>
+        @for (opt of statusOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+    </div>
+    <div class="filters__actions">
+      <na-button variant="primary" type="submit">Search</na-button>
+      <na-button variant="secondary" (clicked)="clearFilters()">Clear</na-button>
+    </div>
+  </form>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="reload()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="tableRows()"
+      [loading]="loading()"
+      emptyTitle="No bookings found"
+      emptyMessage="Try a different reference, email or status filter."
+      (rowClick)="openBooking($event.id)"
+    />
+  }
+
+  @if (selectedId()) {
+    <div class="backdrop" (click)="closeDrawer()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Booking ' + (selectedSummary()?.bookingReference ?? 'details')"
+      tabindex="-1"
+      (keydown.escape)="closeDrawer()"
+    >
+      <header class="drawer__head">
+        @if (selectedSummary(); as summary) {
+          <div>
+            <h2 class="drawer__title">
+              <span class="na-text-mono">{{ summary.bookingReference }}</span>
+              <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, summary.status).tone">
+                {{ statusLabel(BOOKING_STATUS_MAP, summary.status).label }}
+              </na-badge>
+            </h2>
+            <p class="na-text-muted na-text-small">
+              Booked {{ fmt(summary.bookedAt) }} · {{ summary.contactEmail }}
+            </p>
+          </div>
+        }
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close booking details"
+          (click)="closeDrawer()"
+        >
+          ×
+        </button>
+      </header>
+
+      <na-tabs
+        [tabs]="tabs"
+        [active]="activeTab()"
+        ariaLabel="Booking detail sections"
+        (tabChange)="onTabChange($event)"
+      />
+
+      <div class="drawer__body">
+        @if (detailLoading()) {
+          <na-skeleton [rows]="[1, 2, 3, 4]" height="1.2rem" />
+        } @else if (detailError()) {
+          <div class="list-error" role="alert">
+            <p>{{ detailError() }}</p>
+            <na-button variant="secondary" size="sm" (clicked)="retryDetail()">Retry</na-button>
+          </div>
+        } @else if (detail(); as booking) {
+          @switch (activeTab()) {
+            @case ('itinerary') {
+              <h3 class="drawer__section">Booking</h3>
+              <dl class="facts">
+                <div>
+                  <dt>Reference</dt>
+                  <dd class="na-text-mono">{{ booking.bookingReference }}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, booking.status).tone">
+                      {{ statusLabel(BOOKING_STATUS_MAP, booking.status).label }}
+                    </na-badge>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Booked</dt>
+                  <dd>{{ fmt(booking.bookedAt) }}</dd>
+                </div>
+                <div>
+                  <dt>Cabin</dt>
+                  <dd>{{ cabin(booking.cabinClass) }}</dd>
+                </div>
+                <div>
+                  <dt>Total</dt>
+                  <dd>{{ money(booking.totalAmount, booking.currency) }}</dd>
+                </div>
+                <div>
+                  <dt>Per passenger</dt>
+                  <dd>
+                    {{
+                      booking.perPassengerTotal !== null
+                        ? money(booking.perPassengerTotal, booking.currency)
+                        : '—'
+                    }}
+                  </dd>
+                </div>
+              </dl>
+
+              <h3 class="drawer__section">Contact</h3>
+              <dl class="facts">
+                <div>
+                  <dt>Email</dt>
+                  <dd>{{ booking.contactEmail }}</dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>{{ booking.contactPhone ?? '—' }}</dd>
+                </div>
+              </dl>
+
+              @if (booking.flight; as flight) {
+                <h3 class="drawer__section">Flight</h3>
+                <dl class="facts">
+                  <div>
+                    <dt>Flight</dt>
+                    <dd>
+                      <span class="na-text-mono">{{ flight.flightNumber }}</span>
+                      <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, flight.status).tone">
+                        {{ statusLabel(FLIGHT_STATUS_MAP, flight.status).label }}
+                      </na-badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Route</dt>
+                    <dd>{{ flight.origin }} → {{ flight.destination }}</dd>
+                  </div>
+                  <div>
+                    <dt>Departure</dt>
+                    <dd>{{ fmt(flight.departureTime) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Arrival</dt>
+                    <dd>{{ fmt(flight.arrivalTime) }}</dd>
+                  </div>
+                </dl>
+              }
+            }
+            @case ('passengers') {
+              <h3 class="drawer__section">Passengers</h3>
+              <ul class="plain-list">
+                @for (p of booking.passengers; track p.id) {
+                  <li>
+                    <strong>{{ p.firstName }} {{ p.lastName }}</strong>
+                    <na-badge tone="neutral">{{ p.passengerType }}</na-badge>
+                    <p class="na-text-small na-text-muted">
+                      Born {{ fmtDay(p.dateOfBirth) }} · Nationality {{ p.nationality ?? '—' }} ·
+                      Passport
+                      <span class="na-text-mono">{{ p.passportNumber ?? '—' }}</span>
+                    </p>
+                  </li>
+                }
+              </ul>
+
+              <h3 class="drawer__section">Seats</h3>
+              <p class="na-text-muted na-text-small">
+                Seats are listed per booking — the API does not link seats to individual passengers.
+              </p>
+              @if (booking.seats.length) {
+                <ul class="plain-list">
+                  @for (s of booking.seats; track s.seatId) {
+                    <li>
+                      Seat <span class="na-text-mono">{{ s.seatNumber }}</span>
+                      <na-badge [tone]="statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).tone">
+                        {{ statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).label }}
+                      </na-badge>
+                      @if (s.holdStatus === 'ACTIVE') {
+                        <span class="na-text-muted na-text-small">
+                          · held until {{ fmt(s.holdExpiresAt) }}</span
+                        >
+                      }
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p class="na-text-muted">No seats on this booking.</p>
+              }
+            }
+            @case ('payments') {
+              <na-empty-state
+                icon="◈"
+                title="Payments & refunds are not available yet"
+                message="Payments and refunds will be available in a future phase. No payment data exists for bookings yet — bookings remain pending until payments are implemented."
+              />
+            }
+            @case ('notifications') {
+              <na-empty-state
+                icon="✉"
+                title="Notifications are not available yet"
+                message="Notifications will be available in a future phase."
+              />
+            }
+            @case ('audit') {
+              <span *naHasPermission="'audit:read'">
+                @if (auditLoading()) {
+                  <na-skeleton [rows]="[1, 2, 3]" height="1.2rem" />
+                } @else if (auditForbidden()) {
+                  <na-empty-state
+                    icon="🔒"
+                    title="No audit access"
+                    message="You don't have permission to view the audit trail."
+                  />
+                } @else if (auditError()) {
+                  <div class="list-error" role="alert">
+                    <p>{{ auditError() }}</p>
+                    <na-button variant="secondary" size="sm" (clicked)="retryAudit()"
+                      >Retry</na-button
+                    >
+                  </div>
+                } @else if (auditLogs().length) {
+                  <ul class="plain-list">
+                    @for (log of auditLogs(); track log.id) {
+                      <li>
+                        <span class="na-text-mono">{{ log.event }}</span>
+                        <span class="na-text-muted">
+                          · {{ log.actorType }} · {{ fmt(log.createdAt) }}</span
+                        >
+                      </li>
+                    }
+                  </ul>
+                } @else {
+                  <na-empty-state
+                    icon="≡"
+                    title="No audit records"
+                    message="No staff actions have been logged against this booking."
+                  />
+                }
+              </span>
+            }
+          }
+        }
+      </div>
+
+      <footer class="drawer__actions">
+        <span class="future-hint" *naHasPermission="'bookings:manage'">
+          <na-badge tone="info">Future phase</na-badge>
+          Admin cancellation and payment exception workflows arrive in a future backend phase.
+        </span>
+      </footer>
+    </aside>
+  }
+</section>

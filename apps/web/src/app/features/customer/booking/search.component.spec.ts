@@ -7,9 +7,33 @@ import { FlightService } from '../../../core/services/flight.service';
 import type { Airport } from '../../../core/models/domain.model';
 
 const AIRPORTS: Airport[] = [
-  { id: 'a-dxb', iataCode: 'DXB', name: 'Dubai International', city: 'Dubai', country: 'UAE', timezone: 'Asia/Dubai', status: 'ACTIVE' },
-  { id: 'a-fra', iataCode: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', timezone: 'Europe/Berlin', status: 'ACTIVE' },
-  { id: 'a-jfk', iataCode: 'JFK', name: 'John F. Kennedy International', city: 'New York', country: 'USA', timezone: 'America/New_York', status: 'ACTIVE' },
+  {
+    id: 'a-dxb',
+    iataCode: 'DXB',
+    name: 'Dubai International',
+    city: 'Dubai',
+    country: 'UAE',
+    timezone: 'Asia/Dubai',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'a-fra',
+    iataCode: 'FRA',
+    name: 'Frankfurt Airport',
+    city: 'Frankfurt',
+    country: 'Germany',
+    timezone: 'Europe/Berlin',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'a-jfk',
+    iataCode: 'JFK',
+    name: 'John F. Kennedy International',
+    city: 'New York',
+    country: 'USA',
+    timezone: 'America/New_York',
+    status: 'ACTIVE',
+  },
 ];
 
 async function setup(listAirports: ReturnType<typeof vi.fn> = vi.fn(() => of(AIRPORTS))) {
@@ -81,21 +105,18 @@ describe('SearchPage', () => {
     el.querySelector<HTMLButtonElement>('na-button button')!.click();
     await fixture.whenStable();
 
-    expect(navigate).toHaveBeenCalledWith(
-      ['/results'],
-      {
-        queryParams: expect.objectContaining({
-          tripType: 'ONE_WAY',
-          origin: 'FRA',
-          destination: 'JFK',
-          depart: expect.any(String),
-          adults: 1,
-          children: 0,
-          infants: 0,
-          cabin: 'ECONOMY',
-        }),
-      },
-    );
+    expect(navigate).toHaveBeenCalledWith(['/results'], {
+      queryParams: expect.objectContaining({
+        tripType: 'ONE_WAY',
+        origin: 'FRA',
+        destination: 'JFK',
+        depart: expect.any(String),
+        adults: 1,
+        children: 0,
+        infants: 0,
+        cabin: 'ECONOMY',
+      }),
+    });
   });
 
   it('blocks submission until origin and destination differ', async () => {

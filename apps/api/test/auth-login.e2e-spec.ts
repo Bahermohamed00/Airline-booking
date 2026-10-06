@@ -17,6 +17,7 @@ const TEST_USER = {
   password: 'Password123!',
   firstName: 'Login',
   lastName: 'Tester',
+  dateOfBirth: '1990-01-01',
 };
 
 describe('Login & access token (e2e)', () => {

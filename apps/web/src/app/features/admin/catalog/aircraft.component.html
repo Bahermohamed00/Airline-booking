@@ -1,0 +1,230 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Aircraft' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Aircraft fleet</h1>
+      <p class="subtitle">Fleet inventory, seat configuration and availability status.</p>
+    </div>
+    <na-button variant="cta" (clicked)="openCreate()">Add aircraft</na-button>
+  </header>
+
+  @if (loading()) {
+    <div class="grid">
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="na-card card"><na-skeleton [rows]="[1, 2, 3]" height="1.2rem" /></div>
+      }
+    </div>
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else if (fleet().length === 0) {
+    <na-empty-state
+      title="No aircraft"
+      message="Add an aircraft to start building the fleet. The seat map is generated automatically."
+      actionLabel="Add aircraft"
+      (action)="openCreate()"
+    />
+  } @else {
+    <div class="grid">
+      @for (a of fleet(); track a.id) {
+        <button type="button" class="na-card card" (click)="openDetail(a.id)">
+          <div class="card__top">
+            <span class="card__reg na-text-mono">{{ a.registration }}</span>
+            <na-badge [tone]="statusLabel(AIRCRAFT_STATUS_MAP, a.status).tone">{{
+              statusLabel(AIRCRAFT_STATUS_MAP, a.status).label
+            }}</na-badge>
+          </div>
+          <p class="card__model">{{ a.model }}</p>
+          <p class="card__cap">{{ a.capacity }} seats · {{ a.seatCount ?? '—' }} configured</p>
+        </button>
+      }
+    </div>
+  }
+
+  <!-- Detail drawer -->
+  @if (selected(); as a) {
+    <div class="backdrop" (click)="closeDetail()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="a.registration + ' details'"
+    >
+      <header class="drawer__head">
+        <div>
+          <h2>{{ a.registration }}</h2>
+          <p class="subtitle">{{ a.model }} · {{ a.capacity }} seats</p>
+        </div>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close details"
+          (click)="closeDetail()"
+        >
+          ×
+        </button>
+      </header>
+      <div class="drawer__body">
+        <dl class="facts">
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <na-badge [tone]="statusLabel(AIRCRAFT_STATUS_MAP, a.status).tone">{{
+                statusLabel(AIRCRAFT_STATUS_MAP, a.status).label
+              }}</na-badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Capacity</dt>
+            <dd>{{ a.capacity }}</dd>
+          </div>
+        </dl>
+
+        <h3>Seat configuration</h3>
+        @if (seatsLoading()) {
+          <na-skeleton [rows]="[1, 2, 3]" height="1.2rem" />
+        } @else if (seatsError()) {
+          <div class="list-error" role="alert">
+            <p>{{ seatsError() }}</p>
+            <na-button variant="secondary" size="sm" (clicked)="retrySeats()">Retry</na-button>
+          </div>
+        } @else {
+          <ul class="cabins">
+            @for (c of cabinSummary(); track c.cabin) {
+              <li>
+                <span class="dot dot--{{ c.cabin.toLowerCase() }}" aria-hidden="true"></span>
+                <span>{{ c.label }}</span>
+                <span class="cabins__count">{{ c.count }} seats</span>
+              </li>
+            }
+          </ul>
+
+          <h3>
+            Seat map preview
+            <span class="na-text-muted na-text-small">(first {{ previewRows }} rows)</span>
+          </h3>
+          <div
+            class="seatmap"
+            role="img"
+            [attr.aria-label]="'Seat map preview for ' + a.registration"
+          >
+            @for (seat of previewSeats(); track seat.id) {
+              <span
+                class="seat seat--{{ seat.cabinClass.toLowerCase() }}"
+                [class.seat--exit]="seat.isExitRow"
+                [title]="seat.seatNumber + ' · ' + seat.cabinClass.replace('_', ' ')"
+              ></span>
+            }
+          </div>
+          <div class="legend">
+            <span><span class="dot dot--first" aria-hidden="true"></span> First</span>
+            <span><span class="dot dot--business" aria-hidden="true"></span> Business</span>
+            <span><span class="dot dot--economy" aria-hidden="true"></span> Economy</span>
+          </div>
+        }
+
+        <div class="actions">
+          <na-button
+            [variant]="a.status === 'ACTIVE' ? 'danger' : 'primary'"
+            size="sm"
+            [disabled]="a.status === 'RETIRED'"
+            (clicked)="toggleDialogOpen.set(true)"
+          >
+            {{ a.status === 'ACTIVE' ? 'Send to maintenance' : 'Return to service' }}
+          </na-button>
+        </div>
+      </div>
+    </aside>
+  }
+
+  <!-- Add aircraft drawer -->
+  @if (createOpen()) {
+    <div class="backdrop" (click)="createOpen.set(false)" role="presentation"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="Add aircraft">
+      <header class="drawer__head">
+        <h2>Add aircraft</h2>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close form"
+          (click)="createOpen.set(false)"
+        >
+          ×
+        </button>
+      </header>
+      <form class="drawer__body" (submit)="submitCreate($event)">
+        <div class="na-field">
+          <label class="na-label" for="ac-reg">Registration</label>
+          <input
+            id="ac-reg"
+            class="na-input"
+            name="acReg"
+            [(ngModel)]="formRegistration"
+            placeholder="NV-738Z"
+            required
+            [attr.aria-invalid]="createError() ? 'true' : null"
+          />
+          <p class="na-hint">Unique tail number, e.g. NV-738Z.</p>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ac-model">Model</label>
+          <input
+            id="ac-model"
+            class="na-input"
+            name="acModel"
+            [(ngModel)]="formModel"
+            placeholder="Boeing 737-800"
+            required
+          />
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="ac-cap">Seat capacity</label>
+          <input
+            id="ac-cap"
+            class="na-input"
+            type="number"
+            name="acCap"
+            [(ngModel)]="formCapacity"
+            min="6"
+            max="600"
+            required
+          />
+          @if (createError()) {
+            <p class="na-error" role="alert">{{ createError() }}</p>
+          }
+        </div>
+        <p class="na-hint">The seat map is generated automatically for the given capacity.</p>
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="createOpen.set(false)">Cancel</na-button>
+          <na-button variant="cta" type="submit" [disabled]="submitting()" [loading]="submitting()"
+            >Add aircraft</na-button
+          >
+        </div>
+      </form>
+    </aside>
+  }
+
+  <na-dialog
+    [open]="toggleDialogOpen()"
+    [title]="
+      selected()?.status === 'ACTIVE'
+        ? 'Send aircraft to maintenance?'
+        : 'Return aircraft to service?'
+    "
+    [confirmLabel]="selected()?.status === 'ACTIVE' ? 'Send to maintenance' : 'Return to service'"
+    [confirmDanger]="selected()?.status === 'ACTIVE'"
+    (confirmed)="confirmToggle()"
+    (cancelled)="toggleDialogOpen.set(false)"
+  >
+    {{ selected()?.registration }} ({{ selected()?.model }}) will
+    {{
+      selected()?.status === 'ACTIVE'
+        ? 'be marked as under maintenance and unavailable for scheduling'
+        : 'become available for flight scheduling again'
+    }}.
+  </na-dialog>
+</div>

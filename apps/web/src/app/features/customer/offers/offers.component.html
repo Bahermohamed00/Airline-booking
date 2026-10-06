@@ -1,0 +1,199 @@
+<div class="na-container page">
+  <section class="panel panel--hero" aria-labelledby="offers-hero-title">
+    <div class="panel__media" aria-hidden="true">
+      <img ngSrc="assets/img/hero-wing.jpg" fill priority sizes="100vw" alt="" class="panel__img" />
+      <span class="panel__scrim"></span>
+    </div>
+    <div class="panel__body">
+      <p class="caps caps--dim">Limited-time fares</p>
+      <h1 id="offers-hero-title" class="hero__title">Offers worth packing for</h1>
+      <p class="soft hero__sub">
+        Handpicked fares across the NovaAir network — premium cabins, city breaks, and winter sun.
+        Book before they are gone.
+      </p>
+      <div class="hero__actions">
+        <a href="#all-offers" class="cta" (click)="go('all-offers', $event)">
+          Browse all offers
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path d="M12 5v14M6 13l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
+        <a routerLink="/search" class="hero__link">Search flights instead</a>
+      </div>
+      <ul class="stats">
+        <li>
+          <strong>{{ offers().length }}</strong
+          ><span>live offers</span>
+        </li>
+        <li>
+          <strong>{{ destinationCount() }}</strong
+          ><span>destinations on sale</span>
+        </li>
+        <li><strong>Weekly</strong><span>new fares</span></li>
+      </ul>
+    </div>
+  </section>
+
+  @if (error()) {
+    <na-alert
+      tone="warning"
+      icon="⚠"
+      title="Offers unavailable"
+      retryable
+      (retry)="load()"
+      class="state"
+    >
+      We could not load the current offers. Please try again in a moment.
+    </na-alert>
+  } @else if (loading()) {
+    <div class="state"><na-skeleton [rows]="[1]" height="22rem" /></div>
+    <div class="state"><na-skeleton [rows]="[1, 2]" height="12rem" /></div>
+  } @else if (offers().length === 0) {
+    <na-empty-state
+      icon="✈"
+      title="No offers right now"
+      message="There are no active offers at the moment — new fares land every week, so check back soon."
+      actionLabel="Search flights"
+      (action)="go2search()"
+    />
+  } @else {
+    @if (featured(); as f) {
+      <article class="panel panel--featured" aria-labelledby="featured-title">
+        <div class="panel__media" aria-hidden="true">
+          @if (f.imageUrl; as img) {
+            <img
+              [ngSrc]="img"
+              fill
+              sizes="(max-width: 1000px) 100vw, 80vw"
+              [alt]="f.title"
+              class="panel__img"
+            />
+          }
+          <span class="panel__scrim"></span>
+        </div>
+        @if (f.badge) {
+          <span class="badge"
+            ><strong>{{ f.offerValue ?? f.badge }}</strong
+            ><small class="caps">{{ f.badge }}</small></span
+          >
+        }
+        <div class="panel__body">
+          <p class="caps caps--dim">Featured offer</p>
+          @if (f.destination) {
+            <p class="f-route caps">{{ f.destination }}</p>
+          }
+          <h2 id="featured-title" class="f-title">{{ f.title }}</h2>
+          <p class="soft f-desc">{{ f.description }}</p>
+          <ul class="facts caps">
+            <li>Valid until {{ f.validUntil | date: 'd MMM y' }}</li>
+            @if (f.terms) {
+              <li>{{ f.terms }}</li>
+            }
+          </ul>
+          <div class="f-foot">
+            @if (f.offerValue) {
+              <p class="value">{{ f.offerValue }}</p>
+            }
+            <a
+              routerLink="/search"
+              class="cta"
+              [attr.aria-label]="'Search flights for offer: ' + f.title"
+            >
+              Search flights
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </article>
+    }
+
+    <section class="all" id="all-offers" aria-labelledby="all-offers-title">
+      <header class="all__head">
+        <h2 id="all-offers-title">All offers</h2>
+        <p class="na-text-muted">
+          Every fare is live right now — validity dates are shown on each offer.
+        </p>
+      </header>
+
+      <div class="all__grid">
+        @for (o of regular(); track o.id) {
+          <article class="card">
+            <div class="card__media" aria-hidden="true">
+              @if (o.imageUrl; as img) {
+                <img
+                  [ngSrc]="img"
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 1000px) 50vw, 33vw"
+                  [alt]="o.title"
+                  class="card__img"
+                />
+              } @else {
+                <span class="card__placeholder">✈</span>
+              }
+              <span class="card__scrim"></span>
+              @if (o.badge) {
+                <span class="pill pill--tag">{{ o.badge }}</span>
+              }
+            </div>
+
+            <div class="card__body">
+              @if (o.destination) {
+                <p class="caps card__route">{{ o.destination }}</p>
+              }
+              <h3 class="card__title">{{ o.title }}</h3>
+              <p class="card__desc">{{ o.description }}</p>
+              @if (o.offerValue) {
+                <p class="value value--md">{{ o.offerValue }}</p>
+              }
+              <p class="card__validity">Valid until {{ o.validUntil | date: 'd MMM y' }}</p>
+              @if (o.terms) {
+                <p class="card__terms">{{ o.terms }}</p>
+              }
+              <div class="card__foot">
+                <a
+                  routerLink="/search"
+                  class="cta cta--outline"
+                  [attr.aria-label]="'Search flights for offer: ' + o.title"
+                >
+                  Search flights
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M5 12h14M13 6l6 6-6 6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+
+    <p class="smallprint">
+      All offers are subject to availability at the time of booking. Validity dates are inclusive
+      and shown in each offer. Terms and conditions apply as stated on the individual offers.
+    </p>
+  }
+</div>

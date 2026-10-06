@@ -3,12 +3,12 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { ScheduleRulesPage } from './schedule-rules.component';
-import { ScheduleRulesService } from '../../../core/services/schedule-rules.service';
-import { CatalogService } from '../../../core/services/catalog.service';
+import { ScheduleRulesService } from './schedule-rules.service';
+import { CatalogService } from '../catalog/catalog.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../shared/ui/toast.service';
 import type { Aircraft, Airport, Route } from '../../../core/models/domain.model';
-import type { ScheduleRule, Weekday } from '../../../core/models/schedule-rule-api.model';
+import type { ScheduleRule, Weekday } from './schedule-rule-api.model';
 
 const FRA: Airport = {
   id: 'a1',

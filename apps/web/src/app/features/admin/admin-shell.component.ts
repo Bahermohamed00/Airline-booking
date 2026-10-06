@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive, RouterOutlet, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
-import { ADMIN_NAV } from '../../core/admin-nav';
+import { ADMIN_NAV } from './admin-nav';
 import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
 
 @Component({

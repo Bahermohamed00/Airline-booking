@@ -12,6 +12,7 @@ const TEST_USER = {
   password: 'Password123!',
   firstName: 'Pro',
   lastName: 'File',
+  dateOfBirth: '1990-01-01',
 };
 
 describe('Profile & change password (e2e)', () => {

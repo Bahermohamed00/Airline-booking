@@ -7,12 +7,22 @@ import { FlightService } from '../../../core/services/flight.service';
 import type { Airport, Flight } from '../../../core/models/domain.model';
 
 const FRA: Airport = {
-  id: 'a-fra', iataCode: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany',
-  timezone: 'Europe/Berlin', status: 'ACTIVE',
+  id: 'a-fra',
+  iataCode: 'FRA',
+  name: 'Frankfurt Airport',
+  city: 'Frankfurt',
+  country: 'Germany',
+  timezone: 'Europe/Berlin',
+  status: 'ACTIVE',
 };
 const JFK: Airport = {
-  id: 'a-jfk', iataCode: 'JFK', name: 'John F. Kennedy International', city: 'New York', country: 'USA',
-  timezone: 'America/New_York', status: 'ACTIVE',
+  id: 'a-jfk',
+  iataCode: 'JFK',
+  name: 'John F. Kennedy International',
+  city: 'New York',
+  country: 'USA',
+  timezone: 'America/New_York',
+  status: 'ACTIVE',
 };
 
 function flight(overrides: Partial<Flight> = {}): Flight {
@@ -21,11 +31,23 @@ function flight(overrides: Partial<Flight> = {}): Flight {
     flightNumber: 'NA100',
     routeId: 'r1',
     route: {
-      id: 'r1', originAirportId: FRA.id, destinationAirportId: JFK.id,
-      origin: FRA, destination: JFK, distanceKm: 6200, durationMinutes: 480, status: 'ACTIVE',
+      id: 'r1',
+      originAirportId: FRA.id,
+      destinationAirportId: JFK.id,
+      origin: FRA,
+      destination: JFK,
+      distanceKm: 6200,
+      durationMinutes: 480,
+      status: 'ACTIVE',
     },
     aircraftId: 'ac1',
-    aircraft: { id: 'ac1', registration: 'D-AIXA', model: 'A350-900', capacity: 293, status: 'ACTIVE' },
+    aircraft: {
+      id: 'ac1',
+      registration: 'D-AIXA',
+      model: 'A350-900',
+      capacity: 293,
+      status: 'ACTIVE',
+    },
     departureTime: '2026-10-01T10:00:00Z',
     arrivalTime: '2026-10-01T14:00:00Z',
     operatingDate: '2026-10-01',
@@ -34,8 +56,14 @@ function flight(overrides: Partial<Flight> = {}): Flight {
     segments: [],
     fares: [
       {
-        id: 'fare-eco', flightId: 'f1', cabinClass: 'ECONOMY',
-        basePrice: 400, taxAmount: 60, feeAmount: 15, currency: 'EUR', availableCount: 9,
+        id: 'fare-eco',
+        flightId: 'f1',
+        cabinClass: 'ECONOMY',
+        basePrice: 400,
+        taxAmount: 60,
+        feeAmount: 15,
+        currency: 'EUR',
+        availableCount: 9,
         rules: null,
       },
     ],

@@ -1,0 +1,203 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Routes' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Routes</h1>
+      <p class="subtitle">Origin–destination pairs available for flight scheduling.</p>
+    </div>
+    <na-button variant="cta" (clicked)="openCreate()">Add route</na-button>
+  </header>
+
+  @if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4, 5]" height="2.5rem" />
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      emptyTitle="No routes"
+      emptyMessage="Add a route to start scheduling flights."
+      emptyActionLabel="Add route"
+      (rowClick)="openDetail($event.id)"
+      (emptyAction)="openCreate()"
+    />
+  }
+
+  <!-- Detail drawer -->
+  @if (selected(); as r) {
+    <div class="backdrop" (click)="closeDetail()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="
+        'Route ' + r.origin.iataCode + ' to ' + r.destination.iataCode + ' details'
+      "
+    >
+      <header class="drawer__head">
+        <div>
+          <h2 class="na-text-mono">{{ r.origin.iataCode }} → {{ r.destination.iataCode }}</h2>
+          <p class="subtitle">{{ r.origin.city }} – {{ r.destination.city }}</p>
+        </div>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close details"
+          (click)="closeDetail()"
+        >
+          ×
+        </button>
+      </header>
+      <div class="drawer__body">
+        <dl class="facts">
+          <div>
+            <dt>Status</dt>
+            <dd>{{ r.status === 'ACTIVE' ? 'Active' : 'Inactive' }}</dd>
+          </div>
+          <div>
+            <dt>Distance</dt>
+            <dd>{{ r.distanceKm ?? '—' }} km</dd>
+          </div>
+          <div>
+            <dt>Block time</dt>
+            <dd>{{ durationLabel(r.durationMinutes) }}</dd>
+          </div>
+          <div>
+            <dt>Upcoming flights</dt>
+            <dd>{{ flightCount(r) }}</dd>
+          </div>
+          <div>
+            <dt>Origin</dt>
+            <dd>{{ r.origin.name }} ({{ r.origin.iataCode }})</dd>
+          </div>
+          <div>
+            <dt>Destination</dt>
+            <dd>{{ r.destination.name }} ({{ r.destination.iataCode }})</dd>
+          </div>
+        </dl>
+        <p class="na-hint">Upcoming flights reflects the current scheduling window.</p>
+
+        <div class="actions">
+          <na-button
+            [variant]="r.status === 'ACTIVE' ? 'danger' : 'primary'"
+            size="sm"
+            (clicked)="toggleDialogOpen.set(true)"
+          >
+            {{ r.status === 'ACTIVE' ? 'Deactivate route' : 'Activate route' }}
+          </na-button>
+        </div>
+      </div>
+    </aside>
+  }
+
+  <!-- Add route drawer -->
+  @if (createOpen()) {
+    <div class="backdrop" (click)="createOpen.set(false)" role="presentation"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="Add route">
+      <header class="drawer__head">
+        <h2>Add route</h2>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close form"
+          (click)="createOpen.set(false)"
+        >
+          ×
+        </button>
+      </header>
+      <form class="drawer__body" (submit)="submitCreate($event)">
+        <div class="na-field">
+          <label class="na-label" for="rt-origin">Origin airport</label>
+          <select
+            id="rt-origin"
+            class="na-select"
+            name="rtOrigin"
+            [(ngModel)]="form.originAirportId"
+            required
+            [attr.aria-invalid]="createError() ? 'true' : null"
+          >
+            <option value="" disabled>Select origin…</option>
+            @for (a of activeAirports(); track a.id) {
+              <option [value]="a.id">{{ a.iataCode }} — {{ a.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="rt-dest">Destination airport</label>
+          <select
+            id="rt-dest"
+            class="na-select"
+            name="rtDest"
+            [(ngModel)]="form.destinationAirportId"
+            required
+            [attr.aria-invalid]="createError() ? 'true' : null"
+          >
+            <option value="" disabled>Select destination…</option>
+            @for (a of activeAirports(); track a.id) {
+              <option [value]="a.id">{{ a.iataCode }} — {{ a.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="rt-dist"
+            >Distance (km) <span class="na-hint">(optional)</span></label
+          >
+          <input
+            id="rt-dist"
+            class="na-input"
+            type="number"
+            name="rtDist"
+            [(ngModel)]="form.distanceKm"
+            min="1"
+            max="25000"
+          />
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="rt-dur"
+            >Block time (minutes) <span class="na-hint">(optional)</span></label
+          >
+          <input
+            id="rt-dur"
+            class="na-input"
+            type="number"
+            name="rtDur"
+            [(ngModel)]="form.durationMinutes"
+            min="1"
+            max="3000"
+          />
+          @if (createError()) {
+            <p class="na-error" role="alert">{{ createError() }}</p>
+          }
+        </div>
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="createOpen.set(false)">Cancel</na-button>
+          <na-button variant="cta" type="submit" [disabled]="submitting()" [loading]="submitting()"
+            >Add route</na-button
+          >
+        </div>
+      </form>
+    </aside>
+  }
+
+  <na-dialog
+    [open]="toggleDialogOpen()"
+    [title]="selected()?.status === 'ACTIVE' ? 'Deactivate route?' : 'Activate route?'"
+    [confirmLabel]="selected()?.status === 'ACTIVE' ? 'Deactivate' : 'Activate'"
+    [confirmDanger]="selected()?.status === 'ACTIVE'"
+    (confirmed)="confirmToggle()"
+    (cancelled)="toggleDialogOpen.set(false)"
+  >
+    Route {{ selected()?.origin.iataCode }} → {{ selected()?.destination.iataCode }} will
+    {{
+      selected()?.status === 'ACTIVE'
+        ? 'no longer accept new flight schedules'
+        : 'become available for scheduling again'
+    }}. Existing flights are not affected.
+  </na-dialog>
+</div>

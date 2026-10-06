@@ -1,0 +1,201 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>Audit Log</h1>
+    <p class="page__sub">Every consequential staff and system action, in order.</p>
+  </header>
+
+  <na-alert tone="neutral" icon="≡">
+    Audit records are immutable and cannot be edited or deleted — they form the compliance trail for
+    exception workflows such as payment overrides (BR-14).
+  </na-alert>
+
+  <form class="filters na-card" (ngSubmit)="applyFilters()">
+    <div class="na-field filters__field">
+      <label class="na-label" for="f-event">Event</label>
+      <select
+        id="f-event"
+        class="na-input"
+        [ngModel]="eventFilter()"
+        (ngModelChange)="eventFilter.set($event)"
+        name="event"
+      >
+        <option value="">All events</option>
+        @for (e of events; track e) {
+          <option [value]="e">{{ e }}</option>
+        }
+      </select>
+    </div>
+    <div class="na-field filters__field">
+      <label class="na-label" for="f-actor-type">Actor type</label>
+      <select
+        id="f-actor-type"
+        class="na-input"
+        [ngModel]="actorTypeFilter()"
+        (ngModelChange)="actorTypeFilter.set($event)"
+        name="actorType"
+      >
+        <option value="">All types</option>
+        @for (t of actorTypes; track t) {
+          <option [value]="t">{{ t }}</option>
+        }
+      </select>
+    </div>
+    <div class="na-field filters__field">
+      <label class="na-label" for="f-actor">Actor ID</label>
+      <input
+        id="f-actor"
+        class="na-input"
+        type="search"
+        placeholder="User UUID"
+        [ngModel]="actorIdFilter()"
+        (ngModelChange)="actorIdFilter.set($event)"
+        name="actorId"
+      />
+    </div>
+    <div class="na-field filters__field">
+      <label class="na-label" for="f-target">Target</label>
+      <input
+        id="f-target"
+        class="na-input"
+        type="search"
+        placeholder="Target identifier"
+        [ngModel]="targetIdFilter()"
+        (ngModelChange)="targetIdFilter.set($event)"
+        name="targetId"
+      />
+    </div>
+    <div class="na-field filters__field filters__field--date">
+      <label class="na-label" for="f-from">From</label>
+      <input
+        id="f-from"
+        class="na-input"
+        type="date"
+        [ngModel]="fromFilter()"
+        (ngModelChange)="fromFilter.set($event)"
+        name="from"
+      />
+    </div>
+    <div class="na-field filters__field filters__field--date">
+      <label class="na-label" for="f-to">To</label>
+      <input
+        id="f-to"
+        class="na-input"
+        type="date"
+        [ngModel]="toFilter()"
+        (ngModelChange)="toFilter.set($event)"
+        name="to"
+      />
+    </div>
+    <div class="na-field filters__field">
+      <label class="na-label" for="f-search">Search</label>
+      <input
+        id="f-search"
+        class="na-input"
+        type="search"
+        placeholder="Event, target, type, or IP"
+        [ngModel]="searchFilter()"
+        (ngModelChange)="searchFilter.set($event)"
+        name="search"
+      />
+    </div>
+    <div class="filters__actions">
+      <na-button variant="primary" type="submit" [loading]="loading()">Apply</na-button>
+      <na-button variant="secondary" type="button" (clicked)="resetFilters()">Reset</na-button>
+    </div>
+  </form>
+
+  @if (error()) {
+    <na-alert tone="danger" title="Could not load audit logs" retryable (retry)="load()"
+      >Please try again.</na-alert
+    >
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4]" height="2.5rem" />
+  } @else if (logs().length === 0) {
+    <na-empty-state
+      icon="≡"
+      title="No audit records"
+      message="No entries match the current filters."
+    />
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Event</th>
+            <th>Actor type</th>
+            <th>Actor</th>
+            <th>Target</th>
+            <th>IP</th>
+            <th><span class="na-visually-hidden">Details</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (log of logs(); track log.id) {
+            <tr
+              tabindex="0"
+              class="row"
+              (click)="toggle(log.id)"
+              (keydown.enter)="toggle(log.id)"
+              [attr.aria-expanded]="expanded() === log.id"
+            >
+              <td data-label="Time">{{ fmtDate(log.createdAt) }}</td>
+              <td data-label="Event" class="na-text-mono">{{ log.event }}</td>
+              <td data-label="Actor type">{{ log.actorType }}</td>
+              <td data-label="Actor" class="na-text-mono" [title]="log.actorId ?? ''">
+                {{ truncate(log.actorId) }}
+              </td>
+              <td
+                data-label="Target"
+                class="na-text-mono"
+                [title]="log.targetType + ' ' + (log.targetId ?? '')"
+              >
+                {{ log.targetType }}·{{ truncate(log.targetId) }}
+              </td>
+              <td data-label="IP" class="na-text-mono">{{ log.ipAddress ?? '—' }}</td>
+              <td data-label="Details" class="row__chevron" aria-hidden="true">
+                {{ expanded() === log.id ? '▾' : '▸' }}
+              </td>
+            </tr>
+            @if (expanded() === log.id) {
+              <tr class="detail-row">
+                <td colspan="7">
+                  <div class="detail">
+                    <p class="na-text-small">
+                      <strong>Record ID:</strong> <span class="na-text-mono">{{ log.id }}</span>
+                    </p>
+                    <h3 class="detail__title">Metadata (sanitized)</h3>
+                    @if (hasMetadata(log)) {
+                      <pre class="detail__json">{{ metadataJson(log) }}</pre>
+                    } @else {
+                      <p class="na-text-muted na-text-small">
+                        No additional metadata recorded for this event.
+                      </p>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="pagination" aria-label="Audit pages">
+      <na-button variant="secondary" size="sm" [disabled]="page() <= 1" (clicked)="prev()"
+        >← Previous</na-button
+      >
+      <span class="pagination__info"
+        >Page {{ page() }} of {{ totalPages() }} · {{ total() }} records</span
+      >
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() >= totalPages()"
+        (clicked)="next()"
+        >Next →</na-button
+      >
+    </nav>
+  }
+</section>

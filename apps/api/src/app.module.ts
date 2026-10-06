@@ -1,4 +1,9 @@
-import { Module, NestModule, MiddlewareConsumer, ValidationPipe } from '@nestjs/common';
+import {
+  Module,
+  NestModule,
+  MiddlewareConsumer,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -20,6 +25,8 @@ import { BookingsModule } from './bookings/bookings.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { OffersModule } from './offers/offers.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { SettingsModule } from './settings/settings.module.js';
+import { BaggageModule } from './baggage/baggage.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -29,7 +36,8 @@ import { AuditThrottlerGuard } from './auth/audit-throttler.guard.js';
 const isTest = process.env['NODE_ENV'] === 'test';
 // E2E suites skip throttling per request by default; the rate-limit suite opts
 // in by setting E2E_THROTTLE=1 before building the app (evaluated per request).
-const skipThrottleInTest = (): boolean => isTest && process.env['E2E_THROTTLE'] !== '1';
+const skipThrottleInTest = (): boolean =>
+  isTest && process.env['E2E_THROTTLE'] !== '1';
 
 @Module({
   imports: [
@@ -56,6 +64,8 @@ const skipThrottleInTest = (): boolean => isTest && process.env['E2E_THROTTLE'] 
     PaymentsModule,
     OffersModule,
     DashboardModule,
+    SettingsModule,
+    BaggageModule,
   ],
   controllers: [AppController],
   providers: [

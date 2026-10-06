@@ -5,7 +5,7 @@ import { signal } from '@angular/core';
 import { of, throwError } from 'rxjs';
 import { ConfirmationPage } from './confirmation.component';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import type { CustomerBooking } from '../../../core/models/customer-booking.model';
 import type { BookingDraft } from '../../../core/models/booking-flow.model';
 

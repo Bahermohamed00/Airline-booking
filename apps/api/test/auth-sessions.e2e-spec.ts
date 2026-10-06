@@ -12,6 +12,7 @@ const TEST_USER = {
   password: 'Password123!',
   firstName: 'Session',
   lastName: 'Tester',
+  dateOfBirth: '1990-01-01',
 };
 
 describe('Auth sessions & logout (e2e)', () => {

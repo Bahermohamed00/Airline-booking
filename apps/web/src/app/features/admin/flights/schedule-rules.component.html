@@ -1,0 +1,218 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Schedule Rules' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Schedule rules</h1>
+      <p class="subtitle">
+        Recurring flight definitions. Flights are materialized from ACTIVE rules via generation on
+        the Flights page — rules cannot be deleted, only deactivated.
+      </p>
+    </div>
+    <na-button variant="cta" *naHasPermission="'flights:manage'" (clicked)="openCreate()"
+      >New rule</na-button
+    >
+  </header>
+
+  @if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4, 5]" height="2.5rem" />
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else if (rules().length === 0) {
+    <na-empty-state
+      title="No schedule rules"
+      message="Create the first schedule rule, then generate flights from it on the Flights page."
+    />
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Flight</th>
+            <th>Route</th>
+            <th>Aircraft</th>
+            <th>Departure</th>
+            <th>Days</th>
+            <th>Effective</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of rules(); track r.id) {
+            <tr>
+              <td data-label="Flight">
+                <span class="na-text-mono rule-number">{{ r.flightNumber }}</span>
+              </td>
+              <td data-label="Route">{{ r.originIata }} → {{ r.destinationIata }}</td>
+              <td data-label="Aircraft">{{ r.aircraftRegistration }}</td>
+              <td data-label="Departure">{{ r.departureTimeLocal }}</td>
+              <td data-label="Days">{{ daysLabel(r.operatingDays) }}</td>
+              <td data-label="Effective">
+                {{ dateOf(r.effectiveFrom) }} → {{ dateOf(r.effectiveTo) }}
+              </td>
+              <td data-label="Status">
+                <na-badge [tone]="toneOf(r.status)">{{ r.status }}</na-badge>
+              </td>
+              <td data-label="Actions">
+                <div class="row-actions" *naHasPermission="'flights:manage'">
+                  <na-button variant="secondary" size="sm" (clicked)="openEdit(r)">Edit</na-button>
+                  <na-button
+                    [variant]="r.status === 'ACTIVE' ? 'danger' : 'primary'"
+                    size="sm"
+                    (clicked)="askToggle(r)"
+                  >
+                    {{ r.status === 'ACTIVE' ? 'Deactivate' : 'Activate' }}
+                  </na-button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+
+  <!-- Create / edit drawer -->
+  @if (drawerOpen()) {
+    <div class="backdrop" (click)="closeDrawer()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="editing() ? 'Edit schedule rule' : 'New schedule rule'"
+    >
+      <header class="drawer__head">
+        <h2>{{ editing() ? 'Edit rule' : 'New rule' }}</h2>
+        <button type="button" class="drawer__close" aria-label="Close form" (click)="closeDrawer()">
+          ×
+        </button>
+      </header>
+      <form class="drawer__body" (submit)="save($event)">
+        <div class="na-field">
+          <label class="na-label" for="sr-number">Flight number</label>
+          <input
+            id="sr-number"
+            class="na-input"
+            name="srNumber"
+            [(ngModel)]="formFlightNumber"
+            placeholder="NV720"
+            required
+          />
+          <p class="na-hint">NV followed by 3–4 digits; stored uppercase.</p>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="sr-route">Route</label>
+          <select id="sr-route" class="na-select" name="srRoute" [(ngModel)]="formRouteId" required>
+            <option value="" disabled>Select a route…</option>
+            @for (r of routes(); track r.id) {
+              <option [value]="r.id">
+                {{ r.origin.iataCode }} → {{ r.destination.iataCode }} ({{ r.origin.city }} –
+                {{ r.destination.city }})
+              </option>
+            }
+          </select>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="sr-aircraft">Aircraft</label>
+          <select
+            id="sr-aircraft"
+            class="na-select"
+            name="srAircraft"
+            [(ngModel)]="formAircraftId"
+            required
+          >
+            <option value="" disabled>Select an aircraft…</option>
+            @for (a of fleet(); track a.id) {
+              <option [value]="a.id">
+                {{ a.registration }} — {{ a.model }} ({{ a.capacity }} seats)
+              </option>
+            }
+          </select>
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="sr-time">Departure time (origin-local)</label>
+          <input
+            id="sr-time"
+            class="na-input"
+            type="time"
+            name="srTime"
+            [(ngModel)]="formDepartureTime"
+            required
+          />
+        </div>
+        <fieldset class="na-field days">
+          <legend class="na-label">Operating days</legend>
+          <div class="days__row" role="group" aria-label="Operating days">
+            @for (d of weekdays; track d) {
+              <button
+                type="button"
+                class="day"
+                [class.day--on]="formDays().includes(d)"
+                [attr.aria-pressed]="formDays().includes(d)"
+                (click)="toggleDay(d)"
+              >
+                {{ d }}
+              </button>
+            }
+          </div>
+        </fieldset>
+        <div class="form-grid">
+          <div class="na-field">
+            <label class="na-label" for="sr-from">Effective from</label>
+            <input
+              id="sr-from"
+              class="na-input"
+              type="date"
+              name="srFrom"
+              [(ngModel)]="formEffectiveFrom"
+              required
+            />
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="sr-to">Effective to</label>
+            <input
+              id="sr-to"
+              class="na-input"
+              type="date"
+              name="srTo"
+              [(ngModel)]="formEffectiveTo"
+              required
+            />
+          </div>
+        </div>
+        @if (formError()) {
+          <p class="na-error" role="alert">{{ formError() }}</p>
+        }
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="closeDrawer()">Cancel</na-button>
+          <na-button variant="cta" type="submit" [disabled]="saving()" [loading]="saving()">
+            {{ editing() ? 'Save changes' : 'Create rule' }}
+          </na-button>
+        </div>
+      </form>
+    </aside>
+  }
+
+  <na-dialog
+    [open]="toggling() !== null"
+    [title]="toggling()?.status === 'ACTIVE' ? 'Deactivate this rule?' : 'Activate this rule?'"
+    [confirmLabel]="toggling()?.status === 'ACTIVE' ? 'Deactivate' : 'Activate'"
+    [confirmDanger]="toggling()?.status === 'ACTIVE'"
+    (confirmed)="confirmToggle()"
+    (cancelled)="toggling.set(null)"
+  >
+    @if (toggling(); as r) {
+      {{ r.flightNumber }} ({{ r.originIata }} → {{ r.destinationIata }}) will
+      {{
+        r.status === 'ACTIVE'
+          ? 'stop producing flights the next time generation runs; already-generated flights are kept'
+          : 'be included the next time flights are generated'
+      }}.
+    }
+  </na-dialog>
+</div>
