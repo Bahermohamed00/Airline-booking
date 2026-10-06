@@ -1,0 +1,205 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--na-space-5);
+}
+.page__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--na-space-4);
+  flex-wrap: wrap;
+}
+.subtitle {
+  color: var(--na-ink-500);
+  margin-top: var(--na-space-1);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--na-space-4);
+}
+.card {
+  padding: var(--na-space-5);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    box-shadow var(--na-motion-fast),
+    border-color var(--na-motion-fast);
+}
+.card:hover {
+  box-shadow: var(--na-shadow-md);
+  border-color: var(--na-navy-300);
+}
+.card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--na-space-2);
+}
+.card__reg {
+  font-weight: var(--na-font-bold);
+  color: var(--na-ink-900);
+}
+.card__model {
+  margin-top: var(--na-space-2);
+  font-weight: var(--na-font-medium);
+}
+.card__cap {
+  color: var(--na-ink-500);
+  font-size: var(--na-text-sm);
+  margin-top: var(--na-space-1);
+}
+.list-error {
+  display: flex;
+  align-items: center;
+  gap: var(--na-space-4);
+  padding: var(--na-space-4);
+  border: 1px solid var(--na-border);
+  border-radius: var(--na-radius-lg);
+  background: var(--na-surface-raised);
+}
+.list-error p {
+  margin: 0;
+  color: var(--na-ink-500);
+}
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--na-overlay);
+  z-index: 99;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  width: min(480px, 100vw);
+  background: var(--na-surface-raised);
+  border-left: 1px solid var(--na-border);
+  box-shadow: var(--na-shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+.drawer__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--na-space-3);
+  padding: var(--na-space-5);
+  border-bottom: 1px solid var(--na-border);
+}
+.drawer__close {
+  background: none;
+  border: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--na-ink-500);
+  min-width: 44px;
+  min-height: 44px;
+}
+.drawer__body {
+  padding: var(--na-space-5);
+  overflow-y: auto;
+}
+.drawer__body h3 {
+  margin: var(--na-space-5) 0 var(--na-space-2);
+  font-size: var(--na-text-base);
+}
+.drawer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--na-space-3);
+  margin-top: var(--na-space-4);
+}
+.facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--na-space-3);
+  margin: 0;
+}
+.facts dt {
+  font-size: var(--na-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--na-ink-500);
+}
+.facts dd {
+  margin: var(--na-space-1) 0 0;
+  font-weight: var(--na-font-medium);
+  font-size: var(--na-text-sm);
+}
+.cabins {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cabins li {
+  display: flex;
+  align-items: center;
+  gap: var(--na-space-2);
+  padding: var(--na-space-2) 0;
+  border-bottom: 1px solid var(--na-border);
+  font-size: var(--na-text-sm);
+}
+.cabins__count {
+  margin-left: auto;
+  font-weight: var(--na-font-semibold);
+}
+.seatmap {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  max-width: 220px;
+  padding: var(--na-space-3);
+  background: var(--na-surface-sunken);
+  border-radius: var(--na-radius-md);
+}
+.seat {
+  aspect-ratio: 1;
+  border-radius: 3px;
+}
+.seat--economy {
+  background: var(--na-blue-500);
+}
+.seat--business {
+  background: var(--na-cta);
+}
+.seat--first {
+  background: var(--na-navy-700);
+}
+.seat--exit {
+  outline: 2px solid var(--na-warning);
+  outline-offset: 1px;
+}
+.legend {
+  display: flex;
+  gap: var(--na-space-4);
+  margin-top: var(--na-space-3);
+  font-size: var(--na-text-xs);
+  color: var(--na-ink-500);
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--na-space-1);
+}
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.dot--economy {
+  background: var(--na-blue-500);
+}
+.dot--business {
+  background: var(--na-cta);
+}
+.dot--first {
+  background: var(--na-navy-700);
+}
+.actions {
+  margin-top: var(--na-space-6);
+}

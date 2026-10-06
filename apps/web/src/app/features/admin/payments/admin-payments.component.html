@@ -1,0 +1,172 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>Payments</h1>
+    <p class="page__sub">All payment transactions across bookings.</p>
+  </header>
+
+  <na-alert tone="info" icon="🔒">
+    Card data is tokenized by the payment provider — no raw card data is stored or displayed.
+  </na-alert>
+
+  <div class="toolbar">
+    <div class="na-field toolbar__filter">
+      <label class="na-label" for="payment-status">Status</label>
+      <select
+        id="payment-status"
+        class="na-select"
+        [ngModel]="statusFilter()"
+        (ngModelChange)="onStatusChange($event)"
+      >
+        <option value="ALL">All statuses</option>
+        @for (opt of statusOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+    </div>
+    <na-button variant="secondary" [disabled]="payments().length === 0" (clicked)="exportCsv()"
+      >Export CSV</na-button
+    >
+  </div>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="tableRows()"
+      [loading]="loading()"
+      emptyTitle="No payments"
+      emptyMessage="No payment transactions match the selected status."
+      (rowClick)="openPayment($event.id)"
+    />
+  }
+
+  @if (selectedId()) {
+    <div class="backdrop" (click)="closeDrawer()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Payment details"
+      tabindex="-1"
+      (keydown.escape)="closeDrawer()"
+    >
+      <header class="drawer__head">
+        <h2 class="drawer__title">Payment details</h2>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close payment details"
+          (click)="closeDrawer()"
+        >
+          ×
+        </button>
+      </header>
+
+      @if (detailLoading()) {
+        <na-skeleton [rows]="[1, 2, 3, 4]" height="1.2rem" />
+      } @else if (detailError()) {
+        <div class="list-error" role="alert">
+          <p>{{ detailError() }}</p>
+          <na-button variant="secondary" size="sm" (clicked)="retryDetail()">Retry</na-button>
+        </div>
+      } @else if (detail(); as p) {
+        <dl class="facts">
+          <div>
+            <dt>Booking</dt>
+            <dd class="na-text-mono">{{ p.bookingReference }}</dd>
+          </div>
+          <div>
+            <dt>Contact</dt>
+            <dd>{{ p.contactEmail }}</dd>
+          </div>
+          <div>
+            <dt>Booking status</dt>
+            <dd>
+              <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, p.bookingStatus).tone">
+                {{ statusLabel(BOOKING_STATUS_MAP, p.bookingStatus).label }}
+              </na-badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Amount</dt>
+            <dd>{{ money(p.amount, p.currency) }}</dd>
+          </div>
+          <div>
+            <dt>Payment status</dt>
+            <dd>
+              <na-badge [tone]="statusLabel(PAYMENT_STATUS_MAP, p.status).tone">
+                {{ statusLabel(PAYMENT_STATUS_MAP, p.status).label }}
+              </na-badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Provider</dt>
+            <dd>{{ p.provider }}</dd>
+          </div>
+          <div>
+            <dt>Provider reference</dt>
+            <dd class="na-text-mono">{{ p.providerReference ?? '—' }}</dd>
+          </div>
+          <div>
+            <dt>Paid at</dt>
+            <dd>{{ fmt(p.paidAt) }}</dd>
+          </div>
+          @if (p.failedAt) {
+            <div>
+              <dt>Failed at</dt>
+              <dd>{{ fmt(p.failedAt) }}</dd>
+            </div>
+          }
+          <div>
+            <dt>Created</dt>
+            <dd>{{ fmt(p.createdAt) }}</dd>
+          </div>
+        </dl>
+
+        <h3 class="drawer__section">Refunds</h3>
+        @if (p.refunds.length) {
+          <ul class="plain-list">
+            @for (r of p.refunds; track r.id) {
+              <li>
+                <strong>{{ money(r.amount, r.currency) }}</strong>
+                <na-badge [tone]="statusLabel(REFUND_STATUS_MAP, r.status).tone">
+                  {{ statusLabel(REFUND_STATUS_MAP, r.status).label }}
+                </na-badge>
+                <p class="na-text-small na-text-muted">
+                  {{ r.reason ?? 'No reason given' }} ·
+                  {{
+                    r.processedAt
+                      ? 'processed ' + fmt(r.processedAt)
+                      : 'requested ' + fmt(r.createdAt)
+                  }}
+                </p>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="na-text-muted na-text-small">No refunds issued against this payment.</p>
+        }
+
+        @if (refundable()) {
+          <footer class="drawer__actions">
+            <span *naHasPermission="'payments:refund'">
+              <na-button variant="primary" (clicked)="refundOpen.set(true)">Issue refund</na-button>
+            </span>
+          </footer>
+        }
+      }
+    </aside>
+  }
+
+  <na-refund-dialog
+    [open]="refundOpen()"
+    [payment]="detail()"
+    (submitted)="onRefund($event)"
+    (cancelled)="onRefundCancelled()"
+  />
+</section>

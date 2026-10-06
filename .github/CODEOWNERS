@@ -34,13 +34,14 @@
 /apps/api/src/notifications/                               @DEVELOPER_A
 
 # Web — customer router + customer-domain pages (booking funnel, account,
-# offers). Note: these are flat component files, not subdirectories.
+# offers). The bookings/ and offers/ folders hold the A-owned pages; the
+# booking funnel keeps its directory pattern.
 /apps/web/src/app/customer.routes.ts                       @DEVELOPER_A
 /apps/web/src/app/features/customer/booking/               @DEVELOPER_A
-/apps/web/src/app/features/customer/my-bookings.component.*    @DEVELOPER_A
-/apps/web/src/app/features/customer/manage-booking.component.* @DEVELOPER_A
-/apps/web/src/app/features/customer/manage-lookup.component.*  @DEVELOPER_A
-/apps/web/src/app/features/customer/offers.component.*         @DEVELOPER_A
+/apps/web/src/app/features/customer/bookings/              @DEVELOPER_A
+# payment.service moved with the bookings pages but stays platform-owned.
+/apps/web/src/app/features/customer/bookings/payment.service.* @DEVELOPER_B
+/apps/web/src/app/features/customer/offers/                @DEVELOPER_A
 
 # Prisma — Developer A model files. Every other prisma/schema/<Model>/ defaults
 # to Developer B via the catch-all above. Enums are owned with their model file.

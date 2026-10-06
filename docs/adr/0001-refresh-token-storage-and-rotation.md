@@ -10,4 +10,4 @@ Refresh tokens are opaque 32-byte random values (not JWTs), delivered as an `htt
 ## Consequences
 
 - Angular must send `withCredentials` on `/api/auth/*` and can never read the refresh token; a page reload restores the session via a silent refresh call.
-- Rotated rows must be kept until expiry so reuse can be detected; a scheduled cleanup (Phase 14) purges expired rows.
+- Rotated rows must be kept until expiry so reuse can be detected; a scheduled cleanup (`apps/api/src/auth/token-cleanup.service.ts`, daily at 03:00) purges expired rows.

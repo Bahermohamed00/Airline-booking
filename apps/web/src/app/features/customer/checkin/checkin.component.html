@@ -1,0 +1,203 @@
+<div class="na-container page">
+  <header class="hero">
+    <h1>Check in for your flight</h1>
+    <p class="hero__sub">
+      Save time at the airport — check in online and walk straight to security.
+    </p>
+  </header>
+
+  <div class="layout">
+    <section class="na-card lookup" aria-labelledby="lookup-h">
+      <h2 id="lookup-h">Find a booking</h2>
+      <p class="lookup__sub">
+        Enter your booking reference and contact email to retrieve your trip.
+      </p>
+      @if (lookupError()) {
+        <na-alert
+          tone="danger"
+          title="Check-in lookup failed"
+          dismissible
+          (dismissed)="lookupError.set(null)"
+          >{{ lookupError() }}</na-alert
+        >
+      }
+      <form [formGroup]="form" (ngSubmit)="lookup()">
+        <div class="na-field">
+          <label class="na-label" for="reference">Booking reference</label>
+          <input
+            id="reference"
+            class="na-input na-text-mono"
+            type="text"
+            formControlName="reference"
+            placeholder="e.g. NVA7K2"
+            autocomplete="off"
+          />
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="email">Contact email</label>
+          <input
+            id="email"
+            class="na-input"
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            aria-describedby="email-hint"
+          />
+          <p class="na-hint" id="email-hint">The email address you used when booking.</p>
+        </div>
+        <na-button
+          variant="cta"
+          size="lg"
+          type="submit"
+          [loading]="lookupLoading()"
+          [disabled]="form.invalid"
+          >Find booking</na-button
+        >
+      </form>
+    </section>
+
+    @if (isLoggedIn()) {
+      <section class="na-card mine" aria-labelledby="eligible-h">
+        <h2 id="eligible-h" class="mine__title">Your bookings</h2>
+        @if (listError()) {
+          <na-alert tone="danger" title="Could not load bookings" retryable (retry)="loadMine()"
+            >Please try again.</na-alert
+          >
+        } @else if (listLoading()) {
+          <div class="mine__skel" role="status" aria-label="Loading your bookings">
+            @for (i of [1, 2]; track i) {
+              <div class="mine__skelrow" aria-hidden="true">
+                <span class="sk sk--route"></span>
+                <span class="sk sk--meta"></span>
+              </div>
+            }
+          </div>
+        } @else if (mine().length === 0) {
+          <na-empty-state
+            title="Nothing to check in to yet"
+            message="When you have an upcoming flight it will appear here, ready for online check-in."
+            actionLabel="Search flights"
+            (action)="router.navigate(['/search'])"
+          />
+        } @else {
+          <ul class="mine__list">
+            @for (b of mine(); track b.id) {
+              <li class="mine__row">
+                <div class="mine__info">
+                  <na-route-line
+                    size="md"
+                    [origin]="b.flight.route.origin.iataCode"
+                    [destination]="b.flight.route.destination.iataCode"
+                  />
+                  <p class="mine__meta na-text-muted na-text-small">
+                    {{ b.flight.flightNumber }} · {{ fmt(b.flight.departureTime) }} ·
+                    <span class="na-text-mono">{{ b.bookingReference }}</span>
+                  </p>
+                </div>
+                <na-button variant="secondary" size="sm" (clicked)="select(b)">Select</na-button>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  </div>
+
+  @if (selected(); as b) {
+    <section class="na-card detail" aria-labelledby="detail-h">
+      <div class="detail__head">
+        <h2 id="detail-h">
+          Check in — <span class="na-text-mono">{{ b.bookingReference }}</span>
+        </h2>
+        <na-button variant="ghost" size="sm" (clicked)="selected.set(null)">Close</na-button>
+      </div>
+
+      <div class="summary">
+        <na-route-line
+          size="lg"
+          [origin]="b.flight.route.origin.iataCode"
+          [destination]="b.flight.route.destination.iataCode"
+          [originCity]="b.flight.route.origin.city"
+          [destinationCity]="b.flight.route.destination.city"
+        />
+        <div class="summary__meta">
+          <p class="na-text-muted na-text-small">
+            {{ b.flight.flightNumber }} · {{ fmt(b.flight.departureTime) }}
+          </p>
+          <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, b.status).tone">
+            {{ statusLabel(BOOKING_STATUS_MAP, b.status).label }}
+          </na-badge>
+        </div>
+      </div>
+
+      @if (allCheckedIn(b)) {
+        <div class="success" role="status">
+          <span class="success__mark" aria-hidden="true">✓</span>
+          <h3 class="success__title">You're checked in</h3>
+          <p class="success__msg">Your boarding pass is ready.</p>
+          <na-button variant="cta" size="lg" (clicked)="goBoardingPass(b)"
+            >View boarding pass</na-button
+          >
+        </div>
+      } @else if (eligibilityOf(b).eligible) {
+        <p class="chip" [class.chip--warn]="closingSoon(b)">
+          Check-in closes in
+          <span class="chip__time">{{ countdown(eligibilityOf(b).closesAt!) }}</span>
+        </p>
+        <ul class="pax-list">
+          @for (bp of b.passengers; track bp.id; let i = $index) {
+            <li class="pax">
+              <div class="pax__info">
+                <p class="pax__name">{{ bp.passenger.firstName }} {{ bp.passenger.lastName }}</p>
+                <p class="na-text-muted na-text-small">
+                  {{ bp.passengerType }} · Seat {{ seatOf(b, bp.id) ?? 'assigned at gate' }}
+                  @if (bp.passenger.passportNumber) {
+                    · Doc {{ bp.passenger.passportNumber }}
+                  }
+                </p>
+              </div>
+              @if (alreadyDone(b, bp.id)) {
+                <div class="pax__done">
+                  <na-badge tone="success">Checked in</na-badge>
+                  <na-button variant="secondary" size="sm" (clicked)="goBoardingPass(b)"
+                    >Boarding pass</na-button
+                  >
+                </div>
+              } @else {
+                <div class="pax__confirm">
+                  <input
+                    type="checkbox"
+                    class="pax__checkbox"
+                    [id]="'doc-' + bp.id"
+                    [checked]="docConfirmed().has(bp.id)"
+                    (change)="toggleDoc(bp.id)"
+                  />
+                  <label [for]="'doc-' + bp.id" class="pax__label">
+                    I confirm the travel document details for this passenger are correct.
+                  </label>
+                </div>
+                <na-button
+                  variant="cta"
+                  [disabled]="!docConfirmed().has(bp.id)"
+                  [loading]="checkingIn() === bp.id"
+                  (clicked)="completeCheckIn(b, i, bp.id)"
+                  >Complete check-in</na-button
+                >
+              }
+            </li>
+          }
+        </ul>
+      } @else if (opensInFuture(b)) {
+        <na-alert tone="info" title="Check-in not open yet">
+          Online check-in for this flight opens at
+          <strong>{{ fmt(eligibilityOf(b).opensAt!) }}</strong> — in
+          {{ countdown(eligibilityOf(b).opensAt!) }}.
+        </na-alert>
+      } @else {
+        <na-alert tone="warning" title="Check-in unavailable">
+          {{ eligibilityOf(b).reason ?? 'This booking cannot be checked in online.' }}
+        </na-alert>
+      }
+    </section>
+  }
+</div>

@@ -24,5 +24,5 @@ export const routes: Routes = [
     component: CustomerShell,
     children: CUSTOMER_ROUTES,
   },
-  { path: '**', loadComponent: () => import('./features/customer/help.component').then((m) => m.HelpPage) },
+  { path: '**', loadComponent: () => import('./features/customer/help/help.component').then((m) => m.HelpPage) },
 ];

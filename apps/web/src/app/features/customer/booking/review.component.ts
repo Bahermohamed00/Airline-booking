@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
@@ -17,179 +17,8 @@ import { BOOKING_STEPS } from './passengers.component';
 @Component({
   selector: 'na-review-page',
   imports: [RouterLink, NaStepper, NaButton, NaBadge, NaAlert],
-  template: `
-    <div class="na-container page">
-      <na-stepper [steps]="steps" [currentIndex]="4" />
-      <h1>Review & book</h1>
-      <p class="page__sub na-text-muted">Check your trip details, then confirm your booking.</p>
-
-      @if (draft(); as d) {
-        @if (holdWarning()) {
-          <na-alert tone="warning" icon="⏱" title="Seat selection timed out">
-            Your seat selection timed out, so the seats were released — you can
-            <a routerLink="/booking/seats">choose seats again</a> or continue without reserved seats.
-          </na-alert>
-        }
-
-        <div class="layout">
-          <div class="main">
-            <section class="na-card panel" aria-labelledby="trip-h">
-              <header class="panel__head">
-                <h2 id="trip-h">Trip</h2>
-                <a [routerLink]="['/flights', d.outbound.id]">Edit</a>
-              </header>
-              <p>
-                <strong>{{ d.outbound.flightNumber }}</strong> — {{ d.outbound.route.origin.iataCode }}
-                ({{ d.outbound.route.origin.city }}) → {{ d.outbound.route.destination.iataCode }}
-                ({{ d.outbound.route.destination.city }})
-              </p>
-              <p class="na-text-small na-text-muted">
-                {{ fullDate(d.outbound.departureTime) }} → {{ time(d.outbound.arrivalTime) }} ·
-                {{ cabinName(d.fare.cabinClass) }} ·
-                <na-badge [tone]="statusTone(d.outbound.status)">{{ statusLabel(d.outbound.status) }}</na-badge>
-              </p>
-            </section>
-
-            <section class="na-card panel" aria-labelledby="pax-h">
-              <header class="panel__head">
-                <h2 id="pax-h">Passengers</h2>
-                <a routerLink="/booking/passengers">Edit</a>
-              </header>
-              <ul class="rows">
-                @for (p of d.passengers; track $index; let i = $index) {
-                  <li>
-                    <span>
-                      {{ p.firstName }} {{ p.lastName }}
-                      <span class="na-text-muted na-text-small">({{ typeLabel(p.passengerType) }})</span>
-                    </span>
-                    <span class="na-text-small na-text-muted">
-                      Seat {{ seatNumber(d, i) ?? 'not selected' }}
-                    </span>
-                  </li>
-                }
-              </ul>
-            </section>
-
-            <section class="na-card panel" aria-labelledby="contact-h">
-              <header class="panel__head">
-                <h2 id="contact-h">Contact</h2>
-                <a routerLink="/booking/passengers">Edit</a>
-              </header>
-              <p class="na-text-small">
-                {{ d.contactEmail }}@if (d.contactPhone) { · {{ d.contactPhone }} }
-              </p>
-            </section>
-
-            <section class="na-card panel" aria-labelledby="bags-h">
-              <header class="panel__head">
-                <h2 id="bags-h">Baggage & extras</h2>
-                <a routerLink="/booking/extras">Edit</a>
-              </header>
-              @if (d.fare.rules; as rules) {
-                <p class="na-text-small">
-                  Included: {{ rules.checkedBaggagePieces }}× checked bag ({{ rules.checkedBaggageWeightKg }} kg)
-                  + {{ rules.carryOnPieces }}× carry-on per passenger.
-                </p>
-              }
-              <p class="na-text-small na-text-muted">No add-on services were available for this booking.</p>
-            </section>
-
-            @if (d.fare.rules; as rules) {
-              <details class="na-card panel rules">
-                <summary>Fare rules — {{ cabinName(d.fare.cabinClass) }}</summary>
-                <ul>
-                  <li>{{ rules.description }}</li>
-                  <li>{{ rules.refundable ? 'Refundable (cancellation fee ' + rules.cancellationFeePercent + '%)' : 'Non-refundable' }}</li>
-                  <li>{{ rules.changeAllowed ? 'Changes allowed' + (rules.changeFee ? ' — fee ' + money(rules.changeFee) : ' — free') : 'Changes not permitted' }}</li>
-                  @if (rules.priorityBoarding) { <li>Priority boarding included</li> }
-                  @if (rules.loungeAccess) { <li>Lounge access included</li> }
-                </ul>
-              </details>
-            }
-          </div>
-
-          <aside class="na-card side" aria-label="Price and confirmation">
-            <h2>Price breakdown</h2>
-            @if (breakdown(); as b) {
-              <table class="side__table">
-                <tbody>
-                  <tr><td>Base fare × {{ b.passengerCount }}</td><td>{{ money(b.base) }}</td></tr>
-                  <tr><td>Taxes × {{ b.passengerCount }}</td><td>{{ money(b.taxes) }}</td></tr>
-                  <tr><td>Fees × {{ b.passengerCount }}</td><td>{{ money(b.fees) }}</td></tr>
-                  <tr class="side__total"><td>Total</td><td>{{ money(b.total) }}</td></tr>
-                </tbody>
-              </table>
-              <p class="na-hint">Seats are included at no charge.</p>
-            }
-
-            <p class="payment-note na-text-small na-text-muted">
-              No payment is due now — the booking will be created as <strong>pending</strong> and payment happens later.
-            </p>
-
-            <div class="consent">
-              <input id="consent" type="checkbox" [checked]="consent()" (change)="consent.set($any($event.target).checked)"
-                [attr.aria-invalid]="consentError()" aria-describedby="consent-hint" />
-              <label for="consent" id="consent-hint">
-                I accept the conditions of carriage and privacy policy — see
-                <a routerLink="/help">Help & conditions</a>.
-              </label>
-            </div>
-            @if (consentError()) {
-              <p class="na-error">Please accept the terms to continue.</p>
-            }
-
-            <div class="confirm">
-              @if (submitError(); as message) {
-                <na-alert tone="danger" icon="⚠" title="Booking could not be created" [retryable]="submitErrorRetryable()" (retry)="submit()">
-                  {{ message }}
-                </na-alert>
-              }
-              <na-button variant="cta" size="lg" [loading]="submitting()" [disabled]="submitting()" (clicked)="submit()">
-                {{ submitting() ? 'Creating your booking…' : 'Confirm booking' }}
-              </na-button>
-              @if (submitting()) {
-                <p class="na-text-small na-text-muted" aria-live="polite">
-                  Contacting the booking service — do not close this page.
-                </p>
-              }
-            </div>
-          </aside>
-        </div>
-      }
-    </div>
-  `,
-  styles: `
-    .page { padding-top: var(--na-space-6); padding-bottom: var(--na-space-12); }
-    h1 { margin-bottom: var(--na-space-1); }
-    .page__sub { margin-bottom: var(--na-space-5); }
-    na-alert { display: block; margin-bottom: var(--na-space-4); }
-    .layout { display: grid; grid-template-columns: 1fr 360px; gap: var(--na-space-5); align-items: start; }
-    .main { display: grid; gap: var(--na-space-4); align-content: start; }
-    .panel { padding: var(--na-space-6); }
-    .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--na-space-3); }
-    .panel__head h2 { font-size: var(--na-text-xl); }
-    .panel__head a { font-weight: var(--na-font-semibold); min-height: 44px; display: inline-flex; align-items: center; }
-    .rows { list-style: none; margin: var(--na-space-2) 0 0; padding: 0; display: grid; gap: var(--na-space-2); }
-    .rows li { display: flex; justify-content: space-between; gap: var(--na-space-3); }
-    .rules summary { cursor: pointer; font-weight: var(--na-font-semibold); min-height: 44px; display: flex; align-items: center; }
-    .rules ul { margin: var(--na-space-3) 0 0; padding-left: var(--na-space-5); display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
-    .side { padding: var(--na-space-6); position: sticky; top: var(--na-space-4); }
-    .side h2 { font-size: var(--na-text-xl); margin-bottom: var(--na-space-4); }
-    .side__table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); margin-bottom: var(--na-space-2); }
-    .side__table td { padding: var(--na-space-1) 0; }
-    .side__table td:last-child { text-align: right; font-weight: var(--na-font-medium); }
-    .side__total td { border-top: 1px solid var(--na-border); padding-top: var(--na-space-2); font-size: var(--na-text-lg); font-weight: var(--na-font-bold); }
-    .payment-note { margin: var(--na-space-4) 0 0; }
-    .consent { display: flex; gap: var(--na-space-2); align-items: flex-start; margin: var(--na-space-5) 0 var(--na-space-2); }
-    .consent input { width: 22px; height: 22px; flex-shrink: 0; margin-top: var(--na-space-1); }
-    .consent label { font-size: var(--na-text-sm); }
-    .confirm { display: grid; gap: var(--na-space-3); margin-top: var(--na-space-4); border-top: 1px solid var(--na-border); padding-top: var(--na-space-4); }
-    .confirm na-alert { margin-bottom: 0; }
-    @media (max-width: 900px) {
-      .layout { grid-template-columns: 1fr; }
-      .side { position: static; order: -1; }
-    }
-  `,
+  templateUrl: './review.component.html',
+  styleUrl: './review.component.css',
 })
 export class ReviewPage {
   private readonly router = inject(Router);
@@ -306,7 +135,9 @@ export class ReviewPage {
         this.router.navigate(['/booking/seats'], { state: { seatConflict: true } });
         return;
       default:
-        this.submitError.set('The booking could not be created right now. Your details are preserved — you can safely try again.');
+        this.submitError.set(
+          'The booking could not be created right now. Your details are preserved — you can safely try again.',
+        );
         this.submitErrorRetryable.set(true);
     }
   }
@@ -317,11 +148,19 @@ export class ReviewPage {
   }
 
   protected time(iso: string): string {
-    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(
+      new Date(iso),
+    );
   }
 
   protected fullDate(iso: string): string {
-    return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(iso));
   }
 
   protected cabinName(cabin: string): string {

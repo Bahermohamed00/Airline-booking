@@ -1,0 +1,283 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Overview', link: '/admin/dashboard' }, { label: 'Flights' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Flight schedule</h1>
+      <p class="subtitle">
+        Flights are created from schedule rules via generation — there is no manual flight creation
+        or per-flight editing.
+      </p>
+    </div>
+    <na-button variant="cta" *naHasPermission="'flights:manage'" (clicked)="openGenerate()"
+      >Generate flights</na-button
+    >
+  </header>
+
+  <div class="filters">
+    <div class="na-field filters__search">
+      <label class="na-label" for="flight-search">Search</label>
+      <input
+        id="flight-search"
+        class="na-input"
+        type="search"
+        placeholder="Flight number or airport code…"
+        [ngModel]="query()"
+        (ngModelChange)="query.set($event)"
+      />
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="status-filter">Status</label>
+      <select
+        id="status-filter"
+        class="na-select"
+        [ngModel]="statusFilter()"
+        (ngModelChange)="statusFilter.set($event)"
+      >
+        <option value="ALL">All statuses</option>
+        @for (s of statusOptions; track s) {
+          <option [value]="s">{{ flightStatusLabel(s) }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [loading]="loading()"
+      emptyTitle="No flights match"
+      emptyMessage="Try a different search term or status filter."
+      emptyActionLabel="Clear filters"
+      (rowClick)="openDetail($event.id)"
+      (emptyAction)="clearFilters()"
+    />
+  }
+
+  <!-- Detail drawer -->
+  @if (selected(); as f) {
+    <div class="backdrop" (click)="closeDetail()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Flight ' + f.flightNumber + ' details'"
+    >
+      <header class="drawer__head">
+        <div>
+          <h2>{{ f.flightNumber }}</h2>
+          <p class="subtitle">
+            {{ f.route.origin.city }} ({{ f.route.origin.iataCode }}) →
+            {{ f.route.destination.city }} ({{ f.route.destination.iataCode }})
+          </p>
+        </div>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close details"
+          (click)="closeDetail()"
+        >
+          ×
+        </button>
+      </header>
+
+      <div class="drawer__body">
+        <dl class="facts">
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <na-badge [tone]="flightStatus(f).tone">{{ flightStatus(f).label }}</na-badge>
+            </dd>
+          </div>
+          <div>
+            <dt>Departure</dt>
+            <dd>{{ formatDate(f.departureTime) }} · {{ formatTime(f.departureTime) }}</dd>
+          </div>
+          <div>
+            <dt>Arrival</dt>
+            <dd>{{ formatDate(f.arrivalTime) }} · {{ formatTime(f.arrivalTime) }}</dd>
+          </div>
+          <div>
+            <dt>Duration</dt>
+            <dd>{{ duration(f) }}</dd>
+          </div>
+          <div>
+            <dt>Aircraft</dt>
+            <dd>{{ f.aircraft.registration }} — {{ f.aircraft.model }}</dd>
+          </div>
+          <div>
+            <dt>Distance</dt>
+            <dd>{{ f.route.distanceKm ?? '—' }} km</dd>
+          </div>
+        </dl>
+
+        <h3>Segments</h3>
+        @if (detailLoading()) {
+          <na-skeleton [rows]="[1, 2]" height="1.5rem" />
+        } @else if (detailError()) {
+          <div class="list-error" role="alert">
+            <p>{{ detailError() }}</p>
+            <na-button variant="secondary" size="sm" (clicked)="retryDetail()">Retry</na-button>
+          </div>
+        } @else {
+          <ul class="segments">
+            @for (seg of f.segments; track seg.id) {
+              <li>
+                <span class="na-text-mono"
+                  >{{ seg.origin.iataCode }} → {{ seg.destination.iataCode }}</span
+                >
+                <span class="na-text-muted na-text-small"
+                  >{{ formatTime(seg.departureTime) }} – {{ formatTime(seg.arrivalTime) }}</span
+                >
+              </li>
+            }
+          </ul>
+        }
+
+        <h3>Fares</h3>
+        <div class="fares-wrap">
+          <table class="fares">
+            <thead>
+              <tr>
+                <th>Cabin</th>
+                <th>Base</th>
+                <th>Taxes &amp; fees</th>
+                <th>Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (fare of f.fares; track fare.id) {
+                <tr>
+                  <td>{{ fare.cabinClass.replace('_', ' ') }}</td>
+                  <td>{{ formatMoney(fare.basePrice, fare.currency) }}</td>
+                  <td>{{ formatMoney(fare.taxAmount + fare.feeAmount, fare.currency) }}</td>
+                  <td>{{ fare.availableCount }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+  }
+
+  <!-- Generate flights drawer -->
+  @if (generateOpen()) {
+    <div class="backdrop" (click)="closeGenerate()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Generate flights from schedule rules"
+    >
+      <header class="drawer__head">
+        <h2>Generate flights</h2>
+        <button
+          type="button"
+          class="drawer__close"
+          aria-label="Close form"
+          (click)="closeGenerate()"
+        >
+          ×
+        </button>
+      </header>
+      <form class="drawer__body" (submit)="submitGenerate($event)">
+        <p class="na-hint">
+          Creates and updates flights from the ACTIVE schedule rules whose operating days fall
+          inside the range (max {{ maxRangeDays }} days). Generation is idempotent — re-running the
+          same range updates existing flights instead of duplicating them.
+        </p>
+        <div class="na-field">
+          <label class="na-label" for="gen-from">From</label>
+          <input
+            id="gen-from"
+            class="na-input"
+            type="date"
+            name="genFrom"
+            [(ngModel)]="generateFrom"
+            required
+          />
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="gen-to">To</label>
+          <input
+            id="gen-to"
+            class="na-input"
+            type="date"
+            name="genTo"
+            [(ngModel)]="generateTo"
+            required
+          />
+          @if (generateError()) {
+            <p class="na-error" role="alert">{{ generateError() }}</p>
+          }
+        </div>
+
+        @if (summary(); as s) {
+          <section class="gen-summary" aria-label="Generation summary">
+            <h3>Generation summary</h3>
+            <dl class="facts">
+              <div>
+                <dt>Rules evaluated</dt>
+                <dd>{{ s.rulesEvaluated }}</dd>
+              </div>
+              <div>
+                <dt>Operating dates</dt>
+                <dd>{{ s.operatingDates }}</dd>
+              </div>
+              <div>
+                <dt>Flights created</dt>
+                <dd>{{ s.flightsCreated }}</dd>
+              </div>
+              <div>
+                <dt>Flights updated</dt>
+                <dd>{{ s.flightsUpdated }}</dd>
+              </div>
+              <div>
+                <dt>Segments created</dt>
+                <dd>{{ s.segmentsCreated }}</dd>
+              </div>
+              <div>
+                <dt>Segments updated</dt>
+                <dd>{{ s.segmentsUpdated }}</dd>
+              </div>
+              <div>
+                <dt>Fares created</dt>
+                <dd>{{ s.faresCreated }}</dd>
+              </div>
+              <div>
+                <dt>Fares updated</dt>
+                <dd>{{ s.faresUpdated }}</dd>
+              </div>
+            </dl>
+            @if (s.skippedRules.length > 0) {
+              <h3>Skipped rules</h3>
+              <ul class="skipped">
+                @for (skip of s.skippedRules; track skip.flightNumber) {
+                  <li>
+                    <span class="na-text-mono">{{ skip.flightNumber }}</span>
+                    <span class="na-text-muted na-text-small">{{ skip.reason }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+
+        <div class="drawer__actions">
+          <na-button variant="secondary" (clicked)="closeGenerate()">Close</na-button>
+          <na-button variant="cta" type="submit" [disabled]="generating()" [loading]="generating()"
+            >Generate</na-button
+          >
+        </div>
+      </form>
+    </aside>
+  }
+</div>

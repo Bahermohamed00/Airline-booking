@@ -1,0 +1,177 @@
+<div class="na-container page">
+  <header class="page__head">
+    <h1>Track your flight</h1>
+    <p class="page__sub">Live departure and arrival information, by flight number or route.</p>
+  </header>
+
+  <na-tabs
+    [tabs]="modeTabs"
+    [active]="mode()"
+    ariaLabel="Flight status search mode"
+    (tabChange)="setMode($event)"
+  />
+
+  <div class="search na-card">
+    @if (mode() === 'number') {
+      <form [formGroup]="numberForm" (ngSubmit)="searchByNumber()" class="search__row">
+        <div class="na-field">
+          <label class="na-label" for="flightNumber">Flight number</label>
+          <input
+            id="flightNumber"
+            class="na-input"
+            type="text"
+            formControlName="flightNumber"
+            placeholder="e.g. NV100"
+            autocomplete="off"
+          />
+          @if (
+            numberForm.controls.flightNumber.touched &&
+            numberForm.controls.flightNumber.errors?.['required']
+          ) {
+            <span class="na-error">Flight number is required.</span>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="date">Date (optional)</label>
+          <input id="date" class="na-input" type="date" formControlName="date" />
+        </div>
+        <na-button variant="cta" type="submit" [loading]="loading()" [disabled]="numberForm.invalid"
+          >Search</na-button
+        >
+      </form>
+    } @else {
+      <form class="search__row" (submit)="$event.preventDefault(); searchByRoute()">
+        <na-autocomplete
+          label="From"
+          placeholder="Origin airport"
+          [options]="airportOptions"
+          (selected)="origin.set($event.value)"
+        />
+        <na-autocomplete
+          label="To"
+          placeholder="Destination airport"
+          [options]="airportOptions"
+          (selected)="destination.set($event.value)"
+        />
+        <na-button
+          variant="cta"
+          type="submit"
+          [loading]="loading()"
+          [disabled]="!origin() || !destination()"
+          >Search</na-button
+        >
+      </form>
+    }
+  </div>
+
+  @if (error()) {
+    <na-alert tone="danger" title="Status search failed" retryable (retry)="retry()"
+      >Please try again.</na-alert
+    >
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1]" height="26rem" />
+  } @else if (searched() && flights().length === 0) {
+    <na-empty-state
+      title="No flights found"
+      message="Check the flight number, date, or route and try again."
+    />
+  } @else if (flights().length > 0) {
+    <p class="na-text-muted na-text-small updated">Last updated {{ fmt(lastUpdated()!) }}</p>
+    <ul class="results" role="list">
+      @for (f of flights(); track f.id) {
+        <li class="result na-card">
+          <div class="result__head">
+            <div class="result__id">
+              <p class="result__flight">{{ f.flightNumber }}</p>
+              <div class="result__badges">
+                <na-badge
+                  class="result__status"
+                  [tone]="statusLabel(FLIGHT_STATUS_MAP, f.status).tone"
+                >
+                  {{ statusLabel(FLIGHT_STATUS_MAP, f.status).label }}
+                </na-badge>
+                <na-badge [tone]="statusLabel(SCHEDULE_STATUS_MAP, f.scheduleStatus).tone">
+                  {{ statusLabel(SCHEDULE_STATUS_MAP, f.scheduleStatus).label }}
+                </na-badge>
+              </div>
+            </div>
+            <na-button variant="secondary" size="sm" (clicked)="subscribe(f)"
+              >Subscribe to updates</na-button
+            >
+          </div>
+
+          <div class="board">
+            <na-route-line
+              size="lg"
+              [origin]="f.route.origin.iataCode"
+              [destination]="f.route.destination.iataCode"
+              [originCity]="f.route.origin.city"
+              [destinationCity]="f.route.destination.city"
+            />
+            <p class="board__meta">Flight time {{ duration(f) }}</p>
+
+            <dl class="times">
+              <div class="times__side">
+                <div class="times__cell">
+                  <dt>Scheduled</dt>
+                  <dd>
+                    @if (isDelayed(f)) {
+                      <s class="times__old">{{ timeFmt(f.departureTime) }}</s>
+                    } @else {
+                      {{ timeFmt(f.departureTime) }}
+                    }
+                  </dd>
+                </div>
+                <div class="times__cell">
+                  <dt>{{ hasDeparted(f) ? 'Departed' : 'Estimated departure' }}</dt>
+                  <dd [class.times__delay]="isDelayed(f)">
+                    {{
+                      isDelayed(f) ? timeFmt(estimate(f.departureTime)) : timeFmt(f.departureTime)
+                    }}
+                    @if (isDelayed(f)) {
+                      <span class="times__note">+{{ delayMinutes }} min</span>
+                    }
+                  </dd>
+                </div>
+              </div>
+              <div class="times__side times__side--to">
+                <div class="times__cell">
+                  <dt>{{ hasDeparted(f) ? 'Estimated arrival' : 'Arrival' }}</dt>
+                  <dd [class.times__delay]="isDelayed(f)">
+                    {{ isDelayed(f) ? timeFmt(estimate(f.arrivalTime)) : timeFmt(f.arrivalTime) }}
+                  </dd>
+                </div>
+              </div>
+            </dl>
+
+            <ol class="progress" [attr.aria-label]="'Progress of flight ' + f.flightNumber">
+              @for (step of progressOf(f); track step.label) {
+                <li class="progress__step progress__step--{{ step.state }}">
+                  <span class="progress__dot" aria-hidden="true"></span>
+                  <span class="progress__label">
+                    {{ step.label }}
+                    @if (step.state === 'current') {
+                      <span class="na-visually-hidden">(current)</span>
+                    }
+                    @if (step.state === 'warning') {
+                      <span class="na-visually-hidden">(current, delayed)</span>
+                    }
+                  </span>
+                </li>
+              }
+            </ol>
+          </div>
+
+          <p class="result__sub">Journey</p>
+          <na-timeline [events]="timelineOf(f)" />
+        </li>
+      }
+    </ul>
+  } @else {
+    <na-empty-state
+      image="/assets/img/tarmac-terminal.jpg"
+      title="Live flight status"
+      message="Search for a flight to see live status."
+    />
+  }
+</div>

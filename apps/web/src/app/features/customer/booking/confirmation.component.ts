@@ -1,7 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
 import type { CustomerBooking } from '../../../core/models/customer-booking.model';

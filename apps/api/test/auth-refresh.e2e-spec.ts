@@ -13,6 +13,7 @@ const TEST_USER = {
   password: 'Password123!',
   firstName: 'Refresh',
   lastName: 'Tester',
+  dateOfBirth: '1990-01-01',
 };
 
 describe('Auth refresh flow (e2e)', () => {

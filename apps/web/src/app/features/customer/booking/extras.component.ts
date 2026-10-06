@@ -1,6 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';

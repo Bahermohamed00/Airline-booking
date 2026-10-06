@@ -14,6 +14,7 @@ const TEST_USER = {
   password: 'Password123!',
   firstName: 'Vera',
   lastName: 'Fication',
+  dateOfBirth: '1990-01-01',
 };
 
 describe('Email verification (e2e)', () => {

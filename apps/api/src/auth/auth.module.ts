@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller.js';
 import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
 import { TokenService } from './token.service.js';
+import { TokenCleanupService } from './token-cleanup.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { JwtAuthGuard } from './auth.guard.js';
 import { RolesGuard } from './roles.guard.js';
@@ -23,14 +24,37 @@ import { MailModule } from '../mail/mail.module.js';
       useFactory: (configService: ConfigService): JwtModuleOptions => ({
         secret: configService.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN', '15m') as NonNullable<JwtModuleOptions['signOptions']>['expiresIn'],
+          expiresIn: configService.get<string>(
+            'JWT_EXPIRES_IN',
+            '15m',
+          ) as NonNullable<JwtModuleOptions['signOptions']>['expiresIn'],
         },
       }),
       inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, SessionService, TokenService, JwtStrategy, JwtAuthGuard, RolesGuard, PermissionsGuard, OwnershipGuard],
-  exports: [AuthService, PasswordService, SessionService, TokenService, JwtAuthGuard, RolesGuard, PermissionsGuard, OwnershipGuard],
+  providers: [
+    AuthService,
+    PasswordService,
+    SessionService,
+    TokenService,
+    TokenCleanupService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+    PermissionsGuard,
+    OwnershipGuard,
+  ],
+  exports: [
+    AuthService,
+    PasswordService,
+    SessionService,
+    TokenService,
+    JwtAuthGuard,
+    RolesGuard,
+    PermissionsGuard,
+    OwnershipGuard,
+  ],
 })
 export class AuthModule {}

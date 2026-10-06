@@ -41,6 +41,14 @@ describe('Registration (e2e)', () => {
     password: 'Password123!',
     firstName: 'New',
     lastName: 'User',
+    dateOfBirth: '2000-05-17',
+  };
+
+  /** ISO date (YYYY-MM-DD) exactly `years` ago today, UTC. */
+  const isoYearsAgo = (years: number): string => {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() - years);
+    return d.toISOString().slice(0, 10);
   };
 
   it('creates the account as PENDING_VERIFICATION with only the Customer role', async () => {
@@ -58,8 +66,12 @@ describe('Registration (e2e)', () => {
   it('stores only an Argon2id hash and never leaks secrets in the response', async () => {
     const res = await register(validInput).expect(201);
 
-    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { id: res.body.userId } });
-    expect(user.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$')).toBe(true);
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
+    expect(
+      user.passwordHash.startsWith('$argon2id$v=19$m=19456,t=2,p=1$'),
+    ).toBe(true);
     expect(user.passwordHash).not.toContain(validInput.password);
 
     expect(Object.keys(res.body).sort()).toEqual(['email', 'userId']);
@@ -73,9 +85,10 @@ describe('Registration (e2e)', () => {
     });
     expect(audit).not.toBeNull();
 
-    const verification = await prismaTestClient.emailVerificationToken.findFirst({
-      where: { userId: res.body.userId, usedAt: null },
-    });
+    const verification =
+      await prismaTestClient.emailVerificationToken.findFirst({
+        where: { userId: res.body.userId, usedAt: null },
+      });
     expect(verification).not.toBeNull();
     expect(verification!.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(verification!.expiresAt.getTime()).toBeGreaterThan(Date.now());
@@ -87,7 +100,10 @@ describe('Registration (e2e)', () => {
     const exact = await register(validInput);
     expect(exact.status).toBe(409);
 
-    const differentCase = await register({ ...validInput, email: 'NewUser@Test.com' });
+    const differentCase = await register({
+      ...validInput,
+      email: 'NewUser@Test.com',
+    });
     expect(differentCase.status).toBe(409);
 
     expect(await prismaTestClient.user.count()).toBe(1);
@@ -100,7 +116,9 @@ describe('Registration (e2e)', () => {
       firstName: '  Jane  ',
     }).expect(201);
 
-    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { id: res.body.userId } });
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
     expect(user.email).toBe('mixedcase@test.com');
     expect(user.firstName).toBe('Jane');
     expect(res.body.email).toBe('mixedcase@test.com');
@@ -128,12 +146,81 @@ describe('Registration (e2e)', () => {
   });
 
   it('rejects invalid input: bad email, short password, missing/blank names', async () => {
-    expect((await register({ ...validInput, email: 'not-an-email' })).status).toBe(400);
-    expect((await register({ ...validInput, password: 'Short1!' })).status).toBe(400);
+    expect(
+      (await register({ ...validInput, email: 'not-an-email' })).status,
+    ).toBe(400);
+    expect(
+      (await register({ ...validInput, password: 'Short1!' })).status,
+    ).toBe(400);
     const { firstName: _omit, ...noFirstName } = validInput;
     expect((await register(noFirstName)).status).toBe(400);
-    expect((await register({ ...validInput, firstName: '   ' })).status).toBe(400);
+    expect((await register({ ...validInput, firstName: '   ' })).status).toBe(
+      400,
+    );
 
     expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('persists the date of birth on the account', async () => {
+    const res = await register(validInput).expect(201);
+
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
+    expect(user.dateOfBirth?.toISOString().slice(0, 10)).toBe('2000-05-17');
+  });
+
+  it('rejects a customer younger than 18 with 400 and persists nothing', async () => {
+    const res = await register({ ...validInput, dateOfBirth: isoYearsAgo(17) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('at least 18 years old');
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('accepts a customer who turns exactly 18 today', async () => {
+    const res = await register({ ...validInput, dateOfBirth: isoYearsAgo(18) });
+
+    expect(res.status).toBe(201);
+    expect(await prismaTestClient.user.count()).toBe(1);
+  });
+
+  it('rejects an invalid or future date of birth', async () => {
+    expect(
+      (await register({ ...validInput, dateOfBirth: 'not-a-date' })).status,
+    ).toBe(400);
+    const future = new Date(Date.now() + 365 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    expect(
+      (await register({ ...validInput, dateOfBirth: future })).status,
+    ).toBe(400);
+    const { dateOfBirth: _omit, ...noDob } = validInput;
+    expect((await register(noDob)).status).toBe(400);
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('returns the authenticated user data, including dateOfBirth, from /auth/me', async () => {
+    const res = await register(validInput).expect(201);
+    await prismaTestClient.user.update({
+      where: { id: res.body.userId },
+      data: { status: 'ACTIVE', emailVerified: true },
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: validInput.email, password: validInput.password })
+      .expect(200);
+
+    const me = await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .expect(200);
+
+    expect(me.body.email).toBe(validInput.email);
+    expect(me.body.firstName).toBe('New');
+    expect(me.body.lastName).toBe('User');
+    expect(me.body.dateOfBirth).toBe('2000-05-17T00:00:00.000Z');
+    expect(me.body.roles).toEqual(['Customer']);
   });
 });

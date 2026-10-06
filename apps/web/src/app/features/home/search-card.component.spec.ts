@@ -7,8 +7,24 @@ import { FlightService } from '../../core/services/flight.service';
 import type { Airport } from '../../core/models/domain.model';
 
 const AIRPORTS: Airport[] = [
-  { id: 'a-fra', iataCode: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', timezone: 'Europe/Berlin', status: 'ACTIVE' },
-  { id: 'a-jfk', iataCode: 'JFK', name: 'John F. Kennedy International', city: 'New York', country: 'USA', timezone: 'America/New_York', status: 'ACTIVE' },
+  {
+    id: 'a-fra',
+    iataCode: 'FRA',
+    name: 'Frankfurt Airport',
+    city: 'Frankfurt',
+    country: 'Germany',
+    timezone: 'Europe/Berlin',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'a-jfk',
+    iataCode: 'JFK',
+    name: 'John F. Kennedy International',
+    city: 'New York',
+    country: 'USA',
+    timezone: 'America/New_York',
+    status: 'ACTIVE',
+  },
 ];
 
 async function setup(listAirports: ReturnType<typeof vi.fn> = vi.fn(() => of(AIRPORTS))) {
@@ -72,7 +88,9 @@ describe('SearchCard', () => {
       .mockReturnValue(of(AIRPORTS));
     const { fixture, el } = await setup(listAirports);
 
-    expect(el.querySelector('.card__error')?.textContent).toContain("couldn't load the airport list");
+    expect(el.querySelector('.card__error')?.textContent).toContain(
+      "couldn't load the airport list",
+    );
     expect(el.querySelector<HTMLSelectElement>('#hs-from')!.disabled).toBe(true);
 
     (el.querySelector('.card__retry') as HTMLButtonElement).click();

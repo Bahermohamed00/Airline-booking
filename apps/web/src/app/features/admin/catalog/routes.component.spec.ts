@@ -3,7 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { RoutesPage } from './routes.component';
-import { CatalogService } from '../../../core/services/catalog.service';
+import { CatalogService } from './catalog.service';
 import { FlightService } from '../../../core/services/flight.service';
 import { ToastService } from '../../../shared/ui/toast.service';
 import type { Airport, Flight, Route } from '../../../core/models/domain.model';

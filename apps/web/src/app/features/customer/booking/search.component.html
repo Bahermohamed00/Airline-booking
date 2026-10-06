@@ -1,0 +1,201 @@
+<section class="hero">
+  <div class="hero__bg" aria-hidden="true">
+    <img ngSrc="assets/img/hero-wing.jpg" fill priority sizes="100vw" alt="" class="hero__img" />
+    <div class="hero__scrim"></div>
+  </div>
+
+  <div class="na-container hero__inner">
+    <p class="hero__eyebrow">Book flights</p>
+    <h1 class="hero__title">Find your next journey</h1>
+    <p class="hero__sub">
+      Search the NovaAir network — honest fares, considered cabins, real booking flows on demo data.
+    </p>
+
+    <div class="na-card search-card" role="search" aria-label="Flight search">
+      <div class="search-card__top">
+        <div class="na-field search-card__trip">
+          <span class="na-label">Trip type</span>
+          <na-segmented
+            ariaLabel="Trip type"
+            [options]="tripOptions"
+            [value]="tripType()"
+            (valueChange)="setTripType($event)"
+          />
+        </div>
+        <div class="na-field search-card__cabin">
+          <label class="na-label" for="cabin">Cabin class</label>
+          <select
+            id="cabin"
+            class="na-select"
+            [value]="cabinClass()"
+            (change)="cabinClass.set($any($event.target).value)"
+          >
+            <option value="ECONOMY">Economy</option>
+            <option value="PREMIUM_ECONOMY">Premium Economy</option>
+            <option value="BUSINESS">Business</option>
+            <option value="FIRST">First</option>
+          </select>
+        </div>
+      </div>
+
+      @if (airportsError()) {
+        <na-alert
+          tone="danger"
+          title="Airports unavailable"
+          icon="⚠"
+          [retryable]="true"
+          (retry)="loadAirports()"
+        >
+          We couldn't load the airport list. Please try again.
+        </na-alert>
+      } @else if (airportsLoading()) {
+        <p class="airports-status" role="status">Loading airports…</p>
+      } @else if (airportOptions().length === 0) {
+        <na-alert
+          tone="info"
+          title="No airports available"
+          icon="ℹ"
+          [retryable]="true"
+          (retry)="loadAirports()"
+        >
+          No active airports are available right now. Please try again later.
+        </na-alert>
+      }
+
+      <div class="search-card__route">
+        <na-autocomplete
+          #fromField
+          label="From"
+          placeholder="City or airport"
+          [options]="airportOptions()"
+          [disabled]="airportsLoading() || airportsError()"
+          (selected)="origin.set($event.value)"
+        />
+        <button
+          type="button"
+          class="swap"
+          (click)="swapAirports()"
+          aria-label="Swap origin and destination"
+        >
+          <span aria-hidden="true">⇄</span>
+        </button>
+        <na-autocomplete
+          #toField
+          label="To"
+          placeholder="City or airport"
+          [options]="airportOptions()"
+          [disabled]="airportsLoading() || airportsError()"
+          (selected)="destination.set($event.value)"
+        />
+      </div>
+
+      <div class="search-card__dates">
+        <div class="na-field">
+          <label class="na-label" for="depart">Departure</label>
+          <input
+            id="depart"
+            class="na-input"
+            type="date"
+            [min]="minDate"
+            [value]="departureDate()"
+            (change)="departureDate.set($any($event.target).value)"
+          />
+        </div>
+        @if (tripType() === 'ROUND_TRIP') {
+          <div class="na-field">
+            <label class="na-label" for="return">Return</label>
+            <input
+              id="return"
+              class="na-input"
+              type="date"
+              [min]="departureDate()"
+              [value]="returnDate()"
+              (change)="returnDate.set($any($event.target).value)"
+            />
+          </div>
+        }
+      </div>
+
+      <fieldset class="pax">
+        <legend class="na-label">Passengers</legend>
+        <div class="pax__row">
+          @for (g of passengerGroups; track g.key) {
+            <na-quantity-stepper
+              [label]="g.label"
+              [value]="counts()[g.key]"
+              [min]="g.min"
+              [max]="g.max"
+              (valueChange)="setCount(g.key, $event)"
+            />
+          }
+        </div>
+      </fieldset>
+
+      @if (formError()) {
+        <na-alert tone="danger" title="Check your search" icon="⚠">{{ formError() }}</na-alert>
+      }
+
+      <div class="search-card__footer">
+        <div class="na-field search-card__promo">
+          <label class="na-label" for="promo"
+            >Promo code <span class="na-hint">(optional)</span></label
+          >
+          <input
+            id="promo"
+            class="na-input"
+            type="text"
+            autocomplete="off"
+            placeholder="e.g. NOVA10"
+            [value]="promoCode()"
+            (input)="promoCode.set($any($event.target).value)"
+          />
+        </div>
+        <na-button variant="cta" size="lg" (clicked)="submit()">Search flights</na-button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="na-container below">
+  @if (recentSearches().length) {
+    <section aria-labelledby="recent-h">
+      <h2 id="recent-h">Recent searches</h2>
+      <ul class="recent" role="list">
+        @for (r of recentSearches(); track r.originCode + r.destinationCode + r.departureDate) {
+          <li>
+            <button type="button" class="recent__chip" (click)="goToResults(r)">
+              <span aria-hidden="true">🕘</span>
+              {{ r.originCode }} → {{ r.destinationCode }} · {{ prettyDate(r.departureDate) }}
+            </button>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  <section aria-labelledby="popular-h">
+    <h2 id="popular-h">Popular routes</h2>
+    <div class="popular">
+      @for (p of popularRoutes; track p.origin + p.destination) {
+        <button type="button" class="na-card popular__card" (click)="searchPopular(p)">
+          <span class="popular__route" aria-hidden="true">
+            <na-route-line [origin]="p.origin" [destination]="p.destination" />
+          </span>
+          <span class="popular__label">{{ p.label }}</span>
+          <span class="popular__cta" aria-hidden="true">Search →</span>
+        </button>
+      }
+    </div>
+  </section>
+
+  <na-alert
+    tone="info"
+    icon="ℹ"
+    title="Travel advisory"
+    [dismissible]="advisoryDismissed()"
+    (dismissed)="advisoryDismissed.set(true)"
+  >
+    Demo notice: some routes operate with reduced frequency this week. Arrive at the airport at
+    least 2 hours before departure.
+  </na-alert>
+</div>

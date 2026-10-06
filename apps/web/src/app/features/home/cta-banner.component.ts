@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { scrollToSection } from './scroll-to-section';
+import { scrollToSection } from '../../shared/utils/scroll-to-section';
 
 @Component({
   selector: 'na-cta-banner',

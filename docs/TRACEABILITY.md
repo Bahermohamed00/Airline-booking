@@ -61,11 +61,11 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 | SRS 5.6 Booking mgmt incl. BR-14 exception | AdminBookingsPage | `/admin/bookings` | `BookingService.adminConfirmException` (reason required, audit copy) | — |
 | SRS 5.7–5.8 Users, staff, roles | AdminUsersPage, AdminStaffPage, AdminRolesPage | `/admin/users|staff|roles` | `naHasPermission`, role matrix | `permission.spec.ts` |
 | SRS 5.9 Payments & refunds | AdminPaymentsPage, AdminRefundsPage | `/admin/payments|refunds` | tokenization notice, CSV export | — |
-| SRS 5.10–5.11 Baggage & check-in ops | AdminBaggagePage, AdminCheckInPage | `/admin/baggage|checkin` | `BaggageService`, `CheckInService` | — |
+| SRS 5.10–5.11 Baggage & check-in ops | AdminBaggagePage, AdminCheckInPage | `/admin/baggage` · `/api/admin/baggage`, `/admin/checkin` | baggage live (`AdminBaggageService`); check-in still mock (`CheckInService`) | `admin-baggage.component.spec.ts`, `baggage.e2e-spec.ts` |
 | SRS 5.12–5.13 Loyalty & notifications | AdminLoyaltyPage, AdminNotificationsPage | `/admin/loyalty|notifications` | `LoyaltyService`, notification queue | — |
 | SRS 5.14 Reports | AdminReportsPage | `/admin/reports` | aggregates from mock data, CSV export | — |
 | SRS 5.15 Audit log | AdminAuditPage | `/admin/audit` | immutable notice, metadata view | — |
-| SRS 5.16 System settings | AdminSettingsPage | `/admin/settings` | gated `settings:manage` | `permission.spec.ts` |
+| SRS 5.16 System settings | AdminSettingsPage | `/admin/settings` · `/api/settings` | gated `settings:manage`; edits audited | `admin-settings.component.spec.ts`, `settings.e2e-spec.ts` |
 | BR-08/09 Backend-enforced RBAC (UI mirrors) | role-aware shells, `RoleGuard`, `naHasPermission` | `/admin/*` | `AuthService.hasPermission`, `staffGuard` | `permission.spec.ts` |
 
 ## Phase 4 — Bookings, Passengers & Seat Holds (backend)
@@ -162,6 +162,6 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 
 ## Known Gaps (to be addressed in later phases)
 
-- The admin users page and the check-in/boarding-pass/baggage/loyalty/notifications pages still run on `core/mock/` services; their backends (where they exist) are wired in later phases.
+- The check-in/boarding-pass/loyalty/notifications admin pages still run on `core/mock/` services; their backends (where they exist) are wired in later phases. (The admin users and baggage pages now use live APIs.)
 - Automatic `Offer` ACTIVE→EXPIRED status transition is not implemented; public visibility is date-filtered server-side, so expiry is enforced regardless.
 - Localization and multi-currency support (NFR-13) planned for a future phase.

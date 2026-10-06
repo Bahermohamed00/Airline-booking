@@ -1,0 +1,93 @@
+<div class="na-container page">
+  <header class="hero">
+    <h1>My journeys</h1>
+    <p class="hero__sub">Manage your upcoming trips, bookings and travel history.</p>
+  </header>
+
+  @if (error()) {
+    <na-alert tone="danger" title="We couldn't load your bookings" retryable (retry)="load()">
+      Something went wrong while fetching your journeys. Please try again.
+    </na-alert>
+  } @else if (loading()) {
+    <div class="cards" role="status" aria-label="Loading your journeys">
+      @for (i of [1, 2, 3]; track i) {
+        <div class="journey na-card skel" aria-hidden="true">
+          <span class="skel__bar skel__bar--route"></span>
+          <span class="skel__bar skel__bar--times"></span>
+          <span class="skel__rule"></span>
+          <span class="skel__bar skel__bar--foot"></span>
+        </div>
+      }
+    </div>
+  } @else {
+    <na-tabs
+      [tabs]="tabs()"
+      [active]="activeTab()"
+      ariaLabel="Filter bookings"
+      (tabChange)="setTab($event)"
+    />
+
+    @if (filtered().length === 0) {
+      <na-empty-state
+        [image]="emptyState().image"
+        [title]="emptyState().title"
+        [message]="emptyState().message"
+        [actionLabel]="emptyState().actionLabel"
+        (action)="goSearch()"
+      />
+    } @else {
+      <ul class="cards">
+        @for (booking of filtered(); track booking.id) {
+          <li class="journey na-card" [class.journey--cancelled]="booking.status === 'CANCELLED'">
+            <div class="journey__top">
+              @if (booking.flight; as f) {
+                <na-route-line [origin]="f.origin" [destination]="f.destination" size="lg" />
+              } @else {
+                <p class="journey__noflight na-text-muted">Flight details are being finalized.</p>
+              }
+            </div>
+            @if (booking.flight; as f) {
+              <div class="journey__times">
+                <div class="journey__point">
+                  <p class="journey__time">{{ fmtTime(f.departureTime) }}</p>
+                  <p class="journey__date">{{ fmtDate(f.departureTime) }}</p>
+                </div>
+                <span class="journey__arrow" aria-hidden="true">→</span>
+                <span class="na-visually-hidden">to</span>
+                <div class="journey__point journey__point--to">
+                  <p class="journey__time">{{ fmtTime(f.arrivalTime) }}</p>
+                  <p class="journey__date">{{ fmtDate(f.arrivalTime) }}</p>
+                </div>
+              </div>
+            }
+            <div class="journey__foot">
+              <div class="journey__info">
+                <p class="journey__meta">{{ metaLine(booking) }}</p>
+                <p class="journey__refblock">
+                  <span class="journey__reflabel">Booking reference</span>
+                  <span class="journey__ref na-text-mono">{{ booking.bookingReference }}</span>
+                </p>
+              </div>
+              <div class="journey__side">
+                <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, booking.status).tone">
+                  {{ statusLabel(BOOKING_STATUS_MAP, booking.status).label }}
+                </na-badge>
+                <div class="journey__actions">
+                  @if (canCheckIn(booking)) {
+                    <na-button variant="cta" size="sm" (clicked)="goCheckIn()">Check in</na-button>
+                  }
+                  @if (booking.status === 'PENDING') {
+                    <span class="journey__hint">Payment pending</span>
+                  }
+                  <na-button variant="secondary" size="sm" (clicked)="goManage(booking)"
+                    >Manage</na-button
+                  >
+                </div>
+              </div>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+</div>

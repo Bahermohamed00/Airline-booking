@@ -179,4 +179,58 @@ async function seedPendingBooking(customer: User): Promise<void> {
 export async function seedBookings(customer: User): Promise<void> {
   await seedDemoBooking(customer);
   await seedPendingBooking(customer);
+  await seedDemoBaggage(customer);
+}
+
+/**
+ * Demo checked baggage on the CONFIRMED booking: one bag mid-journey (LOADED)
+ * and one DELAYED bag so the dashboard "open baggage cases" KPI is non-zero.
+ * Upserted by tagNumber; event history is written only on first create.
+ */
+async function seedDemoBaggage(customer: User): Promise<void> {
+  const booking = await prisma.booking.findFirst({
+    where: { userId: customer.id, status: BookingStatus.CONFIRMED },
+    include: { bookingPassengers: true },
+  });
+  const bookingPassenger = booking?.bookingPassengers[0];
+  if (!bookingPassenger) return;
+
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
+  const bags = [
+    {
+      tagNumber: 'NV00000001',
+      status: 'LOADED' as const,
+      weightKg: 22,
+      events: [
+        { eventType: 'CHECKED_IN', location: 'FRA Terminal 1', occurredAt: hoursAgo(5) },
+        { eventType: 'LOADED', location: 'FRA Ramp B', occurredAt: hoursAgo(3) },
+      ],
+    },
+    {
+      tagNumber: 'NV00000002',
+      status: 'DELAYED' as const,
+      weightKg: 18,
+      events: [
+        { eventType: 'CHECKED_IN', location: 'FRA Terminal 1', occurredAt: hoursAgo(26) },
+        { eventType: 'LOADED', location: 'FRA Ramp A', occurredAt: hoursAgo(24) },
+        { eventType: 'DELAYED', location: 'JFK Baggage Services', occurredAt: hoursAgo(20) },
+      ],
+    },
+  ];
+
+  for (const bag of bags) {
+    await prisma.baggage.upsert({
+      where: { tagNumber: bag.tagNumber },
+      update: {},
+      create: {
+        bookingPassengerId: bookingPassenger.id,
+        type: 'CHECKED',
+        weightKg: bag.weightKg,
+        pieces: 1,
+        tagNumber: bag.tagNumber,
+        status: bag.status,
+        events: { create: bag.events },
+      },
+    });
+  }
 }

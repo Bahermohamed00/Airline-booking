@@ -57,4 +57,7 @@ prisma/test.db
 *.sqlite
 *.sqlite3
 
-.github
+# environment files
+.env
+.env.*
+!.env.example

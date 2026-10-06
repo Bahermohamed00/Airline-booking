@@ -1,8 +1,8 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
-import { SeatService, SeatMapState } from '../../../core/services/seat.service';
+import { BookingDraftService } from './booking-draft.service';
+import { SeatService, SeatMapState } from './seat.service';
 import type { CabinClass, Seat } from '../../../core/models/domain.model';
 import type { SeatSelection } from '../../../core/models/booking-flow.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';

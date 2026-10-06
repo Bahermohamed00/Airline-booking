@@ -1,0 +1,78 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>Roles &amp; Permissions</h1>
+    <p class="page__sub">What each staff role may do across the admin console.</p>
+  </header>
+
+  @if (error()) {
+    <na-alert tone="danger" title="Could not load roles" retryable (retry)="load()"
+      >Please try again.</na-alert
+    >
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3]" height="6rem" />
+  } @else {
+    <na-alert tone="info" icon="⚿">
+      The <strong>Super Admin</strong> role bypasses every permission check in the system and cannot
+      be restricted.
+    </na-alert>
+
+    <div class="cards">
+      @for (role of roles(); track role.id) {
+        <article class="role-card na-card" [class.role-card--super]="role.isSuperAdmin">
+          <header class="role-card__head">
+            <h2 class="role-card__name">{{ role.name }}</h2>
+            @if (role.isSuperAdmin) {
+              <na-badge tone="warning">Super Admin</na-badge>
+            }
+          </header>
+          <p class="na-text-muted na-text-small">
+            {{ role.description ?? 'No description'
+            }}{{ role.userCount !== undefined ? ' · ' + role.userCount + ' assigned' : '' }}
+          </p>
+          <div class="chips">
+            @for (perm of role.permissions; track perm) {
+              <span class="chip na-text-mono">{{ perm }}</span>
+            }
+          </div>
+        </article>
+      }
+    </div>
+
+    <h2 class="matrix__title">Role × permission matrix</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Permission</th>
+            @for (role of roles(); track role.id) {
+              <th [class.col--super]="role.isSuperAdmin">{{ role.name }}</th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (perm of allPermissions(); track perm) {
+            <tr>
+              <td class="na-text-mono" data-label="Permission">{{ perm }}</td>
+              @for (role of roles(); track role.id) {
+                <td [attr.data-label]="role.name" class="matrix__cell">
+                  @if (hasPermission(role, perm)) {
+                    <span
+                      class="matrix__check"
+                      role="img"
+                      [attr.aria-label]="role.name + ' has ' + perm"
+                      >✓</span
+                    >
+                  } @else {
+                    <span class="matrix__dash" aria-hidden="true">—</span>
+                    <span class="na-visually-hidden">{{ role.name }} does not have {{ perm }}</span>
+                  }
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

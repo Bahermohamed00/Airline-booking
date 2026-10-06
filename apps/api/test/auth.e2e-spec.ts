@@ -40,6 +40,7 @@ describe('AuthController (e2e)', () => {
         password: 'Password123!',
         firstName: 'Test',
         lastName: 'Customer',
+        dateOfBirth: '1990-01-01',
       })
       .expect(201);
 

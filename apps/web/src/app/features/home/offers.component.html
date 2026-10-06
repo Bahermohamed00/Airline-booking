@@ -1,0 +1,132 @@
+<section class="section" id="offers" aria-labelledby="offers-title">
+  <na-section-header
+    eyebrow="Limited-time fares"
+    title="Featured offers"
+    headingId="offers-title"
+    subtitle="Premium cabins and city breaks at fares that will not wait around."
+  />
+
+  <div class="grid">
+    @if (featured; as f) {
+      <article class="offer offer--featured">
+        <div class="offer__media" aria-hidden="true">
+          @if (f.image; as img) {
+            <img
+              [ngSrc]="img"
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1000px) 100vw, 62vw"
+              [alt]="f.title"
+              class="offer__img"
+            />
+          }
+          <span class="offer__scrim"></span>
+        </div>
+
+        <span class="offer__badge">
+          <strong>{{ discountOf(f) }}</strong>
+          <small>{{ cabinOf(f) }}</small>
+        </span>
+
+        <div class="offer__body">
+          <p class="offer__route">
+            <span class="offer__ep">
+              <span class="offer__code">{{ f.origin }}</span>
+              <span class="offer__city">{{ cityOf(f, 0) }}</span>
+            </span>
+            <span class="offer__path" aria-hidden="true">
+              <span class="offer__path-line"></span>
+              <svg viewBox="0 0 24 24" fill="currentColor" class="offer__plane">
+                <path
+                  d="M21.5 15.5v-2l-8-5V3a1.5 1.5 0 0 0-3 0v5.5l-8 5v2l8-2.5v5.5l-2 1.5V21l3.5-1 3.5 1v-1.5l-2-1.5v-5.5l8 2.5z"
+                />
+              </svg>
+              <span class="offer__path-line"></span>
+            </span>
+            <span class="offer__ep offer__ep--to">
+              <span class="offer__code">{{ f.destination }}</span>
+              <span class="offer__city">{{ cityOf(f, 1) }}</span>
+            </span>
+          </p>
+
+          <h3 class="offer__title">{{ f.title }}</h3>
+          <p class="offer__desc">{{ f.description }}</p>
+
+          <div class="offer__foot">
+            <p class="offer__pricing">
+              <span class="offer__from">From</span>
+              <span class="offer__price">€{{ f.price }}</span>
+              <s class="offer__old">€{{ f.oldPrice }}</s>
+              <span class="offer__cabin">{{ cabinLabel(f.cabin) }}</span>
+            </p>
+            <a
+              routerLink="/results"
+              [queryParams]="paramsFor(f)"
+              class="offer__cta"
+              [attr.aria-label]="
+                'Explore offer: ' + f.routeLabel + ', ' + cabinLabel(f.cabin) + ', from €' + f.price
+              "
+            >
+              Explore offer
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </article>
+    }
+
+    <div class="side">
+      @for (o of secondary; track o.title) {
+        <article class="offer offer--secondary">
+          <div class="offer__band" aria-hidden="true">
+            @if (o.image; as img) {
+              <img
+                [ngSrc]="img"
+                fill
+                sizes="(max-width: 640px) 100vw, (max-width: 1000px) 50vw, 30vw"
+                [alt]="o.title"
+                class="offer__band-img"
+              />
+            }
+            <span class="offer__band-scrim"></span>
+            <span class="offer__tag">{{ o.badge }}</span>
+          </div>
+          <div class="offer__content">
+            <p class="offer__route--secondary">
+              {{ o.origin }} → {{ o.destination }} · {{ cityOf(o, 1) }}
+            </p>
+            <h3 class="offer__title--secondary">{{ o.title }}</h3>
+            <div class="offer__pricing--secondary">
+              <span class="offer__price--secondary">€{{ o.price }}</span>
+              <s class="offer__old--secondary">€{{ o.oldPrice }}</s>
+            </div>
+            <a
+              routerLink="/results"
+              [queryParams]="paramsFor(o)"
+              class="offer__cta--secondary"
+              [attr.aria-label]="'Explore offer: ' + o.routeLabel + ', from €' + o.price"
+            >
+              Explore offer
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          </div>
+        </article>
+      }
+    </div>
+  </div>
+</section>

@@ -4,11 +4,14 @@ import { provideRouter, Router } from '@angular/router';
 import { signal } from '@angular/core';
 import { of, throwError, Subject } from 'rxjs';
 import { ReviewPage } from './review.component';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
 import { AuthService } from '../../../core/services/auth.service';
 import type { BookingDraft } from '../../../core/models/booking-flow.model';
-import type { CreateBookingPayload, CustomerBooking } from '../../../core/models/customer-booking.model';
+import type {
+  CreateBookingPayload,
+  CustomerBooking,
+} from '../../../core/models/customer-booking.model';
 import type { Fare, Flight, Seat } from '../../../core/models/domain.model';
 
 const SEAT: Seat = {
@@ -137,7 +140,14 @@ async function setup(opts: SetupOptions = {}) {
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, el: fixture.nativeElement as HTMLElement, draftService, bookingService, authService, navigateSpy };
+  return {
+    fixture,
+    el: fixture.nativeElement as HTMLElement,
+    draftService,
+    bookingService,
+    authService,
+    navigateSpy,
+  };
 }
 
 async function settle(fixture: ComponentFixture<ReviewPage>): Promise<void> {
@@ -154,7 +164,10 @@ function confirmButton(el: HTMLElement): HTMLButtonElement {
   return btn;
 }
 
-async function consentAndSubmit(fixture: ComponentFixture<ReviewPage>, el: HTMLElement): Promise<void> {
+async function consentAndSubmit(
+  fixture: ComponentFixture<ReviewPage>,
+  el: HTMLElement,
+): Promise<void> {
   (el.querySelector('#consent') as HTMLInputElement).click();
   await settle(fixture);
   confirmButton(el).click();
@@ -201,14 +214,32 @@ describe('ReviewPage', () => {
       ],
       contactEmail: 'aya@example.com',
     });
-    expect(Object.keys(payload).sort()).toEqual(['cabinClass', 'contactEmail', 'flightId', 'passengers', 'seatIds']);
-    for (const forbidden of ['userId', 'status', 'totalAmount', 'bookingReference', 'payments', 'extras', 'promo', 'flightSegmentId', 'passengerId']) {
+    expect(Object.keys(payload).sort()).toEqual([
+      'cabinClass',
+      'contactEmail',
+      'flightId',
+      'passengers',
+      'seatIds',
+    ]);
+    for (const forbidden of [
+      'userId',
+      'status',
+      'totalAmount',
+      'bookingReference',
+      'payments',
+      'extras',
+      'promo',
+      'flightSegmentId',
+      'passengerId',
+    ]) {
       expect(payload).not.toHaveProperty(forbidden);
     }
   });
 
   it('includes contactPhone only when present', async () => {
-    const { fixture, el, bookingService } = await setup({ draft: makeDraft({ contactPhone: '+49 170 1234567' }) });
+    const { fixture, el, bookingService } = await setup({
+      draft: makeDraft({ contactPhone: '+49 170 1234567' }),
+    });
     await consentAndSubmit(fixture, el);
     const payload = bookingService.create.mock.calls[0][0] as CreateBookingPayload;
     expect(payload.contactPhone).toBe('+49 170 1234567');
@@ -235,7 +266,9 @@ describe('ReviewPage', () => {
     await consentAndSubmit(fixture, el);
 
     expect(draftService.setConfirmedBooking).toHaveBeenCalledWith(BOOKING);
-    expect(navigateSpy).toHaveBeenCalledWith(['/booking/confirmation'], { queryParams: { id: 'bk-1' } });
+    expect(navigateSpy).toHaveBeenCalledWith(['/booking/confirmation'], {
+      queryParams: { id: 'bk-1' },
+    });
   });
 
   it('redirects guests to login with a returnUrl instead of calling the API', async () => {
@@ -243,7 +276,9 @@ describe('ReviewPage', () => {
     await consentAndSubmit(fixture, el);
 
     expect(bookingService.create).not.toHaveBeenCalled();
-    expect(navigateSpy).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/booking/review' } });
+    expect(navigateSpy).toHaveBeenCalledWith(['/login'], {
+      queryParams: { returnUrl: '/booking/review' },
+    });
   });
 
   it('redirects to login with returnUrl on 401', async () => {
@@ -251,14 +286,21 @@ describe('ReviewPage', () => {
     const { fixture, el, draftService, navigateSpy } = await setup({ create });
     await consentAndSubmit(fixture, el);
 
-    expect(navigateSpy).toHaveBeenCalledWith(['/login'], { queryParams: { returnUrl: '/booking/review' } });
+    expect(navigateSpy).toHaveBeenCalledWith(['/login'], {
+      queryParams: { returnUrl: '/booking/review' },
+    });
     expect(draftService.releaseHold).not.toHaveBeenCalled();
   });
 
   it('shows server validation messages on 400 without retrying blindly', async () => {
     const create = vi
       .fn()
-      .mockReturnValue(throwError(() => ({ status: 400, error: { message: ['contactEmail must be an email', 'seatIds is too short'] } })));
+      .mockReturnValue(
+        throwError(() => ({
+          status: 400,
+          error: { message: ['contactEmail must be an email', 'seatIds is too short'] },
+        })),
+      );
     const { fixture, el, draftService, navigateSpy } = await setup({ create });
     await consentAndSubmit(fixture, el);
 
@@ -270,7 +312,11 @@ describe('ReviewPage', () => {
   });
 
   it('releases the hold and returns to seat selection on 409 seat conflict', async () => {
-    const create = vi.fn().mockReturnValue(throwError(() => ({ status: 409, error: { message: 'Seats no longer available' } })));
+    const create = vi
+      .fn()
+      .mockReturnValue(
+        throwError(() => ({ status: 409, error: { message: 'Seats no longer available' } })),
+      );
     const { fixture, el, draftService, navigateSpy } = await setup({ create });
     await consentAndSubmit(fixture, el);
 

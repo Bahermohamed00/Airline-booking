@@ -1,0 +1,257 @@
+<div class="na-container page">
+  <na-breadcrumbs
+    [items]="[{ label: 'My bookings', link: '/bookings' }, { label: 'Booking details' }]"
+  />
+
+  @if (error()) {
+    <na-alert tone="danger" title="Could not load this booking" retryable (retry)="load()">
+      Something went wrong while fetching the booking.
+    </na-alert>
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4]" height="5rem" />
+  } @else if (!booking()) {
+    <na-empty-state
+      title="Booking not found"
+      message="We could not find this booking. Check the reference or search for a new flight."
+      actionLabel="Search flights"
+      (action)="router.navigate(['/search'])"
+    />
+  } @else if (booking(); as b) {
+    <header class="head">
+      <div>
+        <h1>
+          Booking <span class="na-text-mono">{{ b.bookingReference }}</span>
+        </h1>
+        <p class="na-text-muted">Booked {{ fmt(b.bookedAt) }}</p>
+      </div>
+      <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, b.status).tone">
+        {{ statusLabel(BOOKING_STATUS_MAP, b.status).label }}
+      </na-badge>
+    </header>
+
+    <div class="grid">
+      <section class="na-card section" aria-labelledby="itin-h">
+        <h2 id="itin-h">Itinerary</h2>
+        @if (b.flight; as f) {
+          <div class="itin">
+            <p class="itin__flight">
+              <strong>{{ f.flightNumber }}</strong>
+              <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, f.status).tone">
+                {{ statusLabel(FLIGHT_STATUS_MAP, f.status).label }}
+              </na-badge>
+            </p>
+            <div class="itin__route">
+              <div>
+                <p class="itin__code">{{ f.origin }}</p>
+                <p class="itin__time">{{ timeFmt(f.departureTime) }}</p>
+                <p class="na-text-muted na-text-small">{{ dateFmt(f.departureTime) }}</p>
+              </div>
+              <span class="itin__arrow" aria-hidden="true">→</span>
+              <div>
+                <p class="itin__code">{{ f.destination }}</p>
+                <p class="itin__time">{{ timeFmt(f.arrivalTime) }}</p>
+                <p class="na-text-muted na-text-small">{{ dateFmt(f.arrivalTime) }}</p>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <p class="na-text-muted">
+            Flight details are being finalized and will appear here shortly.
+          </p>
+        }
+      </section>
+
+      <section class="na-card section" aria-labelledby="pax-h">
+        <h2 id="pax-h">Passengers &amp; seats</h2>
+        <ul class="pax">
+          @for (p of b.passengers; track p.id) {
+            <li class="pax__row">
+              <span
+                >{{ p.firstName }} {{ p.lastName }}
+                <span class="na-text-muted na-text-small">({{ p.passengerType }})</span>
+              </span>
+            </li>
+          }
+        </ul>
+        @if (b.seats.length === 0) {
+          <p class="na-text-muted na-text-small">No seats selected.</p>
+        } @else {
+          <ul class="pax">
+            @for (s of b.seats; track s.seatId) {
+              <li class="pax__row">
+                <span class="na-text-mono">Seat {{ s.seatNumber }}</span>
+                <span class="na-text-small">
+                  <na-badge [tone]="statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).tone">
+                    {{ statusLabel(SEAT_HOLD_STATUS_MAP, s.holdStatus).label }}
+                  </na-badge>
+                  @if (s.holdStatus === 'ACTIVE') {
+                    <span class="na-text-muted"> · held until {{ fmt(s.holdExpiresAt) }}</span>
+                  }
+                </span>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <section class="na-card section" aria-labelledby="pay-h">
+        <h2 id="pay-h">Payment</h2>
+
+        @if (paymentError(); as payErr) {
+          <na-alert tone="danger" icon="✕" title="Payment failed">
+            {{ payErr }}
+            @if (b.status === 'PENDING') {
+              <div class="pay-retry">
+                <na-button variant="secondary" size="sm" (clicked)="startPayment()"
+                  >Try again</na-button
+                >
+              </div>
+            }
+          </na-alert>
+        }
+
+        @if (b.status === 'PENDING') {
+          <div class="pay-due">
+            <p class="pay-due__amount">
+              Payment due: <strong>{{ money(b.totalAmount, b.currency) }}</strong>
+            </p>
+            <p class="na-text-muted na-text-small">
+              Your seats stay held while payment is pending. Pay now to confirm the booking.
+            </p>
+            <na-button variant="primary" (clicked)="startPayment()">Pay now</na-button>
+          </div>
+        }
+
+        @if (paymentsError()) {
+          <div class="pay-load-error" role="alert">
+            <span>Could not load payment details.</span>
+            <button type="button" class="pay-load-error__retry" (click)="loadPayments(b.id)">
+              Retry
+            </button>
+          </div>
+        } @else if (payments(); as list) {
+          @if (list.length === 0) {
+            @if (b.status !== 'PENDING') {
+              <p class="na-text-muted">No payment has been recorded for this booking.</p>
+            }
+          } @else {
+            @for (p of list; track p.id) {
+              <article class="pay-card">
+                <header class="pay-card__head">
+                  <strong>{{ money(p.amount, p.currency) }}</strong>
+                  <na-badge [tone]="statusLabel(PAYMENT_STATUS_MAP, p.status).tone">
+                    {{ statusLabel(PAYMENT_STATUS_MAP, p.status).label }}
+                  </na-badge>
+                </header>
+                <dl class="pay-facts">
+                  <div>
+                    <dt>Provider</dt>
+                    <dd>{{ p.provider }}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider reference</dt>
+                    <dd class="na-text-mono">{{ p.providerReference ?? '—' }}</dd>
+                  </div>
+                  @if (p.paidAt) {
+                    <div>
+                      <dt>Paid</dt>
+                      <dd>{{ fmt(p.paidAt) }}</dd>
+                    </div>
+                  }
+                  @if (p.failedAt) {
+                    <div>
+                      <dt>Failed</dt>
+                      <dd>{{ fmt(p.failedAt) }}</dd>
+                    </div>
+                  }
+                </dl>
+                @if (p.refunds.length) {
+                  <div class="pay-refunds">
+                    <h3>Refunds</h3>
+                    <ul>
+                      @for (r of p.refunds; track r.id) {
+                        <li>
+                          {{ money(r.amount, r.currency) }}
+                          <na-badge [tone]="statusLabel(REFUND_STATUS_MAP, r.status).tone">
+                            {{ statusLabel(REFUND_STATUS_MAP, r.status).label }}
+                          </na-badge>
+                          <span class="na-text-muted na-text-small">
+                            @if (r.reason) {
+                              · {{ r.reason }}
+                            }
+                            @if (r.processedAt) {
+                              · processed {{ fmt(r.processedAt) }}
+                            }
+                          </span>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </article>
+            }
+          }
+        }
+      </section>
+
+      <section class="na-card section" aria-labelledby="contact-h">
+        <h2 id="contact-h">Contact</h2>
+        <p>{{ b.contactEmail }}</p>
+        <p class="na-text-muted">{{ b.contactPhone ?? 'No phone number provided' }}</p>
+      </section>
+
+      <section class="na-card section" aria-labelledby="actions-h">
+        <h2 id="actions-h">Actions</h2>
+        <p class="total">
+          Total: <strong>{{ money(b.totalAmount, b.currency) }}</strong>
+        </p>
+        @if (b.perPassengerTotal !== null) {
+          <p class="per-pax na-text-muted na-text-small">
+            {{ money(b.perPassengerTotal, b.currency) }} per passenger
+          </p>
+        }
+        <div class="actions">
+          @if (b.status === 'PENDING') {
+            <na-button variant="danger" (clicked)="cancelOpen.set(true)">Cancel booking</na-button>
+          }
+          <a routerLink="/search" class="rebook-link">Rebook / search flights</a>
+        </div>
+      </section>
+    </div>
+
+    <na-dialog
+      [open]="cancelOpen()"
+      title="Cancel this booking?"
+      confirmLabel="Cancel booking"
+      cancelLabel="Keep booking"
+      [confirmDanger]="true"
+      (cancelled)="cancelOpen.set(false)"
+      (confirmed)="confirmCancel()"
+    >
+      <p>
+        This booking is pending payment — no charge has been made. Cancelling releases the held
+        seats.
+      </p>
+      <p class="na-text-muted na-text-small">This action cannot be undone.</p>
+    </na-dialog>
+
+    <na-dialog
+      [open]="payOpen()"
+      title="Pay for your booking"
+      [confirmLabel]="processing() ? 'Processing…' : 'Pay ' + money(b.totalAmount, b.currency)"
+      cancelLabel="Not now"
+      (cancelled)="onPayDialogCancelled()"
+      (confirmed)="confirmPayment()"
+    >
+      <p>
+        You are paying <strong>{{ money(b.totalAmount, b.currency) }}</strong> for booking
+        <span class="na-text-mono">{{ b.bookingReference }}</span
+        >.
+      </p>
+      <p class="na-text-muted na-text-small">
+        Payment is handled by a mock provider — no card data is collected or stored here. The
+        booking is confirmed as soon as the payment succeeds.
+      </p>
+    </na-dialog>
+  }
+</div>

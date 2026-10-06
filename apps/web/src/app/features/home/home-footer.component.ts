@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { FOOTER_GROUPS } from './home.data';
-import { scrollToSection } from './scroll-to-section';
+import { scrollToSection } from '../../shared/utils/scroll-to-section';
 
 @Component({
   selector: 'na-home-footer',

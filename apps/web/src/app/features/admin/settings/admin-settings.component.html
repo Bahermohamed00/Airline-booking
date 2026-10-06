@@ -1,0 +1,83 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <h1>System Settings</h1>
+    <p class="page__sub">
+      Runtime configuration for the booking platform.
+      <na-badge tone="warning">{{ envLabel }}</na-badge>
+    </p>
+  </header>
+
+  @if (!canManage()) {
+    <na-empty-state
+      icon="🔒"
+      title="Access restricted"
+      message="You need the settings:manage permission to change system settings. Contact a Super Admin."
+    />
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3, 4]" height="2.5rem" />
+  } @else if (loadError(); as err) {
+    <na-alert tone="danger" title="Could not load settings" retryable (retry)="loadSettings()">{{
+      err
+    }}</na-alert>
+  } @else {
+    <na-alert tone="info" icon="⚙">
+      Changes apply immediately and are recorded in the audit log.
+    </na-alert>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Description</th>
+            <th>Category</th>
+            <th>Value</th>
+            <th><span class="na-visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (setting of settings(); track setting.id) {
+            <tr>
+              <td data-label="Key" class="na-text-mono">{{ setting.key }}</td>
+              <td data-label="Description" class="na-text-muted na-text-small">
+                {{ setting.description }}
+              </td>
+              <td data-label="Category">
+                <na-badge tone="neutral">{{ setting.category }}</na-badge>
+              </td>
+              <td data-label="Value">
+                @if (editingId() === setting.id) {
+                  <label class="na-visually-hidden" [attr.for]="'edit-' + setting.id"
+                    >New value for {{ setting.key }}</label
+                  >
+                  <input
+                    class="na-input value-input"
+                    [id]="'edit-' + setting.id"
+                    [ngModel]="editValue()"
+                    (ngModelChange)="editValue.set($event)"
+                    (keydown.enter)="save(setting)"
+                  />
+                } @else {
+                  <span class="na-text-mono">{{ setting.value }}</span>
+                }
+              </td>
+              <td data-label="Actions" class="actions">
+                @if (editingId() === setting.id) {
+                  <na-button variant="primary" size="sm" (clicked)="save(setting)">Save</na-button>
+                  <na-button variant="ghost" size="sm" (clicked)="editingId.set(null)"
+                    >Cancel</na-button
+                  >
+                } @else {
+                  <na-button variant="secondary" size="sm" (clicked)="startEdit(setting)"
+                    >Edit</na-button
+                  >
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

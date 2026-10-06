@@ -5,7 +5,7 @@ import { computed, signal } from '@angular/core';
 import { of, throwError } from 'rxjs';
 import { PassengersPage } from './passengers.component';
 import { AuthService } from '../../../core/services/auth.service';
-import { BookingDraftService } from '../../../core/services/booking-draft.service';
+import { BookingDraftService } from './booking-draft.service';
 import type { BookingDraft, PassengerForm } from '../../../core/models/booking-flow.model';
 import type { Passenger, User } from '../../../core/models/domain.model';
 
@@ -76,7 +76,9 @@ async function setup(opts: SetupOptions = {}) {
     user: userSignal,
     isLoggedIn: computed(() => userSignal() !== null),
     savedPassengers: vi.fn(() =>
-      opts.savedError ? throwError(() => new Error('unavailable')) : of(opts.saved ?? [LENA, JONAS]),
+      opts.savedError
+        ? throwError(() => new Error('unavailable'))
+        : of(opts.saved ?? [LENA, JONAS]),
     ),
   };
 
@@ -93,7 +95,13 @@ async function setup(opts: SetupOptions = {}) {
   const fixture: ComponentFixture<PassengersPage> = TestBed.createComponent(PassengersPage);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, el: fixture.nativeElement as HTMLElement, draftService, authService, navigateSpy };
+  return {
+    fixture,
+    el: fixture.nativeElement as HTMLElement,
+    draftService,
+    authService,
+    navigateSpy,
+  };
 }
 
 async function settle(fixture: ComponentFixture<PassengersPage>): Promise<void> {
@@ -113,7 +121,9 @@ function submitForm(el: HTMLElement): void {
 }
 
 function cardFor(el: HTMLElement, name: string): HTMLButtonElement {
-  const card = Array.from(el.querySelectorAll<HTMLButtonElement>('.tcard')).find((c) => c.textContent?.includes(name));
+  const card = Array.from(el.querySelectorAll<HTMLButtonElement>('.tcard')).find((c) =>
+    c.textContent?.includes(name),
+  );
   if (!card) throw new Error(`traveller card for ${name} not rendered`);
   return card;
 }
@@ -124,7 +134,9 @@ describe('PassengersPage saved-traveller autofill', () => {
   it('lists the profile and saved travellers as selectable cards without exposing document numbers', async () => {
     const { el } = await setup();
     const cards = Array.from(el.querySelectorAll<HTMLElement>('.tcard'));
-    expect(el.querySelector('.travellers__title')?.textContent).toContain('Autofill from saved travellers');
+    expect(el.querySelector('.travellers__title')?.textContent).toContain(
+      'Autofill from saved travellers',
+    );
     expect(cards.length).toBe(3); // own profile + two saved travellers
     expect(cards[0].textContent).toContain('Your profile');
     const lena = cardFor(el, 'Lena Hoffmann');
@@ -168,9 +180,9 @@ describe('PassengersPage saved-traveller autofill', () => {
     expect(firstName?.value).toBe('Ayman');
     expect(el.querySelector('na-dialog .dialog')).not.toBeNull();
 
-    const confirmHost = Array.from(el.querySelectorAll<HTMLElement>('na-dialog .dialog__actions na-button')).find(
-      (b) => b.textContent?.includes('Replace details'),
-    );
+    const confirmHost = Array.from(
+      el.querySelectorAll<HTMLElement>('na-dialog .dialog__actions na-button'),
+    ).find((b) => b.textContent?.includes('Replace details'));
     (confirmHost?.querySelector('button') as HTMLButtonElement).click();
     await settle(fixture);
 
@@ -260,7 +272,10 @@ describe('PassengersPage contact details', () => {
   });
 
   it('prefers the draft contact details over the account email on re-entry', async () => {
-    const { el } = await setup({ contactEmail: 'family@example.com', contactPhone: '+49 170 0000000' });
+    const { el } = await setup({
+      contactEmail: 'family@example.com',
+      contactPhone: '+49 170 0000000',
+    });
     expect(el.querySelector<HTMLInputElement>('#contact-email')!.value).toBe('family@example.com');
     expect(el.querySelector<HTMLInputElement>('#contact-phone')!.value).toBe('+49 170 0000000');
   });

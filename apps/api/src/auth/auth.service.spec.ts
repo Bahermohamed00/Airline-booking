@@ -103,6 +103,7 @@ describe('AuthService', () => {
       password: 'Password123!',
       firstName: 'Test',
       lastName: 'User',
+      dateOfBirth: '1990-01-01',
     };
 
     prisma.user.findUnique.mockResolvedValue(null);
@@ -120,6 +121,7 @@ describe('AuthService', () => {
       password: 'Password123!',
       firstName: 'Test',
       lastName: 'User',
+      dateOfBirth: '1990-01-01',
     };
 
     prisma.user.findUnique.mockResolvedValue({ id: 'user-1', email: dto.email });

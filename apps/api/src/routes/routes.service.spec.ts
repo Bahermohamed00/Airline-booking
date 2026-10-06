@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { RoutesService } from './routes.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { RoutesService } from './routes.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 const createMockPrisma = () => ({
   airport: { count: vi.fn() },
