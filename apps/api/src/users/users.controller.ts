@@ -25,6 +25,7 @@ import {
 } from '../auth/decorators/current-user.decorator.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
+import { UserQueryDto } from './dto/user-query.dto.js';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -43,28 +44,32 @@ export class UsersController {
   @Get()
   @Roles('Super Admin', 'Administrator', 'Support Staff')
   @Permissions({ resource: 'users', action: 'read' })
-  findAll(@Query('email') email?: string) {
-    return this.usersService.findAll({
-      where: email
-        ? { email: { contains: email, mode: 'insensitive' } }
-        : undefined,
-      include: {
-        userRoles: {
-          include: {
-            role: {
-              include: { rolePermissions: { include: { permission: true } } },
+  findAll(@Query() query: UserQueryDto, @CurrentUser() actor: AuthUser) {
+    return this.usersService.findAll(
+      {
+        where: query.email
+          ? { email: { contains: query.email, mode: 'insensitive' } }
+          : undefined,
+        include: {
+          userRoles: {
+            include: {
+              role: {
+                include: { rolePermissions: { include: { permission: true } } },
+              },
             },
           },
         },
       },
-    });
+      actor,
+      { page: query.page, limit: query.limit },
+    );
   }
 
   @Get(':id')
   @Roles('Super Admin', 'Administrator', 'Support Staff')
   @Permissions({ resource: 'users', action: 'read' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser) {
+    return this.usersService.findOne(id, actor);
   }
 
   @Patch(':id')

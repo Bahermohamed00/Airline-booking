@@ -28,6 +28,22 @@
       message="Create the first schedule rule, then generate flights from it on the Flights page."
     />
   } @else {
+    <div class="na-field rules-filter">
+      <label class="na-label" for="rule-status-filter">Status</label>
+      <select
+        id="rule-status-filter"
+        class="na-select"
+        [ngModel]="statusFilter()"
+        (ngModelChange)="statusFilter.set($event)"
+      >
+        <option value="ALL">All statuses</option>
+        <option value="ACTIVE">Active</option>
+        <option value="INACTIVE">Inactive</option>
+      </select>
+    </div>
+    @if (filteredRules().length === 0) {
+      <na-empty-state title="No rules with this status" message="Change the status filter to see more rules." />
+    } @else {
     <div class="table-wrap">
       <table>
         <thead>
@@ -43,7 +59,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (r of rules(); track r.id) {
+          @for (r of filteredRules(); track r.id) {
             <tr>
               <td data-label="Flight">
                 <span class="na-text-mono rule-number">{{ r.flightNumber }}</span>
@@ -66,7 +82,7 @@
                     size="sm"
                     (clicked)="askToggle(r)"
                   >
-                    {{ r.status === 'ACTIVE' ? 'Deactivate' : 'Activate' }}
+                    {{ r.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }}
                   </na-button>
                 </div>
               </td>
@@ -75,6 +91,7 @@
         </tbody>
       </table>
     </div>
+    }
   }
 
   <!-- Create / edit drawer -->
@@ -200,8 +217,8 @@
 
   <na-dialog
     [open]="toggling() !== null"
-    [title]="toggling()?.status === 'ACTIVE' ? 'Deactivate this rule?' : 'Activate this rule?'"
-    [confirmLabel]="toggling()?.status === 'ACTIVE' ? 'Deactivate' : 'Activate'"
+    [title]="toggling()?.status === 'ACTIVE' ? 'Deactivate this rule?' : 'Reactivate this rule?'"
+    [confirmLabel]="toggling()?.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'"
     [confirmDanger]="toggling()?.status === 'ACTIVE'"
     (confirmed)="confirmToggle()"
     (cancelled)="toggling.set(null)"

@@ -179,6 +179,80 @@ describe('Flights & schedule rules (e2e)', () => {
       .expect(404);
   });
 
+  it('audits SCHEDULE_RULE_CREATED and SCHEDULE_RULE_UPDATED for rule mutations', async () => {
+    const token = await loginAs('rules-audit@test.dev', true);
+    const actor = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'rules-audit@test.dev' } });
+    const f = await fixtures();
+
+    const created = (await createRule(baseRule(f, 'NV300'), token).expect(201)).body;
+
+    const createdAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'SCHEDULE_RULE_CREATED', targetId: created.id },
+    });
+    expect(createdAudit.actorId).toBe(actor.id);
+    expect(createdAudit.actorType).toBe('Staff');
+    expect(createdAudit.targetType).toBe('ScheduleRule');
+    expect(createdAudit.metadata).toEqual({ flightNumber: 'NV300' });
+
+    await request(app.getHttpServer())
+      .patch(`/api/schedule-rules/${created.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+
+    const updatedAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'SCHEDULE_RULE_UPDATED', targetId: created.id },
+    });
+    expect(updatedAudit.actorId).toBe(actor.id);
+    expect(updatedAudit.metadata).toEqual({ flightNumber: 'NV300', changedFields: ['status'] });
+  });
+
+  it('deactivated rules are rejected clearly, existing flights stay untouched, reactivation restores generation', async () => {
+    const token = await loginAs('gen-admin4@test.dev', true);
+    const f = await fixtures();
+    const rule = (await createRule(baseRule(f, 'NV300'), token).expect(201)).body;
+
+    // Manual generation from the ACTIVE rule works.
+    const first = await generateRange(token, '2026-10-05', '2026-10-07').expect(201);
+    expect(first.body.flightsCreated).toBe(3);
+
+    // Deactivate → generation rejects the rule explicitly and creates nothing.
+    await request(app.getHttpServer())
+      .patch(`/api/schedule-rules/${rule.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+
+    const second = await generateRange(token, '2026-10-08', '2026-10-09').expect(201);
+    expect(second.body.flightsCreated).toBe(0);
+    expect(second.body.skippedRules).toEqual([{ flightNumber: 'NV300', reason: 'rule is deactivated' }]);
+
+    // Existing flights remain untouched — no cascade delete, no status change.
+    const surviving = await prismaTestClient.flight.findMany({ where: { flightNumber: 'NV300' } });
+    expect(surviving).toHaveLength(3);
+    expect(surviving.every((x) => x.status === 'SCHEDULED')).toBe(true);
+
+    // Reactivate → generation resumes; overlapping dates stay idempotent.
+    await request(app.getHttpServer())
+      .patch(`/api/schedule-rules/${rule.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'ACTIVE' })
+      .expect(200);
+
+    const third = await generateRange(token, '2026-10-05', '2026-10-07').expect(201);
+    expect(third.body.flightsCreated).toBe(0); // same rule+dates → no duplicates
+    expect(third.body.flightsUpdated).toBe(3);
+    const fourth = await generateRange(token, '2026-10-08', '2026-10-08').expect(201);
+    expect(fourth.body.flightsCreated).toBe(1);
+
+    // Both lifecycle toggles are audited as rule updates.
+    expect(
+      await prismaTestClient.auditLog.count({
+        where: { action: 'SCHEDULE_RULE_UPDATED', targetId: rule.id },
+      }),
+    ).toBe(2);
+  });
+
   // ---------- Flight generation ----------
 
   it('guards generation: 401 unauthenticated, 403 without flights:manage, 400 invalid ranges', async () => {
@@ -210,7 +284,9 @@ describe('Flights & schedule rules (e2e)', () => {
     await createRule({ ...baseRule(f, 'NV302'), status: 'INACTIVE' }, token).expect(201);
 
     const res = await generateRange(token, '2026-10-05', '2026-10-11').expect(201);
-    expect(res.body).toMatchObject({ rulesEvaluated: 2, flightsCreated: 10, flightsUpdated: 0, skippedRules: [] });
+    // The INACTIVE rule is rejected explicitly, not silently ignored.
+    expect(res.body).toMatchObject({ rulesEvaluated: 2, flightsCreated: 10, flightsUpdated: 0 });
+    expect(res.body.skippedRules).toEqual([{ flightNumber: 'NV302', reason: 'rule is deactivated' }]);
 
     const flights = await prismaTestClient.flight.findMany({ orderBy: { departureTime: 'asc' } });
     expect(flights).toHaveLength(10);
@@ -288,6 +364,30 @@ describe('Flights & schedule rules (e2e)', () => {
 
   // ---------- Flights API ----------
 
+  it('audits FLIGHTS_GENERATED once per successful run with summary counts; failed runs write nothing', async () => {
+    const token = await loginAs('audit-ops@test.dev', true);
+    const actor = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'audit-ops@test.dev' } });
+    const f = await fixtures();
+    await createRule(baseRule(f, 'NV300'), token).expect(201);
+
+    const res = await generateRange(token, '2026-10-05', '2026-10-11').expect(201);
+    expect(res.body.flightsCreated).toBeGreaterThan(1);
+
+    const audit = await prismaTestClient.auditLog.findFirstOrThrow({ where: { action: 'FLIGHTS_GENERATED' } });
+    expect(audit.actorId).toBe(actor.id);
+    expect(audit.actorType).toBe('Staff');
+    expect(audit.targetType).toBe('Flight');
+    const metadata = audit.metadata as Record<string, unknown>;
+    expect(metadata['flightsCreated']).toBe(res.body.flightsCreated);
+    expect(metadata['flightsUpdated']).toBe(res.body.flightsUpdated);
+
+    // One summary row per run — not one row per generated flight.
+    expect(await prismaTestClient.auditLog.count({ where: { action: 'FLIGHTS_GENERATED' } })).toBe(1);
+
+    await generateRange(token, '2026-10-14', '2026-10-01').expect(400);
+    expect(await prismaTestClient.auditLog.count({ where: { action: 'FLIGHTS_GENERATED' } })).toBe(1);
+  });
+
   it('GET /api/flights is public and filters by origin, destination and date from PostgreSQL', async () => {
     const token = await loginAs('gen-admin6@test.dev', true);
     const f = await fixtures();
@@ -317,6 +417,53 @@ describe('Flights & schedule rules (e2e)', () => {
 
     await request(app.getHttpServer()).get('/api/flights?origin=fr').expect(400);
     await request(app.getHttpServer()).get('/api/flights?date=05-10-2026').expect(400);
+  });
+
+  it('GET /api/flights paginates only when page/limit is provided', async () => {
+    const token = await loginAs('gen-admin8@test.dev', true);
+    const f = await fixtures();
+    await createRule(baseRule(f, 'NV300'), token).expect(201);
+    await createRule({ ...baseRule(f, 'NV301'), routeId: f.routeJfkFra.id, operatingDays: ['MON', 'WED', 'FRI'] }, token).expect(201);
+    await generateRange(token, '2026-10-05', '2026-10-11').expect(201);
+
+    // No pagination params → legacy bare array, unchanged shape.
+    const legacy = await request(app.getHttpServer()).get('/api/flights').expect(200);
+    expect(Array.isArray(legacy.body)).toBe(true);
+    expect(legacy.body).toHaveLength(10);
+
+    // Paginated envelope: page/limit echoed, totals computed from the same filters.
+    const page1 = await request(app.getHttpServer()).get('/api/flights?page=1&limit=4').expect(200);
+    expect(page1.body).toMatchObject({ page: 1, limit: 4, total: 10, totalPages: 3 });
+    expect(page1.body.items).toHaveLength(4);
+    expect(page1.body.items[0]).toHaveProperty('route.originAirport.iataCode');
+    expect(typeof page1.body.items[0].fares[0].basePrice).toBe('number');
+
+    const page3 = await request(app.getHttpServer()).get('/api/flights?page=3&limit=4').expect(200);
+    expect(page3.body.items).toHaveLength(2);
+
+    // A lone limit defaults page to 1; a lone page defaults limit to 20.
+    const onlyLimit = await request(app.getHttpServer()).get('/api/flights?limit=3').expect(200);
+    expect(onlyLimit.body.page).toBe(1);
+    expect(onlyLimit.body.items).toHaveLength(3);
+    const onlyPage = await request(app.getHttpServer()).get('/api/flights?page=1').expect(200);
+    expect(onlyPage.body.limit).toBe(20);
+    expect(onlyPage.body.items).toHaveLength(10);
+
+    // Empty result set → total 0, totalPages 1, empty items.
+    const empty = await request(app.getHttpServer()).get('/api/flights?date=2026-10-12&page=1&limit=5').expect(200);
+    expect(empty.body).toMatchObject({ page: 1, limit: 5, total: 0, totalPages: 1 });
+    expect(empty.body.items).toHaveLength(0);
+
+    // Existing filters still apply in paginated mode.
+    const filtered = await request(app.getHttpServer()).get('/api/flights?origin=FRA&page=1&limit=10').expect(200);
+    expect(filtered.body.total).toBe(7);
+    expect(filtered.body.items.every((x: { flightNumber: string }) => x.flightNumber === 'NV300')).toBe(true);
+
+    // Validation: positive integers, limit capped at 100.
+    await request(app.getHttpServer()).get('/api/flights?page=0').expect(400);
+    await request(app.getHttpServer()).get('/api/flights?page=abc').expect(400);
+    await request(app.getHttpServer()).get('/api/flights?limit=0').expect(400);
+    await request(app.getHttpServer()).get('/api/flights?limit=101').expect(400);
   });
 
   it('GET /api/flights/:id returns full detail, 404 unknown, 400 malformed', async () => {

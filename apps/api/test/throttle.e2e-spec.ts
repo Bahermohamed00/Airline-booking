@@ -180,4 +180,26 @@ describe('Rate limiting (e2e)', () => {
     expect(audit).not.toBeNull();
     expect(JSON.stringify(audit)).not.toContain(TEST_USER.email);
   });
+
+  it('register: account-creation flooding is throttled', async () => {
+    const register = () =>
+      request(app.getHttpServer()).post('/api/auth/register').send({
+        email: 'flood@test.com',
+        password: 'Password123!',
+        firstName: 'Flood',
+        lastName: 'Tester',
+        dateOfBirth: '1990-01-01',
+        phone: '+49 170 1234567',
+        streetAddress: 'Hauptstraße 12',
+        nationalId: '28501010123456',
+      });
+
+    // First succeeds, repeats hit the duplicate 409, and the 6th request in a
+    // minute is throttled (limit 5) — the flood never gets through.
+    const { statuses, throttled } = await untilThrottled(register, 8);
+    expect(statuses[0]).toBe(201);
+    expect(throttled).not.toBeNull();
+    expect(JSON.stringify(throttled!.body)).not.toContain('flood@test.com');
+    expect(await prismaTestClient.user.count()).toBe(1);
+  });
 });

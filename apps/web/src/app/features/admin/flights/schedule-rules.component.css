@@ -185,3 +185,7 @@ tbody tr:last-child td {
     grid-template-columns: 1fr;
   }
 }
+.rules-filter {
+  max-width: 220px;
+  margin-bottom: var(--na-space-3);
+}

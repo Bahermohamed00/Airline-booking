@@ -3,6 +3,15 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { expect, vi } from 'vitest';
+import { randomUUID } from 'crypto';
+
+/**
+ * Unique 14-digit national ID for test registrations (Egyptian format).
+ * Derived from a UUID's digits with a '2' prefix; unique per call.
+ */
+export function generateTestNationalId(): string {
+  return `2${randomUUID().replace(/\D/g, '').padEnd(13, '0').slice(0, 13)}`;
+}
 
 /** Extracts the `refresh_token=...` cookie pair from a response's set-cookie headers. */
 export function refreshCookieOf(res: request.Response): string {
@@ -89,11 +98,13 @@ export const prismaTestClient = new PrismaClient({
 
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   const tables = [
+    'support_tickets',
     'audit_logs',
     'refresh_tokens',
     'sessions',
     'email_verification_tokens',
     'password_reset_tokens',
+    'mfa_email_tokens',
     'system_settings',
     'offers',
     'loyalty_transactions',
@@ -143,11 +154,17 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
  */
 export async function registerVerifiedUser(
   app: INestApplication<App>,
-  user: { email: string; password: string; firstName: string; lastName: string },
+  user: { email: string; password: string; firstName: string; lastName: string; nationalId?: string },
 ): Promise<void> {
   await request(app.getHttpServer())
     .post('/api/auth/register')
-    .send({ ...user, dateOfBirth: '1990-01-01' });
+    .send({
+      ...user,
+      dateOfBirth: '1990-01-01',
+      phone: '+49 170 1234567',
+      streetAddress: 'Hauptstraße 12',
+      nationalId: user.nationalId ?? generateTestNationalId(),
+    });
   await prismaTestClient.user.update({
     where: { email: user.email },
     data: { status: 'ACTIVE', emailVerified: true },

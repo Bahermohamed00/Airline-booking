@@ -1,0 +1,34 @@
+model SupportTicket {
+  id           String              @id @default(uuid()) @db.Uuid
+  // Human-readable unique reference, e.g. "NT7K2P9Q" — same generator family
+  // as booking references, distinct prefix.
+  ticketNumber String              @unique @map("ticket_number") @db.VarChar(12)
+  subject      String              @db.VarChar(200)
+  description  String              @db.Text
+  status       SupportTicketStatus @default(OPEN)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resolvedAt   DateTime?           @map("resolved_at") @db.Timestamptz(6)
+  closedAt     DateTime?           @map("closed_at") @db.Timestamptz(6)
+
+  userId       String              @map("user_id") @db.Uuid
+  assigneeId   String?             @map("assignee_id") @db.Uuid
+
+  customer User  @relation("CustomerTickets", fields: [userId], references: [id], onDelete: Restrict)
+  assignee User? @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  messages SupportMessage[]
+
+  @@index([status, createdAt])
+  @@index([assigneeId])
+  @@index([userId])
+  @@map("support_tickets")
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+
+  @@map("support_ticket_status")
+}

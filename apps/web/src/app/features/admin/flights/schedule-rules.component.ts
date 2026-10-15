@@ -60,6 +60,12 @@ export class ScheduleRulesPage {
   readonly routes = signal<Route[]>([]);
   readonly fleet = signal<Aircraft[]>([]);
 
+  readonly statusFilter = signal<'ALL' | ScheduleRuleStatus>('ALL');
+  readonly filteredRules = computed(() => {
+    const filter = this.statusFilter();
+    return filter === 'ALL' ? this.rules() : this.rules().filter((r) => r.status === filter);
+  });
+
   readonly drawerOpen = signal(false);
   readonly editing = signal<ScheduleRule | null>(null);
   readonly saving = signal(false);
@@ -230,7 +236,7 @@ export class ScheduleRulesPage {
         this.toast.success(
           status === 'INACTIVE'
             ? `Rule ${updated.flightNumber} deactivated.`
-            : `Rule ${updated.flightNumber} activated.`,
+            : `Rule ${updated.flightNumber} reactivated.`,
         );
       },
       error: (err: unknown) =>

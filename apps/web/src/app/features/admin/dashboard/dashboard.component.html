@@ -127,6 +127,9 @@
         <h3>Today's operations</h3>
         <div class="chips" aria-label="Flight status counts">
           <na-badge tone="info">{{ k.scheduledCount }} scheduled</na-badge>
+          <na-badge tone="info">{{ k.boardingCount }} boarding</na-badge>
+          <na-badge tone="info">{{ k.departedCount }} departed</na-badge>
+          <na-badge tone="success">{{ k.arrivedCount }} arrived</na-badge>
           <na-badge tone="warning">{{ k.delayedCount }} delayed</na-badge>
           <na-badge tone="danger">{{ k.cancelledCount }} cancelled</na-badge>
           <na-badge tone="success">{{ k.completedCount }} completed</na-badge>

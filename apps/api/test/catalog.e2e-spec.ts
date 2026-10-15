@@ -134,11 +134,17 @@ describe('Catalog API (e2e)', () => {
     const base = { iataCode: 'MUC', name: 'Munich Airport', city: 'Munich', country: 'Germany', timezone: 'Europe/Berlin' };
     const post = (body: unknown) =>
       request(app.getHttpServer()).post('/api/airports').set('Authorization', `Bearer ${token}`).send(body as Record<string, unknown>);
+    const baseline = await prismaTestClient.airport.count();
 
     await post({ ...base, iataCode: 'MU' }).expect(400); // too short
     await post({ ...base, icaoCode: 'eddmX' }).expect(400); // not 4 letters
     await post({ ...base, latitude: 91 }).expect(400); // out of range
     await post({ ...base, unexpected: 'field' }).expect(400); // forbidNonWhitelisted
+    await post({ ...base, timezone: 'Mars/Olympus' }).expect(400); // not an IANA timezone
+    await post({ ...base, timezone: '' }).expect(400); // empty timezone
+
+    // Rejected bodies must not persist anything beyond the seeded fixtures.
+    expect(await prismaTestClient.airport.count()).toBe(baseline);
   });
 
   it('PATCH /api/airports/:id updates fields and status; 404 unknown, 409 on IATA clash', async () => {
@@ -153,6 +159,7 @@ describe('Catalog API (e2e)', () => {
     expect(res.body).toMatchObject({ city: 'Frankfurt am Main', status: 'INACTIVE' });
 
     await request(app.getHttpServer()).patch(`/api/airports/${airport.id}`).set('Authorization', `Bearer ${token}`).send({ iataCode: 'JFK' }).expect(409);
+    await request(app.getHttpServer()).patch(`/api/airports/${airport.id}`).set('Authorization', `Bearer ${token}`).send({ timezone: 'Not/AZone' }).expect(400);
     await request(app.getHttpServer()).patch(`/api/airports/${randomUUID()}`).set('Authorization', `Bearer ${token}`).send({ city: 'X' }).expect(404);
   });
 
@@ -303,5 +310,123 @@ describe('Catalog API (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ status: 'RETIRED' })
       .expect(404);
+  });
+
+  it('route create/update persist ROUTE_CREATED/ROUTE_UPDATED audit rows', async () => {
+    const token = await loginAs('audit-routes@catalog.test', true);
+    const actor = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'audit-routes@catalog.test' } });
+    const [origin, destination] = await Promise.all([fra(), jfk()]);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/routes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ originAirportId: origin.id, destinationAirportId: destination.id, distanceKm: 6201, durationMinutes: 505 })
+      .expect(201);
+
+    const createdAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'ROUTE_CREATED', targetId: created.body.id },
+    });
+    expect(createdAudit.actorId).toBe(actor.id);
+    expect(createdAudit.actorType).toBe('Staff');
+    expect(createdAudit.targetType).toBe('Route');
+
+    await request(app.getHttpServer())
+      .patch(`/api/routes/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'INACTIVE' })
+      .expect(200);
+
+    const updatedAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'ROUTE_UPDATED', targetId: created.body.id },
+    });
+    expect(updatedAudit.actorId).toBe(actor.id);
+    expect((updatedAudit.metadata as Record<string, unknown>)['changedFields']).toEqual(['status']);
+  });
+
+  // ---------- Audit coverage ----------
+
+  it('airport create/update persist AIRPORT_CREATED/AIRPORT_UPDATED rows attributed to the acting staff member', async () => {
+    const token = await loginAs('audit-admin@catalog.test', true);
+    const actor = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'audit-admin@catalog.test' } });
+
+    const created = await request(app.getHttpServer())
+      .post('/api/airports')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ iataCode: 'MUC', name: 'Munich Airport', city: 'Munich', country: 'Germany', timezone: 'Europe/Berlin' })
+      .expect(201);
+
+    const createdAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'AIRPORT_CREATED', targetId: created.body.id },
+    });
+    expect(createdAudit.actorId).toBe(actor.id);
+    expect(createdAudit.actorType).toBe('Staff');
+    expect(createdAudit.targetType).toBe('Airport');
+    expect((createdAudit.metadata as Record<string, unknown>)['iataCode']).toBe('MUC');
+
+    await request(app.getHttpServer())
+      .patch(`/api/airports/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ city: 'München' })
+      .expect(200);
+
+    const updatedAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'AIRPORT_UPDATED', targetId: created.body.id },
+    });
+    expect(updatedAudit.actorId).toBe(actor.id);
+    expect((updatedAudit.metadata as Record<string, unknown>)['changedFields']).toEqual(['city']);
+  });
+
+  it('failed airport mutations write no audit rows', async () => {
+    const token = await loginAs('audit-admin2@catalog.test', true);
+    const dupe = { iataCode: 'FRA', name: 'Dupe', city: 'X', country: 'Y', timezone: 'Europe/Berlin' };
+
+    await request(app.getHttpServer()).post('/api/airports').set('Authorization', `Bearer ${token}`).send(dupe).expect(409);
+    await request(app.getHttpServer())
+      .patch(`/api/airports/${randomUUID()}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ city: 'X' })
+      .expect(404);
+
+    expect(
+      await prismaTestClient.auditLog.count({ where: { action: { in: ['AIRPORT_CREATED', 'AIRPORT_UPDATED'] } } }),
+    ).toBe(0);
+  });
+
+  it('aircraft create/update persist AIRCRAFT_CREATED/AIRCRAFT_UPDATED rows; failed update writes nothing', async () => {
+    const token = await loginAs('audit-admin3@catalog.test', true);
+    const actor = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'audit-admin3@catalog.test' } });
+
+    const created = await request(app.getHttpServer())
+      .post('/api/aircraft')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ registration: 'NV-AUD1', model: 'Test Jet', capacity: 12 })
+      .expect(201);
+
+    const createdAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'AIRCRAFT_CREATED', targetId: created.body.id },
+    });
+    expect(createdAudit.actorId).toBe(actor.id);
+    expect(createdAudit.actorType).toBe('Staff');
+    expect(createdAudit.targetType).toBe('Aircraft');
+    expect((createdAudit.metadata as Record<string, unknown>)['registration']).toBe('NV-AUD1');
+
+    await request(app.getHttpServer())
+      .patch(`/api/aircraft/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'MAINTENANCE' })
+      .expect(200);
+
+    const updatedAudit = await prismaTestClient.auditLog.findFirstOrThrow({
+      where: { action: 'AIRCRAFT_UPDATED', targetId: created.body.id },
+    });
+    expect(updatedAudit.actorId).toBe(actor.id);
+    expect((updatedAudit.metadata as Record<string, unknown>)['changedFields']).toEqual(['status']);
+
+    await request(app.getHttpServer())
+      .patch(`/api/aircraft/${randomUUID()}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'RETIRED' })
+      .expect(404);
+    expect(await prismaTestClient.auditLog.count({ where: { action: 'AIRCRAFT_UPDATED' } })).toBe(1);
   });
 });

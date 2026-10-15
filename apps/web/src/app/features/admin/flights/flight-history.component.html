@@ -1,0 +1,138 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Flight Management', link: '/admin/flights/overview' }, { label: 'History' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Flight history</h1>
+      <p class="subtitle">
+        Immutable audit log of Flight Management actions. Records cannot be edited or deleted.
+      </p>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="na-field">
+      <label class="na-label" for="filter-domain">Area</label>
+      <select
+        id="filter-domain"
+        class="na-select"
+        [(ngModel)]="filterDomain"
+        (ngModelChange)="onDomainChange()"
+      >
+        <option value="">All areas</option>
+        <option value="flights">Flights</option>
+        <option value="airports">Airports</option>
+        <option value="aircraft">Aircraft</option>
+        <option value="routes">Routes</option>
+      </select>
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-event">Action</label>
+      <select
+        id="filter-event"
+        class="na-select"
+        [(ngModel)]="filterEvent"
+        (ngModelChange)="onFilterChange()"
+      >
+        <option value="">All actions</option>
+        @for (group of eventGroups; track group.group) {
+          @if (!filterDomain || group.group.toLowerCase() === filterDomain) {
+            <optgroup [label]="group.group">
+              @for (event of group.events; track event) {
+                <option [value]="event">{{ eventLabel(event) }}</option>
+              }
+            </optgroup>
+          }
+        }
+      </select>
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-actor">Actor</label>
+      <select
+        id="filter-actor"
+        class="na-select"
+        [(ngModel)]="filterActorType"
+        (ngModelChange)="onFilterChange()"
+      >
+        <option value="">All actors</option>
+        @for (actor of actorTypes; track actor) {
+          <option [value]="actor">{{ actor }}</option>
+        }
+      </select>
+    </div>
+    <div class="na-field filters__search">
+      <label class="na-label" for="filter-search">Search</label>
+      <input
+        id="filter-search"
+        class="na-input"
+        type="search"
+        placeholder="e.g. flight number, record ID, route"
+        [(ngModel)]="filterSearch"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-from">From date</label>
+      <input
+        id="filter-from"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterFrom"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-to">To date</label>
+      <input
+        id="filter-to"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterTo"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field filters__clear">
+      <na-button variant="secondary" size="sm" (clicked)="clearFilters()">Clear filters</na-button>
+    </div>
+  </div>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [loading]="loading()"
+      emptyTitle="No history records"
+      emptyMessage="No Flight Management actions match the current filters."
+      emptyActionLabel="Clear filters"
+      (emptyAction)="clearFilters()"
+    />
+
+    <div class="pagination">
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() <= 1 || loading()"
+        (clicked)="previousPage()"
+      >
+        Previous
+      </na-button>
+      <span class="na-text-muted na-text-small">
+        Page {{ page() }} of {{ totalPages() }} · {{ total() }} record(s)
+      </span>
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() >= totalPages() || loading()"
+        (clicked)="nextPage()"
+      >
+        Next
+      </na-button>
+    </div>
+  }
+</div>

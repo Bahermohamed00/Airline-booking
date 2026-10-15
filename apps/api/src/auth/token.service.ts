@@ -73,15 +73,50 @@ export class TokenService {
     const expiresAt = this.refreshExpiry();
     const tokenHash = hashToken(rawToken);
 
-    await this.prisma.$transaction(async (tx) => {
+    // The rotation claim is a compare-and-set INSIDE the transaction: the
+    // fast-path read above is not authoritative. Two concurrent requests
+    // presenting the same token cannot both win — the loser gets count 0.
+    const rotated = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.refreshToken.updateMany({
+        where: { id: token.id, rotatedAt: null },
+        data: { rotatedAt: now },
+      });
+      if (claim.count === 0) {
+        return null;
+      }
       const created = await tx.refreshToken.create({
         data: { sessionId: session.id, tokenHash, expiresAt },
       });
       await tx.refreshToken.update({
         where: { id: token.id },
-        data: { rotatedAt: now, replacedById: created.id },
+        data: { replacedById: created.id },
       });
       await tx.session.update({ where: { id: session.id }, data: { lastUsedAt: now } });
+      return created;
+    });
+
+    if (!rotated) {
+      // Lost a concurrent rotation race: this token was already rotated by the
+      // winning request. Same posture as reuse — kill the whole session family.
+      await this.sessionService.revoke(session.id, 'reuse_detected');
+      await this.auditService.log({
+        actorId: session.userId,
+        actorType: 'User',
+        action: 'TOKEN_REUSE_DETECTED',
+        targetType: 'Session',
+        targetId: session.id,
+      });
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // Post-commit, matching the existing audit pattern: never log the raw
+    // token, its hash, or the access token — session/user IDs only.
+    await this.auditService.log({
+      actorId: session.userId,
+      actorType: 'User',
+      action: 'TOKEN_REFRESHED',
+      targetType: 'Session',
+      targetId: session.id,
     });
 
     return {

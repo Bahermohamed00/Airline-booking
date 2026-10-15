@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Observable } from 'rxjs';
 import { AdminStaffPage } from './admin-staff.component';
 import { UsersService, type ApiUser } from './users.service';
 import { RolesService } from './roles.service';
@@ -47,17 +47,25 @@ const API_USERS: ApiUser[] = [
 ];
 
 interface Mocks {
-  users: { createStaff: ReturnType<typeof vi.fn>; listUsers: ReturnType<typeof vi.fn> };
+  users: {
+    createStaff: ReturnType<typeof vi.fn>;
+    listUsers: ReturnType<typeof vi.fn>;
+    updateUser: ReturnType<typeof vi.fn>;
+  };
   roles: { listRoles: ReturnType<typeof vi.fn> };
-  auth: { hasPermission: (p: string) => boolean };
+  auth: { hasPermission: (p: string) => boolean; user: () => { id: string } | null };
   toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
 }
 
-function makeMocks(canManage = true): Mocks {
+function makeMocks(canManage = true, selfId = 'self-admin'): Mocks {
   return {
-    users: { createStaff: vi.fn(), listUsers: vi.fn().mockReturnValue(of(API_USERS)) },
+    users: {
+      createStaff: vi.fn(),
+      listUsers: vi.fn().mockReturnValue(of(API_USERS)),
+      updateUser: vi.fn(),
+    },
     roles: { listRoles: vi.fn().mockReturnValue(of(ROLES)) },
-    auth: { hasPermission: () => canManage },
+    auth: { hasPermission: () => canManage, user: () => ({ id: selfId }) },
     toast: { success: vi.fn(), error: vi.fn() },
   };
 }
@@ -86,6 +94,7 @@ function fillValidForm(c: AdminStaffPage): void {
     firstName: 'New',
     lastName: 'Staff',
     email: 'new@staff.test',
+    phone: '',
     password: 'StaffPassword123!',
     confirmPassword: 'StaffPassword123!',
     roleId: 'r-support',
@@ -94,6 +103,17 @@ function fillValidForm(c: AdminStaffPage): void {
 
 async function openAndSubmit(fixture: ComponentFixture<AdminStaffPage>): Promise<void> {
   fixture.componentInstance.openDrawer();
+  fixture.detectChanges();
+  const el = fixture.nativeElement as HTMLElement;
+  el.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  await fixture.whenStable();
+  fixture.detectChanges();
+}
+
+/** Opens the drawer in edit mode for the first staff row and submits the form. */
+async function openEditAndSubmit(fixture: ComponentFixture<AdminStaffPage>): Promise<void> {
+  const row = fixture.componentInstance.staff()[0]!;
+  fixture.componentInstance.openEdit(row);
   fixture.detectChanges();
   const el = fixture.nativeElement as HTMLElement;
   el.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -245,5 +265,206 @@ describe('AdminStaffPage', () => {
     expect(el.textContent).toContain('Access restricted');
     expect(m.users.listUsers).not.toHaveBeenCalled();
     expect(m.roles.listRoles).not.toHaveBeenCalled();
+  });
+
+  it('opens Edit with the staff member’s current data and no password fields', async () => {
+    const m = makeMocks();
+    const fixture = await setup(m);
+    const row = fixture.componentInstance.staff()[0]!;
+
+    fixture.componentInstance.openEdit(row);
+    fixture.detectChanges();
+
+    const form = fixture.componentInstance.form;
+    expect(fixture.componentInstance.drawerOpen()).toBe(true);
+    expect(form.controls.firstName.value).toBe('Op');
+    expect(form.controls.lastName.value).toBe('One');
+    expect(form.controls.email.value).toBe('ops@staff.test');
+    expect(form.controls.phone.value).toBe('');
+    expect(form.controls.roleId.value).toBe('r-support');
+    expect(form.controls.password.disabled).toBe(true);
+    expect(form.controls.confirmPassword.disabled).toBe(true);
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('#staff-password')).toBeNull();
+    expect(el.querySelector('#staff-confirm')).toBeNull();
+    expect(el.textContent).toContain('Edit staff member');
+    expect(el.textContent).toContain('Save changes');
+  });
+
+  it('submits the staff id and editable fields (never a password) to PATCH /users/:id', async () => {
+    const m = makeMocks();
+    m.users.updateUser.mockReturnValue(of(API_USERS[0]));
+    const fixture = await setup(m);
+
+    await openEditAndSubmit(fixture);
+
+    expect(m.users.updateUser).toHaveBeenCalledTimes(1);
+    const [id, payload] = m.users.updateUser.mock.calls[0]! as [string, Record<string, unknown>];
+    expect(id).toBe('u1');
+    expect(payload).toEqual({
+      firstName: 'Op',
+      lastName: 'One',
+      email: 'ops@staff.test',
+      phone: null,
+      roleIds: ['r-support'],
+    });
+    expect(JSON.stringify(payload)).not.toContain('password');
+    expect(m.users.createStaff).not.toHaveBeenCalled();
+  });
+
+  it('closes the drawer, confirms, and refreshes the list after a successful update', async () => {
+    const m = makeMocks();
+    m.users.updateUser.mockReturnValue(of(API_USERS[0]));
+    const fixture = await setup(m);
+
+    await openEditAndSubmit(fixture);
+
+    expect(fixture.componentInstance.drawerOpen()).toBe(false);
+    expect(fixture.componentInstance.editing()).toBeNull();
+    expect(m.toast.success).toHaveBeenCalled();
+    expect(m.users.listUsers).toHaveBeenCalledTimes(2); // initial load + refresh
+  });
+
+  it('keeps the drawer open and shows the error when the update fails', async () => {
+    const m = makeMocks();
+    m.users.updateUser.mockReturnValue(throwError(() => ({ status: 409 })));
+    const fixture = await setup(m);
+
+    await openEditAndSubmit(fixture);
+
+    expect(fixture.componentInstance.drawerOpen()).toBe(true);
+    expect(fixture.componentInstance.formError()).toBe(
+      'An account with this email already exists.',
+    );
+    expect(m.users.listUsers).toHaveBeenCalledTimes(1); // no refresh on failure
+  });
+
+  it('prevents duplicate submissions while an update is in progress', async () => {
+    const m = makeMocks();
+    m.users.updateUser.mockReturnValue(new Observable(() => {})); // never completes
+    const fixture = await setup(m);
+
+    await openEditAndSubmit(fixture);
+    expect(fixture.componentInstance.submitting()).toBe(true);
+
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+
+    expect(m.users.updateUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches back to an empty create form with password fields re-enabled', async () => {
+    const m = makeMocks();
+    const fixture = await setup(m);
+    const row = fixture.componentInstance.staff()[0]!;
+
+    fixture.componentInstance.openEdit(row);
+    fixture.detectChanges();
+    fixture.componentInstance.closeDrawer();
+    fixture.componentInstance.openDrawer();
+    fixture.detectChanges();
+
+    const form = fixture.componentInstance.form;
+    expect(fixture.componentInstance.editing()).toBeNull();
+    expect(form.controls.password.enabled).toBe(true);
+    expect(form.controls.confirmPassword.enabled).toBe(true);
+    expect(form.controls.firstName.value).toBe('');
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Add staff member');
+  });
+
+  it('deactivates a staff account after confirmation, preserving roles', async () => {
+    const m = makeMocks();
+    m.users.updateUser.mockReturnValue(of({ ...API_USERS[0]!, status: 'DEACTIVATED' as const }));
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    const deactivate = [...el.querySelectorAll<HTMLElement>('td[data-label="Actions"] na-button button')].find(
+      (b) => b.textContent?.trim() === 'Deactivate',
+    )!;
+    deactivate.click();
+    fixture.detectChanges();
+
+    // Confirmation dialog states exactly what happens.
+    expect(el.textContent).toContain('Deactivate the staff account of');
+    expect(el.textContent).toContain('ops@staff.test');
+    const confirm = [...el.querySelectorAll<HTMLElement>('.dialog__actions na-button button')].find(
+      (b) => b.textContent?.trim() === 'Deactivate',
+    )!;
+    confirm.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(m.users.updateUser).toHaveBeenCalledWith('u1', { status: 'DEACTIVATED' });
+    expect(m.toast.success).toHaveBeenCalled();
+    // Row updated in place, role intact.
+    expect(el.textContent).toContain('Deactivated');
+    expect(el.textContent).toContain('Support Staff');
+  });
+
+  it('reactivates a deactivated staff account after confirmation', async () => {
+    const m = makeMocks();
+    m.users.listUsers.mockReturnValue(of([{ ...API_USERS[0]!, status: 'DEACTIVATED' as const }]));
+    m.users.updateUser.mockReturnValue(of(API_USERS[0]!));
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    // Precondition: the row shows the deactivated badge.
+    const statusCell = () => el.querySelector<HTMLElement>('tbody tr td[data-label="Status"]')!;
+    expect(statusCell().textContent?.trim()).toBe('Deactivated');
+
+    const reactivate = [...el.querySelectorAll<HTMLElement>('td[data-label="Actions"] na-button button')].find(
+      (b) => b.textContent?.trim() === 'Reactivate',
+    )!;
+    reactivate.click();
+    fixture.detectChanges();
+    const confirm = [...el.querySelectorAll<HTMLElement>('.dialog__actions na-button button')].find(
+      (b) => b.textContent?.trim() === 'Reactivate',
+    )!;
+    confirm.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(m.users.updateUser).toHaveBeenCalledWith('u1', { status: 'ACTIVE' });
+    // The same row's badge — not just any 'Active' text on the page.
+    expect(statusCell().textContent?.trim()).toBe('Active');
+    expect(statusCell().textContent).not.toContain('Deactivated');
+  });
+
+  it('never offers the status action on your own account row', async () => {
+    const m = makeMocks(true, 'u1'); // the signed-in admin IS the listed staff member
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    const actions = [...el.querySelectorAll<HTMLElement>('td[data-label="Actions"] na-button button')].map((b) =>
+      b.textContent?.trim(),
+    );
+    expect(actions).toContain('Edit');
+    expect(actions).not.toContain('Deactivate');
+    expect(actions).not.toContain('Reactivate');
+  });
+
+  it('shows an error toast and closes the dialog when the status change fails', async () => {
+    const m = makeMocks();
+    m.users.updateUser.mockReturnValue(throwError(() => ({ status: 403 })));
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    [...el.querySelectorAll<HTMLElement>('td[data-label="Actions"] na-button button')]
+      .find((b) => b.textContent?.trim() === 'Deactivate')!
+      .click();
+    fixture.detectChanges();
+    [...el.querySelectorAll<HTMLElement>('.dialog__actions na-button button')]
+      .find((b) => b.textContent?.trim() === 'Deactivate')!
+      .click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(m.toast.error).toHaveBeenCalled();
+    expect(fixture.componentInstance.pendingStatusUser()).toBeNull();
+    expect(fixture.componentInstance.statusSaving()).toBe(false);
   });
 });

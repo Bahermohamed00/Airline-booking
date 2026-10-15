@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { AuthService, type LoginResult } from './auth.service';
+import { AuthService, isMfaChallenge, type LoginOutcome, type LoginResult } from './auth.service';
 import { API_CONFIG } from '../config/api-config';
 
 const base = 'http://test-api/api';
@@ -33,7 +33,9 @@ describe('AuthService (real API mode)', () => {
   it('login stores the access token in memory and emits the fetched profile', () => {
     const { auth, http } = setup();
     let result: LoginResult | undefined;
-    auth.login('a@b.c', 'Password123!').subscribe((r) => (result = r));
+    auth.login('a@b.c', 'Password123!').subscribe((r) => {
+      if (!isMfaChallenge(r)) result = r;
+    });
 
     http.expectOne(`${base}/auth/login`).flush({ accessToken: 'access-1', expiresIn: 900 });
     http.expectOne(`${base}/auth/me`).flush(mePayload);
@@ -136,7 +138,9 @@ describe('AuthService (real API mode)', () => {
     http.expectOne(`${base}/auth/logout`).flush({ message: 'Logged out' });
 
     // User logs in again (fresh session) before the stale refresh settles
-    auth.login('a@b.c', 'Password123!').subscribe((r) => auth.setSession(r.user));
+    auth.login('a@b.c', 'Password123!').subscribe((r) => {
+      if (!isMfaChallenge(r)) auth.setSession(r.user);
+    });
     http.expectOne(`${base}/auth/login`).flush({ accessToken: 'fresh-token', expiresIn: 900 });
     http.expectOne(`${base}/auth/me`).flush(mePayload);
     expect(auth.accessToken()).toBe('fresh-token');
@@ -149,14 +153,30 @@ describe('AuthService (real API mode)', () => {
     http.verify();
   });
 
-  it('maps MFA-required responses to a descriptive error', () => {
+  it('returns an MFA challenge outcome — without a token — when the API requires a code', () => {
     const { auth, http } = setup();
-    let error: { message?: string; code?: string } | undefined;
-    auth.login('a@b.c', 'Password123!').subscribe({ error: (e) => (error = e) });
+    let outcome: LoginOutcome | undefined;
+    auth.login('a@b.c', 'Password123!').subscribe((r) => (outcome = r));
 
     http.expectOne(`${base}/auth/login`).flush({ mfaRequired: true });
 
-    expect(error?.code).toBe('MFA_REQUIRED');
+    expect(outcome).toEqual({ mfaRequired: true });
+    expect(auth.accessToken()).toBeNull(); // no token issued before the challenge
+    http.verify();
+  });
+
+  it('forwards the emailed MFA code when completing a challenge', () => {
+    const { auth, http } = setup();
+    let outcome: LoginOutcome | undefined;
+    auth.login('a@b.c', 'Password123!', '482910').subscribe((r) => (outcome = r));
+
+    const req = http.expectOne(`${base}/auth/login`);
+    expect(req.request.body).toEqual({ email: 'a@b.c', password: 'Password123!', mfaCode: '482910' });
+    req.flush({ accessToken: 't1', expiresIn: 900 });
+    http.expectOne(`${base}/auth/me`).flush(mePayload);
+
+    expect(outcome && !isMfaChallenge(outcome) && outcome.accessToken).toBe('t1');
+    expect(auth.accessToken()).toBe('t1');
     http.verify();
   });
 

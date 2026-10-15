@@ -236,6 +236,8 @@ describe('Payments (e2e)', () => {
           passengerType: 'ADULT',
           dateOfBirth: '1990-01-01',
         })),
+        // Required by CreateBookingDto since the booking-idempotency contract.
+        idempotencyKey: randomUUID(),
       })
       .expect(201);
     return {
@@ -548,6 +550,8 @@ describe('Payments (e2e)', () => {
         passengers: [
           { firstName: 'Late', lastName: 'Comer', passengerType: 'ADULT' },
         ],
+        // Required by CreateBookingDto since the booking-idempotency contract.
+        idempotencyKey: randomUUID(),
       })
       .expect(409);
 
@@ -889,6 +893,19 @@ describe('Payments (e2e)', () => {
     ]);
     const { booking } = await paidBooking('cancel-paid@test.dev');
 
+    // Capture seat/flight ids up front: admin cancel deletes the BookingSeat
+    // rows to free the seat, so they cannot be read after cancellation.
+    const seatId = (
+      await prismaTestClient.bookingSeat.findFirstOrThrow({
+        where: { bookingPassenger: { bookingId: booking.id } },
+      })
+    ).seatId;
+    const flightId = (
+      await prismaTestClient.seatHold.findFirstOrThrow({
+        where: { bookingId: booking.id },
+      })
+    ).flightId;
+
     const res = await request(app.getHttpServer())
       .post(`/api/admin/bookings/${booking.id}/cancel`)
       .set('Authorization', `Bearer ${bookingMgr}`)
@@ -917,16 +934,6 @@ describe('Payments (e2e)', () => {
     );
 
     // Seat is freed: the availability endpoint no longer shows it occupied.
-    const seatId = (
-      await prismaTestClient.bookingSeat.findFirstOrThrow({
-        where: { bookingPassenger: { bookingId: booking.id } },
-      })
-    ).seatId;
-    const flightId = (
-      await prismaTestClient.seatHold.findFirstOrThrow({
-        where: { bookingId: booking.id },
-      })
-    ).flightId;
     const availability = await request(app.getHttpServer())
       .get(`/api/flights/${flightId}/seat-availability`)
       .expect(200);

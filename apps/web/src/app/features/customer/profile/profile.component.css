@@ -180,22 +180,11 @@
   align-items: flex-start;
   flex-wrap: wrap;
 }
-.qr {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  width: 132px;
-  height: 132px;
-  flex-shrink: 0;
-  background: var(--na-cream);
-  border: 1px solid var(--na-border);
-  padding: 4px;
-}
-.qr__cell--on {
-  background: var(--na-brown-900);
-}
-.secret {
-  letter-spacing: 0.08em;
-  margin: var(--na-space-2) 0 var(--na-space-4);
+.mfa-actions {
+  display: flex;
+  gap: var(--na-space-3);
+  align-items: center;
+  flex-wrap: wrap;
 }
 .mfa-code {
   max-width: 160px;

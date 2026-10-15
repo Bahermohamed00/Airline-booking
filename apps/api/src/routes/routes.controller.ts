@@ -7,6 +7,7 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
+import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator.js';
 
 @Controller('routes')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -27,13 +28,17 @@ export class RoutesController {
 
   @Post()
   @Permissions({ resource: 'routes', action: 'manage' })
-  create(@Body() dto: CreateRouteDto): Promise<RouteView> {
-    return this.routes.create(dto);
+  create(@Body() dto: CreateRouteDto, @CurrentUser() actor: AuthUser): Promise<RouteView> {
+    return this.routes.create(dto, actor);
   }
 
   @Patch(':id')
   @Permissions({ resource: 'routes', action: 'manage' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRouteDto): Promise<RouteView> {
-    return this.routes.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRouteDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<RouteView> {
+    return this.routes.update(id, dto, actor);
   }
 }

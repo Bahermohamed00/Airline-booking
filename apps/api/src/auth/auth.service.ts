@@ -9,11 +9,12 @@ import {
 } from '@nestjs/common';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as speakeasy from 'speakeasy';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
 import { TokenService } from './token.service.js';
+import { MfaEmailService } from './mfa-email.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { MailService } from '../mail/mail.service.js';
 import {
@@ -51,8 +52,7 @@ export interface SessionView {
 }
 
 export interface MfaSetupResult {
-  secret: string;
-  qrCodeUrl: string;
+  message: string;
 }
 
 @Injectable()
@@ -62,6 +62,7 @@ export class AuthService {
     @Inject(PasswordService) private readonly passwordService: PasswordService,
     @Inject(SessionService) private readonly sessionService: SessionService,
     @Inject(TokenService) private readonly tokenService: TokenService,
+    @Inject(MfaEmailService) private readonly mfaEmail: MfaEmailService,
     @Inject(JwtService) private readonly jwtService: JwtService,
     @Inject(ConfigService) private readonly configService: ConfigService,
     @Inject(AuditService) private readonly auditService: AuditService,
@@ -86,6 +87,14 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
+    // Never log or echo the submitted ID; the conflict message stays generic.
+    const existingNationalId = await this.prisma.user.findUnique({
+      where: { nationalId: dto.nationalId },
+    });
+    if (existingNationalId) {
+      throw new ConflictException('National ID already registered');
+    }
+
     const customerRole = await this.prisma.role.upsert({
       where: { name: 'Customer' },
       update: {},
@@ -93,18 +102,34 @@ export class AuthService {
     });
 
     const hashedPassword = await this.passwordService.hash(dto.password);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash: hashedPassword,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        phone: dto.phone,
-        dateOfBirth: dob,
-        status: 'PENDING_VERIFICATION',
-        userRoles: { create: { roleId: customerRole.id } },
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          passwordHash: hashedPassword,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          streetAddress: dto.streetAddress,
+          nationalId: dto.nationalId,
+          dateOfBirth: dob,
+          status: 'PENDING_VERIFICATION',
+          userRoles: { create: { roleId: customerRole.id } },
+        },
+      });
+    } catch (error) {
+      // Unique-violation race between the pre-checks above and the insert.
+      // meta.target carries field NAMES only (model field or mapped column
+      // name, depending on the driver) — never the submitted values.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = Array.isArray(error.meta?.['target']) ? error.meta['target'].join(',') : '';
+        throw new ConflictException(
+          /national_?id/i.test(target) ? 'National ID already registered' : 'Email already registered',
+        );
+      }
+      throw error;
+    }
 
     await this.auditService.log({
       actorId: user.id,
@@ -175,24 +200,29 @@ export class AuthService {
 
     if (this.passwordService.needsRehash(user.passwordHash)) {
       const rehashed = await this.passwordService.hash(dto.password);
-      await this.prisma.user.update({
-        where: { id: user.id },
+      // Conditional write: a concurrent login that already rehashed loses the
+      // compare-and-set (count 0) instead of overwriting with a second hash.
+      await this.prisma.user.updateMany({
+        where: { id: user.id, passwordHash: user.passwordHash },
         data: { passwordHash: rehashed },
       });
     }
 
     if (user.mfaEnabled) {
       if (!dto.mfaCode) {
+        // Password is proven — now issue the second factor. No session and no
+        // tokens are created before the emailed code verifies.
+        await this.mfaEmail.issue(user, 'LOGIN', ipAddress);
         return { mfaRequired: true };
       }
-      const verified = speakeasy.totp.verify({
-        secret: user.mfaSecret ?? '',
-        encoding: 'base32',
-        token: dto.mfaCode,
-        window: 1,
-      });
-      if (!verified) {
-        throw new UnauthorizedException('Invalid MFA code');
+      try {
+        await this.mfaEmail.verify(user.id, 'LOGIN', dto.mfaCode, ipAddress);
+      } catch (error) {
+        // Preserve the historical 401 for a failed login challenge.
+        if (error instanceof BadRequestException) {
+          throw new UnauthorizedException('Invalid MFA code');
+        }
+        throw error;
       }
     }
 
@@ -345,21 +375,28 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired token');
     }
 
-    // Verification flips PENDING_VERIFICATION to ACTIVE but never un-suspends.
-    const reactivate = token.user.status === 'PENDING_VERIFICATION';
-    await this.prisma.$transaction([
-      this.prisma.emailVerificationToken.update({
-        where: { id: token.id },
+    // Single-use consume + activation in one interactive transaction: the CAS
+    // on usedAt makes a concurrent double-submit lose with count 0 (rolled
+    // back, same public error), and reactivation only fires if the account is
+    // STILL PENDING_VERIFICATION at commit time — a concurrent admin
+    // suspend/deactivate is never overwritten.
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.emailVerificationToken.updateMany({
+        where: { id: token.id, usedAt: null },
         data: { usedAt: new Date() },
-      }),
-      this.prisma.user.update({
+      });
+      if (consumed.count === 0) {
+        throw new BadRequestException('Invalid or expired token');
+      }
+      await tx.user.update({
         where: { id: token.userId },
-        data: {
-          emailVerified: true,
-          ...(reactivate ? { status: 'ACTIVE' as const } : {}),
-        },
-      }),
-    ]);
+        data: { emailVerified: true },
+      });
+      await tx.user.updateMany({
+        where: { id: token.userId, status: 'PENDING_VERIFICATION' },
+        data: { status: 'ACTIVE' },
+      });
+    });
 
     await this.auditService.log({
       actorId: token.userId,
@@ -390,16 +427,19 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + this.resetTokenTtlMs());
 
     // One active reset link per user: requesting a new one invalidates the
-    // previous ones, matching the email-verification flow (ADR-0004).
-    await this.prisma.$transaction([
-      this.prisma.passwordResetToken.updateMany({
+    // previous ones, matching the email-verification flow (ADR-0004). The user
+    // row lock serializes concurrent requests so they cannot interleave into
+    // two live tokens.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${user.id}::uuid FOR UPDATE`;
+      await tx.passwordResetToken.updateMany({
         where: { userId: user.id, usedAt: null },
         data: { usedAt: new Date() },
-      }),
-      this.prisma.passwordResetToken.create({
+      });
+      await tx.passwordResetToken.create({
         data: { userId: user.id, tokenHash: hashToken(rawToken), expiresAt },
-      }),
-    ]);
+      });
+    });
 
     await this.mailService.sendPasswordResetEmail(user, rawToken);
 
@@ -439,21 +479,26 @@ export class AuthService {
 
     const hashedPassword = await this.passwordService.hash(dto.newPassword);
     const now = new Date();
-    await this.prisma.$transaction([
-      this.prisma.passwordResetToken.update({
-        where: { id: token.id },
+    await this.prisma.$transaction(async (tx) => {
+      // CAS consume: a concurrent request presenting the same token loses with
+      // count 0 and rolls back — no partial password/session writes.
+      const consumed = await tx.passwordResetToken.updateMany({
+        where: { id: token.id, usedAt: null },
         data: { usedAt: now },
-      }),
-      this.prisma.user.update({
+      });
+      if (consumed.count === 0) {
+        throw new BadRequestException('Invalid or expired token');
+      }
+      await tx.user.update({
         where: { id: token.userId },
         data: { passwordHash: hashedPassword },
-      }),
+      });
       // Every outstanding session dies with the old password.
-      this.prisma.session.updateMany({
+      await tx.session.updateMany({
         where: { userId: token.userId, revokedAt: null },
         data: { revokedAt: now, revokeReason: 'password_reset' },
-      }),
-    ]);
+      });
+    });
 
     await this.auditService.log({
       actorId: token.userId,
@@ -482,6 +527,7 @@ export class AuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
+        streetAddress: dto.streetAddress,
       },
     });
 
@@ -577,20 +623,26 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    const secret = speakeasy.generateSecret({
-      name: `${this.configService.get<string>('MFA_ISSUER', 'AirlineBooking')}:${user.email}`,
-      length: 32,
+    // Re-setup while MFA is active would silently replace the second factor —
+    // require a verified disable first.
+    if (user.mfaEnabled) {
+      throw new ConflictException('MFA is already enabled. Disable it before setting up again.');
+    }
+
+    // Email-OTP enrollment: the code proves mailbox control; nothing is
+    // stored on the user row until verifyMfaAndEnable succeeds.
+    await this.mfaEmail.issue(user, 'ENABLE');
+
+    // Never log the code — user ID only.
+    await this.auditService.log({
+      actorId: userId,
+      actorType: 'User',
+      action: 'MFA_SETUP_INITIATED',
+      targetType: 'User',
+      targetId: userId,
     });
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { mfaSecret: secret.base32 },
-    });
-
-    return {
-      secret: secret.base32,
-      qrCodeUrl: secret.otpauth_url ?? '',
-    };
+    return { message: 'A 6-digit security code was sent to your email address.' };
   }
 
   async verifyMfaAndEnable(
@@ -598,20 +650,14 @@ export class AuthService {
     code: string,
   ): Promise<{ enabled: boolean }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.mfaSecret) {
+    if (!user) {
       throw new BadRequestException('MFA not initialized');
     }
 
-    const verified = speakeasy.totp.verify({
-      secret: user.mfaSecret,
-      encoding: 'base32',
-      token: code,
-      window: 1,
-    });
-
-    if (!verified) {
-      throw new BadRequestException('Invalid MFA code');
-    }
+    // Audits MFA_VERIFICATION_FAILED internally; never logs the code. The CAS
+    // consume inside verify() rejects a concurrent or replayed enable attempt
+    // with the same public 400 — no separate mfaEnabled pre-check needed.
+    await this.mfaEmail.verify(userId, 'ENABLE', code);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -629,10 +675,36 @@ export class AuthService {
     return { enabled: true };
   }
 
-  async disableMfa(userId: string): Promise<{ enabled: boolean }> {
+  /** Sends the fresh DISABLE-purpose code required by disableMfa. */
+  async requestMfaDisable(userId: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.mfaEnabled) {
+      throw new BadRequestException('MFA is not enabled');
+    }
+    await this.mfaEmail.issue(user, 'DISABLE');
+    return { message: 'A 6-digit security code was sent to your email address.' };
+  }
+
+  async disableMfa(userId: string, code: string): Promise<{ enabled: boolean }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!user.mfaEnabled) {
+      throw new BadRequestException('MFA is not enabled');
+    }
+
+    // Proof of possession: a stolen access token alone must not be able to
+    // turn MFA off — a fresh DISABLE-purpose email code is required (LOGIN or
+    // ENABLE codes are rejected by purpose binding).
+    await this.mfaEmail.verify(userId, 'DISABLE', code);
+
     await this.prisma.user.update({
       where: { id: userId },
-      data: { mfaEnabled: false, mfaSecret: null },
+      data: { mfaEnabled: false },
     });
 
     await this.auditService.log({
@@ -655,17 +727,22 @@ export class AuthService {
       24 * 3_600_000,
     );
 
-    // Invalidate any outstanding verification tokens before issuing a new one.
-    await this.prisma.emailVerificationToken.updateMany({
-      where: { userId, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-    await this.prisma.emailVerificationToken.create({
-      data: {
-        userId,
-        tokenHash: hashToken(rawToken),
-        expiresAt: new Date(Date.now() + ttlMs),
-      },
+    // Serialize issuance per user: lock the user row, then invalidate
+    // outstanding tokens and create the new one in the same transaction —
+    // concurrent requests cannot interleave into two live tokens.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+      await tx.emailVerificationToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      await tx.emailVerificationToken.create({
+        data: {
+          userId,
+          tokenHash: hashToken(rawToken),
+          expiresAt: new Date(Date.now() + ttlMs),
+        },
+      });
     });
     return rawToken;
   }

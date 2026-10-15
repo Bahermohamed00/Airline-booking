@@ -22,7 +22,7 @@
       >
         <option value="">All events</option>
         @for (e of events; track e) {
-          <option [value]="e">{{ e }}</option>
+          <option [value]="e">{{ eventLabel(e) }}</option>
         }
       </select>
     </div>
@@ -54,12 +54,12 @@
       />
     </div>
     <div class="na-field filters__field">
-      <label class="na-label" for="f-target">Target</label>
+      <label class="na-label" for="f-target">Record ID</label>
       <input
         id="f-target"
         class="na-input"
         type="search"
-        placeholder="Target identifier"
+        placeholder="Record UUID"
         [ngModel]="targetIdFilter()"
         (ngModelChange)="targetIdFilter.set($event)"
         name="targetId"
@@ -126,7 +126,7 @@
             <th>Event</th>
             <th>Actor type</th>
             <th>Actor</th>
-            <th>Target</th>
+            <th>Affected record</th>
             <th>IP</th>
             <th><span class="na-visually-hidden">Details</span></th>
           </tr>
@@ -141,17 +141,22 @@
               [attr.aria-expanded]="expanded() === log.id"
             >
               <td data-label="Time">{{ fmtDate(log.createdAt) }}</td>
-              <td data-label="Event" class="na-text-mono">{{ log.event }}</td>
+              <td data-label="Event">{{ eventLabel(log.event) }}</td>
               <td data-label="Actor type">{{ log.actorType }}</td>
-              <td data-label="Actor" class="na-text-mono" [title]="log.actorId ?? ''">
-                {{ truncate(log.actorId) }}
+              <td data-label="Actor" [title]="log.actorId ? 'User ID: ' + log.actorId : ''">
+                {{ actorDisplayName(log) }}
+                @if (log.actorEmail) {
+                  <span class="na-text-muted na-text-small actor__email">{{ log.actorEmail }}</span>
+                }
               </td>
               <td
-                data-label="Target"
-                class="na-text-mono"
-                [title]="log.targetType + ' ' + (log.targetId ?? '')"
+                data-label="Affected record"
+                [title]="log.targetId ? log.targetType + ' ID: ' + log.targetId : log.targetType"
               >
-                {{ log.targetType }}·{{ truncate(log.targetId) }}
+                {{ recordTypeLabel(log.targetType) }}
+                @if (log.targetId) {
+                  <span class="na-text-muted na-text-small na-text-mono">{{ truncate(log.targetId) }}</span>
+                }
               </td>
               <td data-label="IP" class="na-text-mono">{{ log.ipAddress ?? '—' }}</td>
               <td data-label="Details" class="row__chevron" aria-hidden="true">
@@ -165,12 +170,19 @@
                     <p class="na-text-small">
                       <strong>Record ID:</strong> <span class="na-text-mono">{{ log.id }}</span>
                     </p>
-                    <h3 class="detail__title">Metadata (sanitized)</h3>
+                    <h3 class="detail__title">Details (sanitized)</h3>
                     @if (hasMetadata(log)) {
-                      <pre class="detail__json">{{ metadataJson(log) }}</pre>
+                      <dl class="detail__list">
+                        @for (entry of metadataEntries(log); track entry.label) {
+                          <div class="detail__entry">
+                            <dt>{{ entry.label }}</dt>
+                            <dd>{{ entry.value }}</dd>
+                          </div>
+                        }
+                      </dl>
                     } @else {
                       <p class="na-text-muted na-text-small">
-                        No additional metadata recorded for this event.
+                        No additional details recorded for this event.
                       </p>
                     }
                   </div>

@@ -13,6 +13,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuditModule } from './audit/audit.module.js';
+import { DashboardEventsModule } from './dashboard-events/dashboard-events.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { RolesModule } from './roles/roles.module.js';
@@ -27,6 +28,7 @@ import { OffersModule } from './offers/offers.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { BaggageModule } from './baggage/baggage.module.js';
+import { SupportModule } from './support/support.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -52,6 +54,7 @@ const skipThrottleInTest = (): boolean =>
     ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
+    DashboardEventsModule,
     AuthModule,
     UsersModule,
     RolesModule,
@@ -66,6 +69,7 @@ const skipThrottleInTest = (): boolean =>
     DashboardModule,
     SettingsModule,
     BaggageModule,
+    SupportModule,
   ],
   controllers: [AppController],
   providers: [

@@ -1,0 +1,87 @@
+<div class="page">
+  <na-breadcrumbs [items]="[{ label: 'Flight Management' }]" />
+
+  <header class="page__head">
+    <div>
+      <h1>Flight overview</h1>
+      <p class="subtitle">Live operational picture of flights, routes, airports and the fleet.</p>
+    </div>
+  </header>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3]" height="5rem" />
+  } @else if (data(); as d) {
+    <!-- KPI cards -->
+    <div class="kpis">
+      @for (card of kpis(); track card.key) {
+        <section class="kpi na-card" [attr.aria-label]="card.label">
+          <span class="kpi__icon" aria-hidden="true">{{ card.icon }}</span>
+          <span class="kpi__value">{{ card.value }}</span>
+          <span class="kpi__label">{{ card.label }}</span>
+          <span class="kpi__hint na-text-muted">{{ card.hint }}</span>
+        </section>
+      }
+    </div>
+
+    <div class="columns">
+      <!-- Flight status overview -->
+      <section class="na-card panel">
+        <h3>Flight status</h3>
+        @if (statusBars().length === 0) {
+          <p class="na-text-muted">No flights yet.</p>
+        } @else {
+          <ul class="status-list">
+            @for (bar of statusBars(); track bar.status) {
+              <li class="status-list__row">
+                <span class="status-list__label">{{ bar.label }}</span>
+                <span class="status-list__bar">
+                  <span class="status-list__fill" [style.width.%]="bar.pct"></span>
+                </span>
+                <na-badge [tone]="bar.tone">{{ bar.count }}</na-badge>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <!-- Recent activity -->
+      <section class="na-card panel">
+        <h3>Recent activity</h3>
+        @if (recentActivity().length === 0) {
+          <p class="na-text-muted">No flight operations recorded yet.</p>
+        } @else {
+          <ul class="activity-list">
+            @for (item of recentActivity(); track item.id) {
+              <li class="activity-list__row">
+                <span class="activity-list__time na-text-muted">{{ formatActivityTime(item.createdAt) }}</span>
+                <span class="activity-list__action na-text-mono">{{ item.action }}</span>
+                <span class="activity-list__detail">{{ activityDetail(item) }}</span>
+              </li>
+            }
+          </ul>
+        }
+        <a class="panel__link" routerLink="/admin/flights/history">View full history →</a>
+      </section>
+    </div>
+
+    <!-- Upcoming flights -->
+    <section class="panel">
+      <div class="panel__head">
+        <h3>Upcoming flights</h3>
+        <a class="panel__link" routerLink="/admin/flights">View all flights →</a>
+      </div>
+      <na-data-table
+        [columns]="upcomingColumns"
+        [rows]="upcomingRows()"
+        [loading]="false"
+        emptyTitle="No upcoming flights"
+        emptyMessage="No scheduled flights on the horizon."
+      />
+    </section>
+  }
+</div>

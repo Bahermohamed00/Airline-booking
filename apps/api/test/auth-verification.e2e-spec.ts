@@ -7,7 +7,7 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { MAIL_ADAPTER, type MailAdapter, type MailMessage } from '../src/mail/mail.adapter.js';
 import { hashToken, generateOpaqueToken } from '../src/auth/token-crypto.js';
-import { prismaTestClient, resetDatabase } from './test-utils.js';
+import { prismaTestClient, resetDatabase, generateTestNationalId } from './test-utils.js';
 
 const TEST_USER = {
   email: 'verify@test.com',
@@ -15,6 +15,9 @@ const TEST_USER = {
   firstName: 'Vera',
   lastName: 'Fication',
   dateOfBirth: '1990-01-01',
+  phone: '+49 170 1234567',
+  streetAddress: 'Hauptstraße 12',
+  nationalId: generateTestNationalId(),
 };
 
 describe('Email verification (e2e)', () => {
@@ -92,6 +95,39 @@ describe('Email verification (e2e)', () => {
     await request(app.getHttpServer()).post('/api/auth/email-verification').send({ token: 'not-a-real-token' }).expect(400);
     await request(app.getHttpServer()).post('/api/auth/email-verification').send({ token }).expect(200);
     await request(app.getHttpServer()).post('/api/auth/email-verification').send({ token }).expect(400);
+  });
+
+  it('a verification link stays single-use under concurrent submission (CAS)', async () => {
+    await request(app.getHttpServer()).post('/api/auth/register').send(TEST_USER).expect(201);
+    const token = latestVerificationToken();
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/email-verification').send({ token }),
+      request(app.getHttpServer()).post('/api/auth/email-verification').send({ token }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 400]);
+
+    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: TEST_USER.email } });
+    expect(user.emailVerified).toBe(true);
+    expect(user.status).toBe('ACTIVE');
+    expect(
+      await prismaTestClient.auditLog.count({ where: { action: 'EMAIL_VERIFIED', targetId: user.id } }),
+    ).toBe(1);
+  });
+
+  it('concurrent resends leave exactly one usable token (serialized issuance)', async () => {
+    await request(app.getHttpServer()).post('/api/auth/register').send(TEST_USER).expect(201);
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/email-verification-request').send({ email: TEST_USER.email }),
+      request(app.getHttpServer()).post('/api/auth/email-verification-request').send({ email: TEST_USER.email }),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: TEST_USER.email } });
+    const live = await prismaTestClient.emailVerificationToken.findMany({ where: { userId: user.id, usedAt: null } });
+    expect(live).toHaveLength(1);
   });
 
   it('verification-request always answers 200 and only emails unverified accounts', async () => {

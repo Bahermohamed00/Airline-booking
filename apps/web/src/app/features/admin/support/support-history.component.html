@@ -1,0 +1,275 @@
+<div class="page">
+  <na-breadcrumbs [items]="[{ label: 'Support' }, { label: 'History' }]" />
+
+  <header class="page__head">
+    <div>
+      <h1>Support history</h1>
+      <p class="subtitle">
+        Closed conversations. A closed ticket resurfaces in the inbox only when the customer sends a
+        new message.
+      </p>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="na-field filters__search">
+      <label class="na-label" for="hist-search">Search</label>
+      <input
+        id="hist-search"
+        class="na-input"
+        type="search"
+        placeholder="Ticket, subject, customer name or email…"
+        [(ngModel)]="filterSearch"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+
+    <div class="na-field">
+      <label class="na-label" for="hist-from">Closed from</label>
+      <input
+        id="hist-from"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterFrom"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+
+    <div class="na-field">
+      <label class="na-label" for="hist-to">Closed to</label>
+      <input
+        id="hist-to"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterTo"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+
+    <div class="na-field filters__clear">
+      <na-button variant="secondary" size="sm" (clicked)="clearFilters()">
+        Clear filters
+      </na-button>
+    </div>
+  </div>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [loading]="loading()"
+      emptyTitle="No closed tickets"
+      emptyMessage="No closed tickets match the current search and date range."
+      emptyActionLabel="Clear filters"
+      (rowClick)="openDetail($event.id)"
+      (emptyAction)="clearFilters()"
+    />
+
+    <div class="pagination">
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() <= 1 || loading()"
+        (clicked)="previousPage()"
+      >
+        Previous
+      </na-button>
+
+      <span class="na-text-muted na-text-small">
+        Page {{ page() }} of {{ totalPages() }} · {{ total() }} ticket(s)
+      </span>
+
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() >= totalPages() || loading()"
+        (clicked)="nextPage()"
+      >
+        Next
+      </na-button>
+    </div>
+  }
+
+  <!-- Closed ticket detail (read-only conversation) -->
+  @if (selected(); as t) {
+    <div class="modal-backdrop" (click)="closeDetail()" role="presentation"></div>
+
+    <section
+      class="ticket-modal"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Ticket ' + t.ticketNumber + ' details'"
+    >
+      <header class="ticket-modal__header">
+        <div>
+          <span class="ticket-modal__label">Closed Support Ticket</span>
+          <h2 class="na-text-mono">{{ t.ticketNumber }}</h2>
+          <p class="ticket-modal__subject">{{ t.subject }}</p>
+        </div>
+
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="Close details"
+          (click)="closeDetail()"
+        >
+          ×
+        </button>
+      </header>
+
+      <div class="ticket-modal__body">
+        <div class="ticket-status-row">
+          <span>Status</span>
+          <na-badge [tone]="statusOf(t).tone">
+            {{ statusOf(t).label }}
+          </na-badge>
+        </div>
+
+        <div class="customer-card">
+          <div class="customer-card__icon">◉</div>
+
+          <div class="customer-card__info">
+            <span class="customer-card__label">Customer</span>
+            <strong>
+              {{ t.customer.firstName }} {{ t.customer.lastName }}
+            </strong>
+
+            <a
+              class="support-email"
+              [href]="'mailto:' + t.customer.email"
+            >
+              {{ t.customer.email }}
+            </a>
+            @if (t.customer.phone) {
+              <a
+                class="support-email"
+                [href]="'tel:' + t.customer.phone"
+              >
+                {{ t.customer.phone }}
+              </a>
+            }
+          </div>
+        </div>
+
+        <div class="ticket-meta">
+          <div>
+            <span>Assigned to</span>
+            <strong>
+              {{ t.assignee
+                ? t.assignee.firstName + ' ' + t.assignee.lastName
+                : 'Unassigned' }}
+            </strong>
+          </div>
+
+          <div>
+            <span>Created</span>
+            <strong>{{ formatDate(t.createdAt) }}</strong>
+          </div>
+
+          @if (t.resolvedAt) {
+            <div>
+              <span>Resolved</span>
+              <strong>{{ formatDate(t.resolvedAt) }}</strong>
+            </div>
+          }
+
+          @if (t.closedAt) {
+            <div>
+              <span>Closed</span>
+              <strong>{{ formatDate(t.closedAt) }}</strong>
+            </div>
+          }
+        </div>
+
+        <section class="complaint">
+          <div class="complaint__heading">
+            <span>Complaint / Request</span>
+          </div>
+
+          <div class="complaint__content">
+            {{ t.description }}
+          </div>
+        </section>
+
+        <section class="conversation">
+          <div class="complaint__heading">
+            <span>Conversation</span>
+          </div>
+
+          @if (messages().length === 0) {
+            <p class="na-text-muted na-text-small">No messages yet.</p>
+          } @else {
+            <ul class="conversation__list">
+              @for (m of messages(); track m.id) {
+                <li
+                  class="message"
+                  [class.message--incoming]="m.senderType === 'CUSTOMER'"
+                  [class.message--outgoing]="m.senderType === 'SUPPORT_STAFF'"
+                >
+                  <div class="message__bubble">
+                    <div class="message__meta na-text-muted na-text-small">
+                      @if (m.senderType === 'CUSTOMER') {
+                        {{ t.customer.firstName }} {{ t.customer.lastName }} (customer)
+                      } @else {
+                        {{ m.sender ? m.sender.firstName + ' ' + m.sender.lastName : 'Support' }} (support)
+                        @if (m.deliveryStatus === 'SENT') { · emailed }
+                        @if (m.deliveryStatus === 'FAILED') { · email failed }
+                      }
+                      · {{ formatDate(m.createdAt) }}
+                    </div>
+                    <p class="message__body">{{ m.body }}</p>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      </div>
+    </section>
+  } @else if (detailLoading()) {
+    <div class="modal-backdrop" role="presentation"></div>
+
+    <section
+      class="ticket-modal ticket-modal--loading"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Loading ticket"
+    >
+      <div class="ticket-modal__body">
+        <na-skeleton [rows]="[3, 4]" height="1.5rem" />
+      </div>
+    </section>
+  } @else if (detailError()) {
+    <div
+      class="modal-backdrop"
+      (click)="closeDetail()"
+      role="presentation"
+    ></div>
+
+    <section
+      class="ticket-modal ticket-modal--error"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Ticket error"
+    >
+      <div class="ticket-modal__body">
+        <div class="list-error" role="alert">
+          <p>{{ detailError() }}</p>
+
+          <na-button
+            variant="secondary"
+            size="sm"
+            (clicked)="closeDetail()"
+          >
+            Close
+          </na-button>
+        </div>
+      </div>
+    </section>
+  }
+</div>

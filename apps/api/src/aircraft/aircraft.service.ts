@@ -1,6 +1,10 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Aircraft, Prisma, Seat } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { DashboardEventsService } from '../dashboard-events/dashboard-events.service.js';
+import { changedFieldsOf } from '../audit/changed-fields.js';
+import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { CreateAircraftDto } from './dto/create-aircraft.dto.js';
 import { UpdateAircraftDto } from './dto/update-aircraft.dto.js';
 import { generateSeatMap } from './seat-map.js';
@@ -13,7 +17,11 @@ const SEAT_COUNT_INCLUDE = { _count: { select: { seats: true } } } as const;
 
 @Injectable()
 export class AircraftService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(DashboardEventsService) private readonly dashboardEvents: DashboardEventsService,
+  ) {}
 
   async findAll(): Promise<AircraftView[]> {
     const aircraft = await this.prisma.aircraft.findMany({
@@ -42,13 +50,14 @@ export class AircraftService {
     });
   }
 
-  async create(dto: CreateAircraftDto): Promise<AircraftView> {
+  async create(dto: CreateAircraftDto, actor: AuthUser): Promise<AircraftView> {
     const taken = await this.prisma.aircraft.findUnique({ where: { registration: dto.registration } });
     if (taken) {
       throw new ConflictException(`An aircraft with registration ${dto.registration} already exists`);
     }
+    let aircraft: Aircraft;
     try {
-      const aircraft = await this.prisma.$transaction(async (tx) => {
+      aircraft = await this.prisma.$transaction(async (tx) => {
         const created = await tx.aircraft.create({
           data: {
             registration: dto.registration,
@@ -62,16 +71,26 @@ export class AircraftService {
         });
         return created;
       });
-      return { ...aircraft, seatCount: dto.capacity };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(`An aircraft with registration ${dto.registration} already exists`);
       }
       throw error;
     }
+    // Post-commit: the seat-map transaction has already committed.
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'AIRCRAFT_CREATED',
+      targetType: 'Aircraft',
+      targetId: aircraft.id,
+      metadata: { registration: aircraft.registration },
+    });
+    await this.dashboardEvents.publish('aircraft.created');
+    return { ...aircraft, seatCount: dto.capacity };
   }
 
-  async update(id: string, dto: UpdateAircraftDto): Promise<AircraftView> {
+  async update(id: string, dto: UpdateAircraftDto, actor: AuthUser): Promise<AircraftView> {
     const existing = await this.prisma.aircraft.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Aircraft not found');
@@ -82,19 +101,29 @@ export class AircraftService {
         throw new ConflictException(`An aircraft with registration ${dto.registration} already exists`);
       }
     }
+    let aircraft: AircraftWithCount;
     try {
-      const aircraft = await this.prisma.aircraft.update({
+      aircraft = await this.prisma.aircraft.update({
         where: { id },
         data: dto,
         include: SEAT_COUNT_INCLUDE,
       });
-      return this.toView(aircraft);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(`An aircraft with registration ${dto.registration} already exists`);
       }
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'AIRCRAFT_UPDATED',
+      targetType: 'Aircraft',
+      targetId: aircraft.id,
+      metadata: { changedFields: changedFieldsOf(dto) },
+    });
+    await this.dashboardEvents.publish('aircraft.updated');
+    return this.toView(aircraft);
   }
 
   private toView(aircraft: AircraftWithCount): AircraftView {

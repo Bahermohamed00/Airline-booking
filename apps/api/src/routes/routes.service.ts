@@ -1,7 +1,11 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Route } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { toAirportView, type AirportView } from '../airports/airports.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { DashboardEventsService } from '../dashboard-events/dashboard-events.service.js';
+import { changedFieldsOf } from '../audit/changed-fields.js';
+import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
+import { toAirportView, type AirportView } from '../airports/airport-view.js';
 import { CreateRouteDto } from './dto/create-route.dto.js';
 import { UpdateRouteDto } from './dto/update-route.dto.js';
 
@@ -13,7 +17,11 @@ type RouteWithAirports = Route & { originAirport: Parameters<typeof toAirportVie
 
 @Injectable()
 export class RoutesService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(DashboardEventsService) private readonly dashboardEvents: DashboardEventsService,
+  ) {}
 
   async findAll(): Promise<RouteView[]> {
     const routes = await this.prisma.route.findMany({
@@ -31,10 +39,11 @@ export class RoutesService {
     return this.toView(route);
   }
 
-  async create(dto: CreateRouteDto): Promise<RouteView> {
+  async create(dto: CreateRouteDto, actor: AuthUser): Promise<RouteView> {
     await this.assertPairValid(dto.originAirportId, dto.destinationAirportId);
+    let route: RouteWithAirports;
     try {
-      const route = await this.prisma.route.create({
+      route = await this.prisma.route.create({
         data: {
           originAirportId: dto.originAirportId,
           destinationAirportId: dto.destinationAirportId,
@@ -43,14 +52,22 @@ export class RoutesService {
         },
         include: AIRPORT_INCLUDE,
       });
-      return this.toView(route);
     } catch (error) {
       this.rethrowUnique(error);
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'ROUTE_CREATED',
+      targetType: 'Route',
+      targetId: route.id,
+    });
+    await this.dashboardEvents.publish('route.created');
+    return this.toView(route);
   }
 
-  async update(id: string, dto: UpdateRouteDto): Promise<RouteView> {
+  async update(id: string, dto: UpdateRouteDto, actor: AuthUser): Promise<RouteView> {
     const existing = await this.prisma.route.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Route not found');
@@ -62,8 +79,9 @@ export class RoutesService {
       await this.assertPairValid(originAirportId, destinationAirportId, id);
     }
 
+    let route: RouteWithAirports;
     try {
-      const route = await this.prisma.route.update({
+      route = await this.prisma.route.update({
         where: { id },
         data: {
           originAirportId,
@@ -74,11 +92,20 @@ export class RoutesService {
         },
         include: AIRPORT_INCLUDE,
       });
-      return this.toView(route);
     } catch (error) {
       this.rethrowUnique(error);
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'ROUTE_UPDATED',
+      targetType: 'Route',
+      targetId: route.id,
+      metadata: { changedFields: changedFieldsOf(dto) },
+    });
+    await this.dashboardEvents.publish('route.updated');
+    return this.toView(route);
   }
 
   /** Existence, inequality and pair-uniqueness of the two referenced airports. */

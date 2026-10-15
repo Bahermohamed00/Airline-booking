@@ -46,13 +46,11 @@ describe('DashboardService', () => {
     vi.useRealTimers();
   });
 
-  it('queries upcoming flights as departures within [now, now+7d)', async () => {
+  it('counts ALL flights for the Total flights KPI — a true total that grows with every created flight', async () => {
     await service.getDashboard({});
-    const where = prisma.flight.count.mock.calls[0]![0]!.where!;
-    expect(where.departureTime.gte).toEqual(NOW);
-    expect(where.departureTime.lt).toEqual(
-      new Date(NOW.getTime() + 7 * 86_400_000),
-    );
+    // Unfiltered count: newly created flights must always move the KPI,
+    // regardless of their departure date.
+    expect(prisma.flight.count).toHaveBeenCalledWith();
   });
 
   it('counts passengers only on active (PENDING/CONFIRMED) bookings', async () => {

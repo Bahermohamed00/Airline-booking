@@ -71,6 +71,7 @@ export class ResultsPage {
   protected readonly criteria = signal<SearchCriteria | null>(null);
   protected readonly flights = signal<Flight[] | null>(null);
   protected readonly adjacent = signal<AdjacentDay[]>([]);
+  protected readonly alternatives = signal<Flight[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly expanded = signal<Set<string>>(new Set());
   protected readonly filters = signal<ResultFilters>({
@@ -102,6 +103,15 @@ export class ResultsPage {
   protected readonly filtersActive = computed(() => {
     const f = this.filters();
     return f.maxPrice != null || f.departureWindow != null || f.refundableOnly;
+  });
+
+  /**
+   * True when the exact-date search came back empty (a normal no-match state,
+   * never an error) — the friendly no-match page with alternatives shows then.
+   */
+  protected readonly noMatch = computed(() => {
+    const list = this.flights();
+    return list !== null && list.length === 0 && !this.error();
   });
 
   constructor() {
@@ -138,12 +148,24 @@ export class ResultsPage {
     if (!c) return;
     this.flights.set(null);
     this.error.set(null);
+    this.alternatives.set([]);
     this.flightsApi.searchFlights(c).subscribe({
-      next: (flights) => this.flights.set(flights),
+      next: (flights) => {
+        this.flights.set(flights);
+        if (flights.length === 0) this.loadAlternatives(c);
+      },
       error: () => {
         this.flights.set([]);
         this.error.set('The flight search service is unavailable right now.');
       },
+    });
+  }
+
+  /** Same-route alternatives within ±3 days, shown only on a genuine no-match. */
+  private loadAlternatives(c: SearchCriteria): void {
+    this.flightsApi.findAlternatives(c).subscribe({
+      next: (alternatives) => this.alternatives.set(alternatives),
+      error: () => this.alternatives.set([]),
     });
   }
 
@@ -240,6 +262,11 @@ export class ResultsPage {
     return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(
       new Date(iso),
     );
+  }
+
+  /** Customer-facing public flight identifier (e.g. FL-1024); the UUID stays internal. */
+  protected publicId(f: Flight): string {
+    return `FL-${1000 + f.publicNumber}`;
   }
 
   protected money(amount: number): string {

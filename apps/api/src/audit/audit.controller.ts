@@ -4,6 +4,7 @@ import { AuditQueryDto } from './dto/audit-query.dto.js';
 import { JwtAuthGuard } from '../auth/auth.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
+import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator.js';
 
 /**
  * Read-only audit query API. Access is permission-driven: `audit:read` (with
@@ -18,7 +19,7 @@ export class AuditController {
 
   @Get()
   @Permissions({ resource: 'audit', action: 'read' })
-  findAll(@Query() query: AuditQueryDto): Promise<AuditQueryResult> {
-    return this.auditService.query(query);
+  findAll(@Query() query: AuditQueryDto, @CurrentUser() actor: AuthUser): Promise<AuditQueryResult> {
+    return this.auditService.query(query, actor);
   }
 }

@@ -21,6 +21,7 @@ export class TokenCleanupService {
     refreshTokens: number;
     verificationTokens: number;
     resetTokens: number;
+    mfaEmailTokens: number;
   }> {
     // Expired sessions cascade-delete their refresh tokens.
     const sessions = await this.prisma.session.deleteMany({
@@ -36,11 +37,15 @@ export class TokenCleanupService {
     const resetTokens = await this.prisma.passwordResetToken.deleteMany({
       where: { OR: [{ expiresAt: { lt: now } }, { usedAt: { not: null } }] },
     });
+    const mfaEmailTokens = await this.prisma.mfaEmailToken.deleteMany({
+      where: { OR: [{ expiresAt: { lt: now } }, { usedAt: { not: null } }] },
+    });
     return {
       sessions: sessions.count,
       refreshTokens: refreshTokens.count,
       verificationTokens: verificationTokens.count,
       resetTokens: resetTokens.count,
+      mfaEmailTokens: mfaEmailTokens.count,
     };
   }
 
@@ -49,7 +54,7 @@ export class TokenCleanupService {
     if (process.env['NODE_ENV'] === 'test') return;
     const deleted = await this.purge();
     this.logger.log(
-      `Token cleanup: ${deleted.sessions} session(s), ${deleted.refreshTokens} refresh token(s), ${deleted.verificationTokens} verification token(s), ${deleted.resetTokens} reset token(s) purged`,
+      `Token cleanup: ${deleted.sessions} session(s), ${deleted.refreshTokens} refresh token(s), ${deleted.verificationTokens} verification token(s), ${deleted.resetTokens} reset token(s), ${deleted.mfaEmailTokens} MFA email token(s) purged`,
     );
   }
 }

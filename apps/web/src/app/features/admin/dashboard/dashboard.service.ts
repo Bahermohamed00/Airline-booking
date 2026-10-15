@@ -46,6 +46,9 @@ export interface DashboardData {
   revenue: number | null;
   currency: string;
   scheduledCount: number;
+  boardingCount: number;
+  departedCount: number;
+  arrivedCount: number;
   delayedCount: number;
   cancelledCount: number;
   completedCount: number;

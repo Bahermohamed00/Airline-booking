@@ -2,11 +2,21 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of } from 'rxjs';
 import { API_CONFIG, type ApiConfig } from '../config/api-config';
-import type { Flight, Airport } from '../models/domain.model';
+import type { Flight, Airport, FlightStatus } from '../models/domain.model';
 import { mapAirport, mapFlight, type ApiAirport, type ApiFlight } from '../models/flight-api.model';
 import type { SearchCriteria, ResultFilters, ResultSort } from '../models/booking-flow.model';
 
 const BOOKABLE_STATUSES = new Set(['SCHEDULED', 'ACTIVE', 'DELAYED']);
+
+export interface AdminFlightFilters {
+  id?: string;
+  flightNumber?: string;
+  status?: FlightStatus;
+  from?: string;
+  to?: string;
+  /** Hide COMPLETED flights from operational lists (ignored when status is set). */
+  excludeCompleted?: boolean;
+}
 
 @Injectable({ providedIn: 'root' })
 export class FlightService {
@@ -67,11 +77,40 @@ export class FlightService {
       );
   }
 
+  /**
+   * No-match alternatives: same route (never a different one), bookable, same
+   * cabin, within ±3 days of the requested date — sorted same date first,
+   * then ±1, ±2, ±3 days, closest departure time first.
+   */
+  findAlternatives(criteria: SearchCriteria, limit = 4): Observable<Flight[]> {
+    const base = new Date(`${criteria.departureDate}T00:00:00Z`);
+    const from = new Date(base.getTime() - 3 * 86_400_000).toISOString().slice(0, 10);
+    const to = new Date(base.getTime() + 3 * 86_400_000).toISOString().slice(0, 10);
+    return this.http
+      .get<ApiFlight[]>(`${this.config.baseUrl}/flights`, {
+        params: { origin: criteria.originCode, destination: criteria.destinationCode, from, to },
+      })
+      .pipe(
+        map((flights) =>
+          flights
+            .map(mapFlight)
+            .filter(
+              (f) =>
+                BOOKABLE_STATUSES.has(f.status) &&
+                f.fares.some(
+                  (fare) => fare.cabinClass === criteria.cabinClass && fare.availableCount > 0,
+                ) &&
+                (f.operatingDate ?? f.departureTime.slice(0, 10)) !== criteria.departureDate,
+            ),
+        ),
+        map((candidates) => sortAlternatives(candidates, criteria.departureDate).slice(0, limit)),
+      );
+  }
+
   /** ±3 day price calendar from a single from/to range query (no mock slicing). */
   adjacentDateAvailability(
     criteria: SearchCriteria,
-  ): Observable<{ date: string; minPrice: number | null }[]> {
-    const base = new Date(`${criteria.departureDate}T00:00:00Z`);
+  ): Observable<{ date: string; minPrice: number | null }[]> {    const base = new Date(`${criteria.departureDate}T00:00:00Z`);
     const dates: string[] = [];
     for (let offset = -3; offset <= 3; offset++) {
       dates.push(new Date(base.getTime() + offset * 86_400_000).toISOString().slice(0, 10));
@@ -132,15 +171,65 @@ export class FlightService {
       .pipe(map((flights) => flights.map(mapFlight)));
   }
 
-  adminFlights(): Observable<Flight[]> {
+  /** Admin flight list — all filters applied server-side and combined. */
+  adminFlights(filters: AdminFlightFilters = {}): Observable<Flight[]> {
+    const params: Record<string, string> = {};
+    if (filters.id) params['id'] = filters.id;
+    if (filters.flightNumber) params['flightNumber'] = filters.flightNumber;
+    if (filters.status) params['status'] = filters.status;
+    if (filters.from) params['from'] = filters.from;
+    if (filters.to) params['to'] = filters.to;
+    if (filters.excludeCompleted) params['excludeCompleted'] = 'true';
     return this.http
-      .get<ApiFlight[]>(`${this.config.baseUrl}/flights`)
+      .get<ApiFlight[]>(`${this.config.baseUrl}/flights`, { params })
       .pipe(map((flights) => flights.map(mapFlight)));
+  }
+
+  /** Flight Management: explicit single-flight creation (requires flights:manage). */
+  createFlight(payload: {
+    routeId: string;
+    aircraftId: string;
+    departureDate: string;
+    departureTime: string;
+    arrivalDate: string;
+    arrivalTime: string;
+    flightNumber?: string;
+    price: number;
+    tripType?: 'ONE_WAY' | 'ROUND_TRIP';
+  }): Observable<Flight> {
+    return this.http.post<ApiFlight>(`${this.config.baseUrl}/flights`, payload).pipe(map(mapFlight));
+  }
+
+  /** Flight Management: lifecycle status change (requires flights:manage). */
+  updateFlightStatus(id: string, status: FlightStatus): Observable<Flight> {
+    return this.http
+      .patch<ApiFlight>(`${this.config.baseUrl}/flights/${id}/status`, { status })
+      .pipe(map(mapFlight));
+  }
+
+  /** Flight Management: schedule-time edit (requires flights:manage). */
+  updateFlight(id: string, payload: { departureTime?: string; arrivalTime?: string; price?: number }): Observable<Flight> {
+    return this.http
+      .patch<ApiFlight>(`${this.config.baseUrl}/flights/${id}`, payload)
+      .pipe(map(mapFlight));
   }
 }
 
-export function applyFilters(
-  flights: Flight[],
+/**
+ * Alternative-flight ordering for the no-match state: same date first
+ * (offset 0), then ±1, ±2, ±3 days by absolute day distance, closest
+ * departure time first within each day.
+ */
+export function sortAlternatives(flights: Flight[], departureDate: string): Flight[] {
+  const dayOf = (f: Flight) => f.operatingDate ?? f.departureTime.slice(0, 10);
+  const requested = Date.parse(`${departureDate}T00:00:00Z`);
+  const offset = (f: Flight) => Math.abs(Date.parse(`${dayOf(f)}T00:00:00Z`) - requested);
+  return [...flights].sort(
+    (a, b) => offset(a) - offset(b) || Date.parse(a.departureTime) - Date.parse(b.departureTime),
+  );
+}
+
+export function applyFilters(  flights: Flight[],
   filters: ResultFilters,
   cabinClass: string,
 ): Flight[] {

@@ -4,7 +4,7 @@
 import type {
   FlightStatus, FlightScheduleStatus, BookingStatus, PaymentStatus, RefundStatus,
   BaggageStatus, SeatHoldStatus, NotificationStatus, LoyaltyTier, UserStatus, CheckInStatus,
-  AircraftStatus,
+  AircraftStatus, SupportTicketStatus,
 } from './models/domain.model';
 
 export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
@@ -16,10 +16,13 @@ export interface StatusPresentation {
 
 export const FLIGHT_STATUS_MAP: Record<FlightStatus, StatusPresentation> = {
   SCHEDULED: { label: 'Scheduled', tone: 'info' },
+  BOARDING: { label: 'Boarding', tone: 'info' },
+  DEPARTED: { label: 'Departed', tone: 'info' },
+  ARRIVED: { label: 'Arrived', tone: 'success' },
+  COMPLETED: { label: 'Completed', tone: 'success' },
+  CANCELLED: { label: 'Cancelled', tone: 'danger' },
   ACTIVE: { label: 'Active', tone: 'info' },
   DELAYED: { label: 'Delayed', tone: 'warning' },
-  CANCELLED: { label: 'Cancelled', tone: 'danger' },
-  COMPLETED: { label: 'Completed', tone: 'success' },
 };
 
 export const SCHEDULE_STATUS_MAP: Record<FlightScheduleStatus, StatusPresentation> = {
@@ -94,6 +97,13 @@ export const USER_STATUS_MAP: Record<UserStatus, StatusPresentation> = {
 export const CHECKIN_STATUS_MAP: Record<CheckInStatus, StatusPresentation> = {
   COMPLETED: { label: 'Checked in', tone: 'success' },
   CANCELLED: { label: 'Cancelled', tone: 'danger' },
+};
+
+export const SUPPORT_TICKET_STATUS_MAP: Record<SupportTicketStatus, StatusPresentation> = {
+  OPEN: { label: 'Open', tone: 'info' },
+  IN_PROGRESS: { label: 'In progress', tone: 'warning' },
+  RESOLVED: { label: 'Resolved', tone: 'success' },
+  CLOSED: { label: 'Closed', tone: 'neutral' },
 };
 
 export const TIER_LABELS: Record<LoyaltyTier, string> = {

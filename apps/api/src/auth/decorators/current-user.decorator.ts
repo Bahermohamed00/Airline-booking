@@ -7,6 +7,9 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   dateOfBirth: Date | null;
+  phone: string | null;
+  streetAddress: string | null;
+  nationalId: string | null;
   emailVerified: boolean;
   mfaEnabled: boolean;
   roles: string[];

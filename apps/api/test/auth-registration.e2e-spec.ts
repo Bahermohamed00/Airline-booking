@@ -42,6 +42,9 @@ describe('Registration (e2e)', () => {
     firstName: 'New',
     lastName: 'User',
     dateOfBirth: '2000-05-17',
+    phone: '+49 170 1234567',
+    streetAddress: 'Hauptstraße 12',
+    nationalId: '28501010123456',
   };
 
   /** ISO date (YYYY-MM-DD) exactly `years` ago today, UTC. */
@@ -161,6 +164,113 @@ describe('Registration (e2e)', () => {
     expect(await prismaTestClient.user.count()).toBe(0);
   });
 
+  it('rejects a missing or empty mobile number with the specific message', async () => {
+    const { phone: _omit, ...noPhone } = validInput;
+    const missing = await register(noPhone);
+    expect(missing.status).toBe(400);
+    expect(missing.body.message).toContain('Please enter your mobile number.');
+
+    for (const empty of ['', '   ']) {
+      const res = await register({ ...validInput, phone: empty });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Please enter your mobile number.');
+    }
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('rejects an invalid mobile number with the specific message', async () => {
+    for (const invalid of ['not-a-phone', 'abc', '12']) {
+      const res = await register({ ...validInput, phone: invalid });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Invalid mobile number.');
+    }
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('rejects a missing or empty street address with the specific message', async () => {
+    const { streetAddress: _omit, ...noAddress } = validInput;
+    const missing = await register(noAddress);
+    expect(missing.status).toBe(400);
+    expect(missing.body.message).toContain('Please enter your street address.');
+
+    for (const empty of ['', '   ']) {
+      const res = await register({ ...validInput, streetAddress: empty });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Please enter your street address.');
+    }
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('rejects an invalid street address with the specific message', async () => {
+    for (const invalid of ['!!!', 'ab', '.....']) {
+      const res = await register({ ...validInput, streetAddress: invalid });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Invalid street address.');
+    }
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('persists the mobile number and street address on the account', async () => {
+    const res = await register(validInput).expect(201);
+
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
+    expect(user.phone).toBe(validInput.phone);
+    expect(user.streetAddress).toBe(validInput.streetAddress);
+  });
+
+  it('persists the national ID on the account and never returns it in the response', async () => {
+    const res = await register(validInput).expect(201);
+
+    const user = await prismaTestClient.user.findUniqueOrThrow({
+      where: { id: res.body.userId },
+    });
+    expect(user.nationalId).toBe(validInput.nationalId);
+    expect(JSON.stringify(res.body)).not.toContain(validInput.nationalId);
+  });
+
+  it('rejects a missing or empty national ID with the specific message', async () => {
+    const { nationalId: _omit, ...noNationalId } = validInput;
+    const missing = await register(noNationalId);
+    expect(missing.status).toBe(400);
+    expect(missing.body.message).toContain('Please enter your national ID.');
+
+    for (const empty of ['', '   ']) {
+      const res = await register({ ...validInput, nationalId: empty });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Please enter your national ID.');
+    }
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('rejects a national ID that is not exactly 14 digits', async () => {
+    for (const invalid of ['2850101012345', '285010101234567', '2850101012345A', 'not-a-national-id']) {
+      const res = await register({ ...validInput, nationalId: invalid });
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('National ID must be exactly 14 digits.');
+    }
+
+    expect(await prismaTestClient.user.count()).toBe(0);
+  });
+
+  it('rejects a duplicate national ID with 409 and a generic message', async () => {
+    await register(validInput).expect(201);
+
+    const duplicate = await register({ ...validInput, email: 'other@test.com' });
+    expect(duplicate.status).toBe(409);
+    expect(duplicate.body.message).toBe('National ID already registered');
+    // The submitted value must never appear in the error response.
+    expect(JSON.stringify(duplicate.body)).not.toContain(validInput.nationalId);
+
+    expect(await prismaTestClient.user.count()).toBe(1);
+  });
+
   it('persists the date of birth on the account', async () => {
     const res = await register(validInput).expect(201);
 
@@ -201,7 +311,7 @@ describe('Registration (e2e)', () => {
     expect(await prismaTestClient.user.count()).toBe(0);
   });
 
-  it('returns the authenticated user data, including dateOfBirth, from /auth/me', async () => {
+  it('returns the authenticated user data, including contact details, from /auth/me', async () => {
     const res = await register(validInput).expect(201);
     await prismaTestClient.user.update({
       where: { id: res.body.userId },
@@ -221,6 +331,9 @@ describe('Registration (e2e)', () => {
     expect(me.body.firstName).toBe('New');
     expect(me.body.lastName).toBe('User');
     expect(me.body.dateOfBirth).toBe('2000-05-17T00:00:00.000Z');
+    expect(me.body.phone).toBe(validInput.phone);
+    expect(me.body.streetAddress).toBe(validInput.streetAddress);
+    expect(me.body.nationalId).toBe(validInput.nationalId);
     expect(me.body.roles).toEqual(['Customer']);
   });
 });

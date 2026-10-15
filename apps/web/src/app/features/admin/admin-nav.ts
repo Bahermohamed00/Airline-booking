@@ -10,7 +10,20 @@ export interface AdminNavItem {
 
 export const ADMIN_NAV: AdminNavItem[] = [
   { route: '/admin/dashboard', label: 'Overview', icon: '▤', permission: 'dashboard:read' },
+  { route: '/admin/flights/overview', label: 'Flight Overview', icon: '◎', permission: 'flights:read' },
   { route: '/admin/flights', label: 'Flights', icon: '✈', permission: 'flights:read' },
+  {
+    route: '/admin/flights/completed',
+    label: 'Completed Flights',
+    icon: '✔',
+    permission: 'flights:read',
+  },
+  {
+    route: '/admin/flights/history',
+    label: 'Flight History',
+    icon: '◴',
+    permission: 'flights:read',
+  },
   {
     route: '/admin/schedule-rules',
     label: 'Schedule Rules',
@@ -27,7 +40,6 @@ export const ADMIN_NAV: AdminNavItem[] = [
   { route: '/admin/payments', label: 'Payments', icon: '€', permission: 'payments:read' },
   { route: '/admin/refunds', label: 'Refunds', icon: '↩', permission: 'payments:refund' },
   { route: '/admin/baggage', label: 'Baggage', icon: '◫', permission: 'baggage:manage' },
-  { route: '/admin/checkin', label: 'Check-in', icon: '✓', permission: 'checkin:manage' },
   { route: '/admin/loyalty', label: 'Loyalty', icon: '★', permission: 'loyalty:manage' },
   {
     route: '/admin/notifications',

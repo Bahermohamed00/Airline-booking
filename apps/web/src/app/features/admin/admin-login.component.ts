@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AuthService } from '../../core/services/auth.service';
+import { AuthService, isMfaChallenge } from '../../core/services/auth.service';
 import { NaButton } from '../../shared/ui/button.component';
 import { NaAlert } from '../../shared/ui/alert.component';
 
@@ -43,16 +43,39 @@ import { NaAlert } from '../../shared/ui/alert.component';
             <na-alert tone="info" title="Signed out">{{ notice() }}</na-alert>
           }
 
+          @if (mfaPending()) {
+            <na-alert tone="info" title="Security code sent">
+              We emailed you a 6-digit security code. Enter it below to finish signing in.
+            </na-alert>
+          }
+
           <form [formGroup]="form" (ngSubmit)="submit()">
-            <div class="na-field">
-              <label class="na-label" for="admin-email">Email</label>
-              <input id="admin-email" class="na-input" type="email" formControlName="email" autocomplete="email" />
-            </div>
-            <div class="na-field">
-              <label class="na-label" for="admin-password">Password</label>
-              <input id="admin-password" class="na-input" type="password" formControlName="password" autocomplete="current-password" />
-            </div>
-            <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Sign in to Ops</na-button>
+            @if (!mfaPending()) {
+              <div class="na-field">
+                <label class="na-label" for="admin-email">Email</label>
+                <input id="admin-email" class="na-input" type="email" formControlName="email" autocomplete="email" />
+              </div>
+              <div class="na-field">
+                <label class="na-label" for="admin-password">Password</label>
+                <input id="admin-password" class="na-input" type="password" formControlName="password" autocomplete="current-password" />
+              </div>
+              <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.controls.email.invalid || form.controls.password.invalid">Sign in to Ops</na-button>
+            } @else {
+              <div class="na-field">
+                <label class="na-label" for="admin-mfa-code">Security code</label>
+                <input
+                  id="admin-mfa-code"
+                  class="na-input na-text-mono"
+                  type="text"
+                  formControlName="mfaCode"
+                  inputmode="numeric"
+                  maxlength="6"
+                  autocomplete="one-time-code"
+                />
+                @if (form.controls.mfaCode.touched && form.controls.mfaCode.errors) { <span class="na-error">Enter the 6-digit code from your email.</span> }
+              </div>
+              <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.controls.mfaCode.invalid">Verify &amp; sign in</na-button>
+            }
           </form>
         </div>
       </div>
@@ -98,6 +121,7 @@ export class AdminLoginPage {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly mfaPending = signal(false);
   readonly notice = signal<string | null>(
     this.route.snapshot.queryParamMap.get('reason') === 'session-expired'
       ? 'Your session has expired. Please sign in again.'
@@ -107,16 +131,24 @@ export class AdminLoginPage {
   readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required]],
+    mfaCode: ['', [Validators.pattern(/^\d{6}$/)]],
   });
 
   submit(): void {
-    if (this.form.invalid) return;
+    if (this.loading()) return;
+    const { email, password, mfaCode } = this.form.getRawValue();
+    if (this.mfaPending() && this.form.controls.mfaCode.invalid) return;
+    if (!this.mfaPending() && (this.form.controls.email.invalid || this.form.controls.password.invalid)) return;
     this.loading.set(true);
     this.error.set(null);
-    const { email, password } = this.form.getRawValue();
-    this.auth.login(email, password).subscribe({
-      next: (result) => {
-        this.auth.setSession(result.user);
+    this.auth.login(email, password, this.mfaPending() ? mfaCode : undefined).subscribe({
+      next: (outcome) => {
+        if (isMfaChallenge(outcome)) {
+          this.loading.set(false);
+          this.mfaPending.set(true);
+          return;
+        }
+        this.auth.setSession(outcome.user);
         if (!this.auth.isStaff()) {
           // Valid credentials, wrong portal: drop the session again.
           this.auth.logout();
@@ -125,7 +157,10 @@ export class AdminLoginPage {
           return;
         }
         const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
-        void this.router.navigateByUrl(returnUrl ?? '/admin/dashboard');
+        // Support Staff land in their dedicated support workspace, never the
+        // general Admin Overview.
+        const home = this.auth.isSupportStaff() ? '/admin/support/overview' : '/admin/dashboard';
+        void this.router.navigateByUrl(returnUrl ?? home);
       },
       error: (err) => {
         this.loading.set(false);

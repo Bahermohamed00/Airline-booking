@@ -10,6 +10,7 @@ const PAYLOAD: CreateBookingPayload = {
   flightId: 'f1',
   cabinClass: 'ECONOMY',
   seatIds: ['s1', 's2'],
+  idempotencyKey: 'test-idempotency-key',
   passengers: [
     {
       passengerType: 'ADULT',

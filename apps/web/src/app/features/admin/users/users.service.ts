@@ -35,6 +35,16 @@ export interface CreateStaffPayload {
   roleIds: string[];
 }
 
+/** Fields accepted by PATCH /users/:id. All optional; `phone: null` clears it. */
+export interface UpdateStaffPayload {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+  status?: UserStatus;
+  roleIds?: string[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class UsersService {
   private readonly http = inject(HttpClient);
@@ -51,7 +61,7 @@ export class UsersService {
   listUsers(): Observable<ApiUser[]> {
     return this.http.get<ApiUser[]>(`${this.config.baseUrl}/users`);
   }
-  updateUser(id: string, payload: { status: UserStatus }): Observable<ApiUser> {
+  updateUser(id: string, payload: UpdateStaffPayload): Observable<ApiUser> {
     return this.http.patch<ApiUser>(`${this.config.baseUrl}/users/${id}`, payload);
   }
 }

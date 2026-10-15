@@ -1,0 +1,30 @@
+<div class="page">
+  <na-breadcrumbs [items]="[{ label: 'Support' }]" />
+
+  <header class="page__head">
+    <div>
+      <h1>Support overview</h1>
+      <p class="subtitle">Your support inbox at a glance — tickets and unread customer messages.</p>
+    </div>
+    <a class="inbox-link" routerLink="/admin/support">Go to inbox →</a>
+  </header>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2]" height="6rem" />
+  } @else {
+    <div class="cards">
+      @for (card of cards(); track card.key) {
+        <a class="card na-card" [class.card--accent]="card.accent" routerLink="/admin/support">
+          <span class="card__value">{{ card.value }}</span>
+          <span class="card__label">{{ card.label }}</span>
+          <span class="card__hint na-text-muted">{{ card.hint }}</span>
+        </a>
+      }
+    </div>
+  }
+</div>

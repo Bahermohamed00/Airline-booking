@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { RegisterPage } from './register.component';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../shared/ui/toast.service';
@@ -68,6 +68,9 @@ function fillValidForm(el: HTMLElement): void {
   setInput(el, '#firstName', 'New');
   setInput(el, '#lastName', 'User');
   setInput(el, '#dateOfBirth', '2000-05-17');
+  setInput(el, '#phone', '+49 170 1234567');
+  setInput(el, '#streetAddress', 'Hauptstraße 12');
+  setInput(el, '#nationalId', '28501010123456');
   setInput(el, '#email', 'new@example.com');
   setInput(el, '#password', 'Password123!');
   setInput(el, '#confirmPassword', 'Password123!');
@@ -126,7 +129,149 @@ describe('RegisterPage', () => {
       firstName: 'New',
       lastName: 'User',
       dateOfBirth: '2000-05-17',
+      phone: '+49 170 1234567',
+      streetAddress: 'Hauptstraße 12',
+      nationalId: '28501010123456',
     });
     expect(navigate).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('shows "Please enter your national ID." after an empty national ID field is touched', async () => {
+    const fixture = await setup(mocks());
+    const el = fixture.nativeElement as HTMLElement;
+
+    fillValidForm(el);
+    setInput(el, '#nationalId', '');
+    el.querySelector<HTMLInputElement>('#nationalId')!.dispatchEvent(new Event('blur'));
+    await settle(fixture);
+
+    expect(fixture.componentInstance.form.controls.nationalId.invalid).toBe(true);
+    expect(el.textContent).toContain('Please enter your national ID.');
+  });
+
+  it('shows "National ID must be exactly 14 digits." for malformed IDs and blocks submission', async () => {
+    const m = mocks();
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    for (const invalid of ['2850101012345', '285010101234567', '2850101012345A']) {
+      fillValidForm(el);
+      setInput(el, '#nationalId', invalid);
+      el.querySelector<HTMLInputElement>('#nationalId')!.dispatchEvent(new Event('blur'));
+      await settle(fixture);
+
+      expect(fixture.componentInstance.form.controls.nationalId.invalid).toBe(true);
+      expect(el.textContent).toContain('National ID must be exactly 14 digits.');
+
+      el.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await settle(fixture);
+      expect(m.auth.register).not.toHaveBeenCalled();
+    }
+  });
+
+  it('shows no validation errors on first load', async () => {
+    const fixture = await setup(mocks());
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('.na-error')).toBeNull();
+  });
+
+  it('shows "Please enter your mobile number." after an empty mobile field is touched', async () => {
+    const m = mocks();
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    fillValidForm(el);
+    setInput(el, '#phone', '');
+    el.querySelector<HTMLInputElement>('#phone')!.dispatchEvent(new Event('blur'));
+    await settle(fixture);
+
+    expect(fixture.componentInstance.form.controls.phone.invalid).toBe(true);
+    expect(el.textContent).toContain('Please enter your mobile number.');
+  });
+
+  it('shows "Invalid mobile number." for a malformed mobile and blocks submission', async () => {
+    const m = mocks();
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    fillValidForm(el);
+    setInput(el, '#phone', 'not-a-phone');
+    el.querySelector<HTMLInputElement>('#phone')!.dispatchEvent(new Event('blur'));
+    await settle(fixture);
+
+    expect(fixture.componentInstance.form.controls.phone.invalid).toBe(true);
+    expect(el.textContent).toContain('Invalid mobile number.');
+
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await settle(fixture);
+    expect(m.auth.register).not.toHaveBeenCalled();
+  });
+
+  it('shows "Please enter your street address." after an empty address field is touched', async () => {
+    const m = mocks();
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    fillValidForm(el);
+    setInput(el, '#streetAddress', '');
+    el.querySelector<HTMLInputElement>('#streetAddress')!.dispatchEvent(new Event('blur'));
+    await settle(fixture);
+
+    expect(fixture.componentInstance.form.controls.streetAddress.invalid).toBe(true);
+    expect(el.textContent).toContain('Please enter your street address.');
+  });
+
+  it('shows "Invalid street address." for a malformed address and blocks submission', async () => {
+    const m = mocks();
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    fillValidForm(el);
+    setInput(el, '#streetAddress', '!!!');
+    el.querySelector<HTMLInputElement>('#streetAddress')!.dispatchEvent(new Event('blur'));
+    await settle(fixture);
+
+    expect(fixture.componentInstance.form.controls.streetAddress.invalid).toBe(true);
+    expect(el.textContent).toContain('Invalid street address.');
+
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await settle(fixture);
+    expect(m.auth.register).not.toHaveBeenCalled();
+  });
+
+  it('maps API 400 validation messages onto the matching fields instead of a generic banner', async () => {
+    const m = mocks();
+    m.auth.register.mockReturnValue(
+      throwError(() => ({
+        status: 400,
+        message: 'Invalid mobile number. Invalid street address.',
+        messages: ['Invalid mobile number.', 'Invalid street address.'],
+      })),
+    );
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    fillValidForm(el);
+    await settle(fixture);
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await settle(fixture);
+
+    const component = fixture.componentInstance;
+    expect(component.error()).toBeNull();
+    expect(component.form.controls.phone.errors?.['server']).toBe('Invalid mobile number.');
+    expect(component.form.controls.streetAddress.errors?.['server']).toBe(
+      'Invalid street address.',
+    );
+    expect(el.textContent).toContain('Invalid mobile number.');
+    expect(el.textContent).toContain('Invalid street address.');
   });
 });

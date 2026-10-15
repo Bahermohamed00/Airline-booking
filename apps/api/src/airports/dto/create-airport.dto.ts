@@ -1,6 +1,7 @@
 import { IsEnum, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { AirportStatus } from '@prisma/client';
 import { TrimString, UppercaseString } from '../../auth/dto/transforms.js';
+import { IsIanaTimeZone } from './iana-timezone.js';
 
 export class CreateAirportDto {
   @UppercaseString()
@@ -31,9 +32,7 @@ export class CreateAirportDto {
   country!: string;
 
   @TrimString()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(100)
+  @IsIanaTimeZone()
   timezone!: string;
 
   @IsOptional()

@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditLog, Prisma } from '@prisma/client';
 import type { AuditQueryDto } from './dto/audit-query.dto.js';
+import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 
 export interface AuditEntry {
   actorId?: string;
@@ -19,6 +20,9 @@ export interface AuditItem {
   event: string;
   actorType: string;
   actorId: string | null;
+  /** Display identity of the linked user account, when one exists (null for Guest/System/deleted users). */
+  actorName: string | null;
+  actorEmail: string | null;
   targetType: string;
   targetId: string | null;
   ipAddress: string | null;
@@ -46,6 +50,8 @@ const SAFE_METADATA_KEYS = [
   'operation',
   'otherSessionsRevoked',
   'email',
+  // MFA challenge metadata (purpose enum value only — never codes).
+  'purpose',
   // Booking-domain metadata (non-sensitive identifiers only).
   'bookingReference',
   'flightNumber',
@@ -59,6 +65,16 @@ const SAFE_METADATA_KEYS = [
   'providerReference',
   // Offer metadata.
   'title',
+  // Flight-catalog metadata (non-sensitive identifiers and summary counts).
+  'iataCode',
+  'registration',
+  'flightsCreated',
+  'flightsUpdated',
+  // Flight lifecycle metadata (status values only).
+  'previousStatus',
+  'newStatus',
+  // Support ticket metadata (public identifier only — never message content).
+  'ticketNumber',
 ] as const;
 
 @Injectable()
@@ -88,7 +104,16 @@ export class AuditService {
     return this.prisma.auditLog.count(args);
   }
 
-  async query(dto: AuditQueryDto): Promise<AuditQueryResult> {
+  /**
+   * Actor display identity (name/email) is user-directory data: it is only
+   * exposed to callers holding `users:read` (or the Super Admin bypass).
+   * Audit-only readers still get the full event log — with null identity
+   * fields and the actor UUID unchanged for correlation.
+   */
+  async query(dto: AuditQueryDto, actor?: AuthUser): Promise<AuditQueryResult> {
+    const canSeeIdentity =
+      !!actor &&
+      (actor.permissions.includes('users:read') || actor.permissions.includes('super_admin'));
     const where: Prisma.AuditLogWhereInput = {
       ...(dto.event ? { action: dto.event } : {}),
       ...(dto.actorId ? { actorId: dto.actorId } : {}),
@@ -126,12 +151,15 @@ export class AuditService {
         orderBy,
         skip: (dto.page - 1) * dto.limit,
         take: dto.limit,
+        // Actor display identity via the existing actorId → User relation;
+        // read-only scalar fields, null when the row is unlinked.
+        include: { user: { select: { firstName: true, lastName: true, email: true } } },
       }),
       this.prisma.auditLog.count({ where }),
     ]);
 
     return {
-      items: rows.map((row) => this.toSafeItem(row)),
+      items: rows.map((row) => this.toSafeItem(row, canSeeIdentity)),
       page: dto.page,
       limit: dto.limit,
       total,
@@ -139,12 +167,18 @@ export class AuditService {
     };
   }
 
-  private toSafeItem(row: AuditLog): AuditItem {
+  private toSafeItem(
+    row: AuditLog & { user?: { firstName: string; lastName: string; email: string } | null },
+    canSeeIdentity = false,
+  ): AuditItem {
+    const exposeIdentity = canSeeIdentity && row.user != null;
     return {
       id: row.id,
       event: row.action,
       actorType: row.actorType,
       actorId: row.actorId,
+      actorName: exposeIdentity ? `${row.user!.firstName} ${row.user!.lastName}` : null,
+      actorEmail: exposeIdentity ? row.user!.email : null,
       targetType: row.targetType,
       targetId: row.targetId,
       ipAddress: row.ipAddress,

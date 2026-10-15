@@ -2,11 +2,47 @@ import { Injectable, Inject, NotFoundException, ConflictException, BadRequestExc
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PasswordService } from '../auth/password.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { changedFieldsOf } from '../audit/changed-fields.js';
 import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { CreateUserDto } from './dto/create-user.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
-import { SAFE_USER_OMIT, type SafeUser } from './safe-user.js';
+import { SAFE_USER_OMIT, SUPPORT_RESTRICTED_USER_OMIT, type SafeUser, type SupportRestrictedUser } from './safe-user.js';
 import { Prisma } from '@prisma/client';
+
+/** Response envelope for GET /users when page/limit pagination is requested. */
+export interface PaginatedUsers {
+  items: (SafeUser | SupportRestrictedUser)[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/**
+ * Deterministic page order: email is unique, id is the tiebreaker, so pages
+ * never repeat or skip rows. Applied in the paginated path only — the legacy
+ * bare-array path keeps its current (unordered) behavior.
+ */
+const USER_ORDER_BY: Prisma.UserOrderByWithRelationInput[] = [{ email: 'asc' }, { id: 'asc' }];
+
+export interface UserPagination {
+  page?: number;
+  limit?: number;
+}
+
+/**
+ * Admin-facing user reads carry street address and date of birth; Support
+ * Staff get contact details only (email, phone). Anything beyond the contact
+ * fields is reserved for Administrator/Super Admin workflows.
+ */
+function fullProfileAccess(actor?: AuthUser): boolean {
+  return (
+    !!actor &&
+    (actor.permissions.includes('super_admin') ||
+      actor.roles.includes('Super Admin') ||
+      actor.roles.includes('Administrator'))
+  );
+}
 
 @Injectable()
 export class UsersService {
@@ -27,19 +63,28 @@ export class UsersService {
     }
 
     const hashedPassword = await this.passwordService.hash(dto.password);
-    const user = await this.prisma.user.create({
-      omit: SAFE_USER_OMIT,
-      data: {
-        email: dto.email,
-        passwordHash: hashedPassword,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        phone: dto.phone,
-        status: dto.status ?? 'ACTIVE',
-        userRoles: dto.roleIds ? { create: dto.roleIds.map((roleId) => ({ roleId })) } : undefined,
-      },
-      include: { userRoles: { include: { role: true } } },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        omit: SAFE_USER_OMIT,
+        data: {
+          email: dto.email,
+          passwordHash: hashedPassword,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phone: dto.phone,
+          status: dto.status ?? 'ACTIVE',
+          userRoles: dto.roleIds ? { create: dto.roleIds.map((roleId) => ({ roleId })) } : undefined,
+        },
+        include: { userRoles: { include: { role: true } } },
+      });
+    } catch (error) {
+      // Unique-violation race between the email pre-check and the insert.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Email already registered');
+      }
+      throw error;
+    }
 
     await this.auditService.log({
       actorId: actor?.userId ?? user.id,
@@ -53,16 +98,64 @@ export class UsersService {
     return user;
   }
 
-  async findAll(args?: Prisma.UserFindManyArgs): Promise<SafeUser[]> {
-    return this.prisma.user.findMany({ ...args, omit: SAFE_USER_OMIT });
+  async findAll(
+    args: Prisma.UserFindManyArgs | undefined,
+    actor: AuthUser | undefined,
+    pagination: UserPagination & { page?: undefined; limit?: undefined },
+  ): Promise<(SafeUser | SupportRestrictedUser)[]>;
+  async findAll(
+    args?: Prisma.UserFindManyArgs,
+    actor?: AuthUser,
+    pagination?: UserPagination,
+  ): Promise<(SafeUser | SupportRestrictedUser)[] | PaginatedUsers>;
+  async findAll(
+    args?: Prisma.UserFindManyArgs,
+    actor?: AuthUser,
+    pagination?: UserPagination,
+  ): Promise<(SafeUser | SupportRestrictedUser)[] | PaginatedUsers> {
+    // Separate calls with concrete omit literals: a union-typed omit confuses
+    // Prisma's type-level payload computation.
+    if (pagination?.page === undefined && pagination?.limit === undefined) {
+      if (fullProfileAccess(actor)) {
+        return this.prisma.user.findMany({ ...args, omit: SAFE_USER_OMIT });
+      }
+      return this.prisma.user.findMany({ ...args, omit: SUPPORT_RESTRICTED_USER_OMIT });
+    }
+
+    // Opt-in pagination: a lone `page` defaults limit to 20, a lone `limit`
+    // defaults page to 1 (the DTO deliberately carries no defaults). The count
+    // uses only the where-filter — never include/omit/skip/take.
+    const page = pagination.page ?? 1;
+    const limit = pagination.limit ?? 20;
+    const where = args?.where;
+    const pageArgs = {
+      ...args,
+      orderBy: USER_ORDER_BY,
+      skip: (page - 1) * limit,
+      take: limit,
+    };
+    if (fullProfileAccess(actor)) {
+      const [rows, total] = await this.prisma.$transaction([
+        this.prisma.user.findMany({ ...pageArgs, omit: SAFE_USER_OMIT }),
+        this.prisma.user.count({ where }),
+      ]);
+      return { items: rows, page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    }
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({ ...pageArgs, omit: SUPPORT_RESTRICTED_USER_OMIT }),
+      this.prisma.user.count({ where }),
+    ]);
+    return { items: rows, page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) };
   }
 
-  async findOne(id: string): Promise<SafeUser> {
-    const user = await this.prisma.user.findUnique({
+  async findOne(id: string, actor?: AuthUser): Promise<SafeUser | SupportRestrictedUser> {
+    const args = {
       where: { id },
-      omit: SAFE_USER_OMIT,
       include: { userRoles: { include: { role: true } } },
-    });
+    } as const;
+    const user = fullProfileAccess(actor)
+      ? await this.prisma.user.findUnique({ ...args, omit: SAFE_USER_OMIT })
+      : await this.prisma.user.findUnique({ ...args, omit: SUPPORT_RESTRICTED_USER_OMIT });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -107,6 +200,12 @@ export class UsersService {
         }
       }
 
+      // Self-lockout guard, deliberately AFTER the last-Super-Admin invariant:
+      // self-deactivating the final Super Admin must keep its historical 409.
+      if (deactivates && actor?.userId === id) {
+        throw new BadRequestException('You cannot deactivate your own account');
+      }
+
       if (dto.roleIds) {
         await tx.userRole.deleteMany({ where: { userId: id } });
         await tx.userRole.createMany({
@@ -128,13 +227,17 @@ export class UsersService {
       });
     });
 
+    // class-transformer exposes every optional DTO field as explicitly
+    // undefined (exposeUnsetFields default); only defined values count.
+    const changedFields = changedFieldsOf(dto);
+
     await this.auditService.log({
       actorId: actor?.userId ?? id,
       actorType: actor ? 'Staff' : 'User',
       action: 'USER_UPDATED',
       targetType: 'User',
       targetId: id,
-      metadata: { changedFields: Object.keys(dto), ...(dto.roleIds ? { roleIds: dto.roleIds } : {}) },
+      metadata: { changedFields, ...(dto.roleIds ? { roleIds: dto.roleIds } : {}) },
     });
 
     return user;

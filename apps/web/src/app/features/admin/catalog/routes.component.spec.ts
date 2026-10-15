@@ -53,6 +53,8 @@ function flight(partial: Partial<Flight> = {}): Flight {
   return {
     id: 'flight-1',
     flightNumber: 'NV100',
+    publicNumber: 1,
+    tripType: 'ONE_WAY',
     routeId: 'route-1',
     route: route(),
     aircraftId: 'ac-1',

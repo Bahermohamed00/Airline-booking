@@ -7,7 +7,7 @@ import {
   ValidationErrors,
   Validators,
 } from '@angular/forms';
-import { AuthService } from '../../../core/services/auth.service';
+import { AuthService, type AuthError } from '../../../core/services/auth.service';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { ToastService } from '../../../shared/ui/toast.service';
@@ -31,6 +31,15 @@ function minAge(years: number) {
     return dob <= cutoff ? null : { minAge: true };
   };
 }
+
+/** Mirrors RegisterDto.PHONE_PATTERN (backend stays the final authority). */
+const PHONE_PATTERN = /^\+?[0-9][0-9().\s-]{4,19}$/;
+
+/** Mirrors RegisterDto.STREET_ADDRESS_PATTERN (backend stays the final authority). */
+const STREET_ADDRESS_PATTERN = /^(?=.*[\p{L}\p{N}]).{5,255}$/u;
+
+/** Mirrors RegisterDto.NATIONAL_ID_PATTERN: Egyptian national ID, exactly 14 digits. */
+const NATIONAL_ID_PATTERN = /^\d{14}$/;
 
 @Component({
   selector: 'app-register',
@@ -103,6 +112,81 @@ function minAge(years: number) {
             form.controls.dateOfBirth.touched && form.controls.dateOfBirth.errors?.['invalidDate']
           ) {
             <span class="na-error">Enter a valid date of birth.</span>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="phone">Mobile number</label>
+          <input
+            id="phone"
+            class="na-input"
+            type="tel"
+            formControlName="phone"
+            autocomplete="tel"
+            [attr.aria-invalid]="form.controls.phone.invalid && form.controls.phone.touched"
+          />
+          @if (form.controls.phone.touched && form.controls.phone.errors?.['required']) {
+            <span class="na-error">Please enter your mobile number.</span>
+          }
+          @if (form.controls.phone.touched && form.controls.phone.errors?.['pattern']) {
+            <span class="na-error">Invalid mobile number.</span>
+          }
+          @if (form.controls.phone.touched && form.controls.phone.errors?.['server']) {
+            <span class="na-error">{{ form.controls.phone.errors?.['server'] }}</span>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="streetAddress">Street address</label>
+          <input
+            id="streetAddress"
+            class="na-input"
+            type="text"
+            formControlName="streetAddress"
+            autocomplete="street-address"
+            [attr.aria-invalid]="
+              form.controls.streetAddress.invalid && form.controls.streetAddress.touched
+            "
+          />
+          @if (
+            form.controls.streetAddress.touched && form.controls.streetAddress.errors?.['required']
+          ) {
+            <span class="na-error">Please enter your street address.</span>
+          }
+          @if (
+            form.controls.streetAddress.touched && form.controls.streetAddress.errors?.['pattern']
+          ) {
+            <span class="na-error">Invalid street address.</span>
+          }
+          @if (
+            form.controls.streetAddress.touched && form.controls.streetAddress.errors?.['server']
+          ) {
+            <span class="na-error">{{ form.controls.streetAddress.errors?.['server'] }}</span>
+          }
+        </div>
+        <div class="na-field">
+          <label class="na-label" for="nationalId">National ID</label>
+          <input
+            id="nationalId"
+            class="na-input"
+            type="text"
+            formControlName="nationalId"
+            inputmode="numeric"
+            autocomplete="off"
+            aria-describedby="nationalId-hint"
+            [attr.aria-invalid]="
+              form.controls.nationalId.invalid && form.controls.nationalId.touched
+            "
+          />
+          <span id="nationalId-hint" class="na-hint">Your 14-digit Egyptian national ID.</span>
+          @if (
+            form.controls.nationalId.touched && form.controls.nationalId.errors?.['required']
+          ) {
+            <span class="na-error">Please enter your national ID.</span>
+          }
+          @if (form.controls.nationalId.touched && form.controls.nationalId.errors?.['pattern']) {
+            <span class="na-error">National ID must be exactly 14 digits.</span>
+          }
+          @if (form.controls.nationalId.touched && form.controls.nationalId.errors?.['server']) {
+            <span class="na-error">{{ form.controls.nationalId.errors?.['server'] }}</span>
           }
         </div>
         <div class="na-field">
@@ -226,6 +310,9 @@ export class RegisterPage {
       firstName: ['', Validators.required],
       lastName: ['', Validators.required],
       dateOfBirth: ['', [Validators.required, minAge(18)]],
+      phone: ['', [Validators.required, Validators.pattern(PHONE_PATTERN)]],
+      streetAddress: ['', [Validators.required, Validators.pattern(STREET_ADDRESS_PATTERN)]],
+      nationalId: ['', [Validators.required, Validators.pattern(NATIONAL_ID_PATTERN)]],
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required, Validators.minLength(12)]],
       confirmPassword: ['', Validators.required],
@@ -237,18 +324,51 @@ export class RegisterPage {
     if (this.form.invalid) return;
     this.loading.set(true);
     this.error.set(null);
-    const { email, password, firstName, lastName, dateOfBirth } = this.form.getRawValue();
-    this.auth.register({ email, password, firstName, lastName, dateOfBirth }).subscribe({
-      next: () => {
-        this.toast.success(
-          'Account created. Check your email to verify your address, then sign in.',
-        );
-        this.router.navigate(['/login']);
-      },
-      error: (err) => {
-        this.loading.set(false);
-        this.error.set(err?.message ?? 'Unable to create your account. Please try again.');
-      },
-    });
+    const { email, password, firstName, lastName, dateOfBirth, phone, streetAddress, nationalId } =
+      this.form.getRawValue();
+    this.auth
+      .register({ email, password, firstName, lastName, dateOfBirth, phone, streetAddress, nationalId })
+      .subscribe({
+        next: () => {
+          this.toast.success(
+            'Account created. Check your email to verify your address, then sign in.',
+          );
+          this.router.navigate(['/login']);
+        },
+        error: (err: AuthError) => {
+          this.loading.set(false);
+          if (this.applyServerFieldErrors(err)) return;
+          this.error.set(err?.message ?? 'Unable to create your account. Please try again.');
+        },
+      });
+  }
+
+  /**
+   * Maps API 400 validation messages back onto their fields, so the user sees
+   * e.g. "Please enter your mobile number." / "Invalid street address." next to
+   * the input instead of a generic banner. When a field produced both messages
+   * (missing value), the "Please enter…" one wins. Returns true when at least
+   * one message was mapped to a field.
+   */
+  private applyServerFieldErrors(err: AuthError): boolean {
+    const messages = err.messages ?? [err.message];
+    let mapped = false;
+    for (const message of messages) {
+      const control = message.includes('mobile number')
+        ? this.form.controls.phone
+        : message.includes('street address')
+          ? this.form.controls.streetAddress
+          : message.toLowerCase().includes('national id')
+            ? this.form.controls.nationalId
+            : null;
+      if (!control) continue;
+      const current = control.errors?.['server'] as string | undefined;
+      if (!current || message.startsWith('Please enter')) {
+        control.setErrors({ ...control.errors, server: message });
+      }
+      control.markAsTouched();
+      mapped = true;
+    }
+    return mapped;
   }
 }

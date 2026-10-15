@@ -36,6 +36,9 @@
                 @if (u.dateOfBirth) {
                   <p class="account-strip__email">Date of birth: {{ formatDob(u.dateOfBirth!) }}</p>
                 }
+                <p class="account-strip__email">
+                  National ID: {{ u.nationalId ?? 'Not provided' }}
+                </p>
               </div>
               @if (u.emailVerified) {
                 <na-badge tone="success">Email verified</na-badge>
@@ -100,6 +103,26 @@
                   >Only used for urgent updates about your trips.</span
                 >
               </div>
+              <div class="na-field">
+                <label class="na-label" for="streetAddress">Street address</label>
+                <input
+                  id="streetAddress"
+                  class="na-input"
+                  type="text"
+                  formControlName="streetAddress"
+                  autocomplete="street-address"
+                  [attr.aria-invalid]="
+                    profileForm.controls.streetAddress.invalid &&
+                    profileForm.controls.streetAddress.touched
+                  "
+                />
+                @if (
+                  profileForm.controls.streetAddress.touched &&
+                  profileForm.controls.streetAddress.errors?.['pattern']
+                ) {
+                  <span class="na-error">Invalid street address.</span>
+                }
+              </div>
             </div>
             <div class="form-actions">
               <na-button
@@ -120,17 +143,7 @@
             <h2 id="pax-h" class="panel__title">Saved passengers</h2>
             <p class="panel__desc">Passengers stored on your account, ready for faster checkout.</p>
           </header>
-          @if (paxError()) {
-            <na-alert
-              tone="danger"
-              title="Could not load saved passengers"
-              retryable
-              (retry)="loadPassengers()"
-              >Please try again.</na-alert
-            >
-          } @else if (paxLoading()) {
-            <na-skeleton [rows]="[1, 2]" height="4rem" />
-          } @else if (passengers().length === 0) {
+          @if (passengers().length === 0) {
             <na-empty-state
               icon="👤"
               title="No saved passengers"
@@ -243,7 +256,7 @@
               <div class="subsec__intro">
                 <h3 id="mfa-h" class="subsec__title">Two-factor authentication</h3>
                 <p class="subsec__desc">
-                  Add an extra layer of security with an authenticator app (TOTP).
+                  Add an extra layer of security with a 6-digit code emailed to you at sign-in.
                 </p>
               </div>
               @if (mfaEnabled()) {
@@ -252,18 +265,16 @@
                 <na-badge tone="neutral">Not enabled</na-badge>
               }
             </div>
-            @if (!mfaSecret()) {
-              <na-button variant="secondary" (clicked)="startMfa()">Set up MFA</na-button>
-            } @else if (!mfaEnabled()) {
+            @if (mfaEnabled()) {
+              <na-alert tone="success" title="MFA is active"
+                >Your account is protected with two-factor authentication.</na-alert
+              >
+            } @else if (!mfaChallengeSent()) {
+              <na-button variant="secondary" [loading]="mfaSetupLoading()" (clicked)="startMfa()">Set up MFA</na-button>
+            } @else {
               <div class="mfa-setup">
-                <div class="qr" role="img" aria-label="MFA QR code placeholder">
-                  @for (cell of qrCells; track $index) {
-                    <span class="qr__cell" [class.qr__cell--on]="cell"></span>
-                  }
-                </div>
                 <div>
-                  <p>Scan this code with your authenticator app, or enter the secret manually:</p>
-                  <p class="na-text-mono secret">{{ mfaSecret() }}</p>
+                  <p>We emailed a 6-digit security code to your address. Enter it below to enable two-factor authentication.</p>
                   <div class="na-field">
                     <label class="na-label" for="mfaCode">6-digit code</label>
                     <input
@@ -272,6 +283,7 @@
                       type="text"
                       inputmode="numeric"
                       maxlength="6"
+                      autocomplete="one-time-code"
                       [value]="mfaCode()"
                       (input)="mfaCode.set($any($event.target).value)"
                     />
@@ -279,18 +291,18 @@
                       <span class="na-error">{{ mfaError() }}</span>
                     }
                   </div>
-                  <na-button
-                    variant="cta"
-                    [disabled]="mfaCode().length !== 6"
-                    (clicked)="verifyMfa()"
-                    >Verify &amp; enable</na-button
-                  >
+                  <div class="mfa-actions">
+                    <na-button
+                      variant="cta"
+                      [loading]="mfaVerifyLoading()"
+                      [disabled]="mfaCode().length !== 6"
+                      (clicked)="verifyMfa()"
+                      >Verify &amp; enable</na-button
+                    >
+                    <na-button variant="secondary" [loading]="mfaSetupLoading()" (clicked)="startMfa()">Resend code</na-button>
+                  </div>
                 </div>
               </div>
-            } @else {
-              <na-alert tone="success" title="MFA is active"
-                >Your account is protected with two-factor authentication.</na-alert
-              >
             }
           </div>
 

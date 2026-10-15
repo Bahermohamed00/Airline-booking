@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, ActivatedRoute, convertToParamMap, type ParamMap } from '@angular/router';
 import { of, throwError, Subject } from 'rxjs';
 import { AdminBookingsPage } from './admin-bookings.component';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
@@ -59,6 +59,8 @@ const AUDIT_PAGE: AuditLogPage = {
       event: 'BOOKING_CREATED',
       actorType: 'User',
       actorId: 'u-1',
+      actorName: null,
+      actorEmail: null,
       targetType: 'Booking',
       targetId: 'bk-1',
       ipAddress: null,
@@ -85,11 +87,12 @@ function mocks(list: CustomerBooking[] = [booking()]) {
 
 type Mocks = ReturnType<typeof mocks>;
 
-async function setup(m: Mocks): Promise<ComponentFixture<AdminBookingsPage>> {
+async function setup(m: Mocks, route?: unknown): Promise<ComponentFixture<AdminBookingsPage>> {
   await TestBed.configureTestingModule({
     imports: [AdminBookingsPage],
     providers: [
       provideRouter([]),
+      ...(route ? [{ provide: ActivatedRoute, useValue: route }] : []),
       { provide: CustomerBookingService, useValue: m.bookings },
       { provide: AuditService, useValue: m.audit },
       { provide: AuthService, useValue: m.auth },
@@ -427,5 +430,75 @@ describe('AdminBookingsPage', () => {
     expect(el.querySelector('.drawer na-dialog')).toBeNull();
     expect(el.querySelector('.drawer__actions na-button')).toBeNull();
     expect(drawer.textContent).toContain('future backend phase');
+  });
+
+  it('deep link ?email= pre-filters the first load to that customer', async () => {
+    const m = mocks([booking()]);
+    await setup(m, { queryParamMap: of(convertToParamMap({ email: 'anna@example.com' })) });
+
+    expect(m.bookings.listAdmin).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'anna@example.com' }),
+    );
+  });
+
+  it('changing the email param while on the page reloads and replaces rows (no stale history)', async () => {
+    const params = new Subject<ParamMap>();
+    const m = mocks([]);
+    m.bookings.listAdmin.mockImplementation((q: { email?: string }) =>
+      of([
+        q.email === 'anna@example.com'
+          ? booking({ id: 'bk-a', bookingReference: 'NVAAAA', contactEmail: 'anna@example.com' })
+          : booking({ id: 'bk-b', bookingReference: 'NVBBBB', contactEmail: 'bob@example.com' }),
+      ]),
+    );
+    const fixture = await setup(m, { queryParamMap: params });
+    const el = fixture.nativeElement as HTMLElement;
+
+    // Selecting Anna (navigation from Users & Passengers)
+    params.next(convertToParamMap({ email: 'anna@example.com' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(m.bookings.listAdmin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ email: 'anna@example.com' }),
+    );
+    expect(el.textContent).toContain('NVAAAA');
+
+    // Switching to Bob reloads and replaces the visible rows
+    params.next(convertToParamMap({ email: 'bob@example.com' }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(m.bookings.listAdmin).toHaveBeenLastCalledWith(
+      expect.objectContaining({ email: 'bob@example.com' }),
+    );
+    expect(el.textContent).toContain('NVBBBB');
+    expect(el.textContent).not.toContain('NVAAAA');
+  });
+
+  it('ignores a stale response that resolves after a newer filter request', async () => {
+    const anna = new Subject<CustomerBooking[]>();
+    const bob = new Subject<CustomerBooking[]>();
+    const m = mocks([]);
+    m.bookings.listAdmin.mockImplementation((q: { email?: string }) =>
+      q.email === 'anna@example.com' ? anna.asObservable() : bob.asObservable(),
+    );
+    const params = new Subject<ParamMap>();
+    const fixture = await setup(m, { queryParamMap: params });
+    const el = fixture.nativeElement as HTMLElement;
+
+    params.next(convertToParamMap({ email: 'anna@example.com' }));
+    params.next(convertToParamMap({ email: 'bob@example.com' }));
+
+    // The newer request (Bob) resolves first…
+    bob.next([booking({ id: 'bk-b', bookingReference: 'NVBBBB', contactEmail: 'bob@example.com' })]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.textContent).toContain('NVBBBB');
+
+    // …then the stale one (Anna) resolves — it must not overwrite the view.
+    anna.next([booking({ id: 'bk-a', bookingReference: 'NVAAAA', contactEmail: 'anna@example.com' })]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.textContent).toContain('NVBBBB');
+    expect(el.textContent).not.toContain('NVAAAA');
   });
 });

@@ -58,6 +58,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: AUTH_THROTTLE.register })
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(@Body() dto: RegisterDto) {
@@ -87,6 +88,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: AUTH_THROTTLE.refresh })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(
@@ -186,6 +188,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: AUTH_THROTTLE.mfaSetup })
   @Post('mfa/setup')
   @HttpCode(HttpStatus.OK)
   async setupMfa(@CurrentUser() user: AuthUser) {
@@ -193,6 +196,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: AUTH_THROTTLE.mfaVerify })
   @Post('mfa/verify')
   @HttpCode(HttpStatus.OK)
   async verifyMfa(@CurrentUser() user: AuthUser, @Body() dto: MfaVerifyDto) {
@@ -200,21 +204,34 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('mfa/disable')
+  @Throttle({ default: AUTH_THROTTLE.mfaDisable })
+  @Post('mfa/disable/request')
   @HttpCode(HttpStatus.OK)
-  async disableMfa(@CurrentUser() user: AuthUser) {
-    return this.authService.disableMfa(user.userId);
+  async requestMfaDisable(@CurrentUser() user: AuthUser) {
+    return this.authService.requestMfaDisable(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('mfa/disable')
+  @Throttle({ default: AUTH_THROTTLE.mfaDisable })
+  @HttpCode(HttpStatus.OK)
+  async disableMfa(@CurrentUser() user: AuthUser ,@Body() dto: MfaVerifyDto) {
+    return this.authService.disableMfa(user.userId, dto.code);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
+    // Whitelisted owner-only view: nationalId is returned here and nowhere else.
     return {
       userId: user.userId,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       dateOfBirth: user.dateOfBirth,
+      phone: user.phone,
+      streetAddress: user.streetAddress,
+      nationalId: user.nationalId,
       emailVerified: user.emailVerified,
       mfaEnabled: user.mfaEnabled,
       roles: user.roles,

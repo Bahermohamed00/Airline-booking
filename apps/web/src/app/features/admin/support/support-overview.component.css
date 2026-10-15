@@ -1,0 +1,32 @@
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--na-space-4);
+  margin-top: var(--na-space-4);
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--na-space-1);
+  padding: var(--na-space-5);
+  text-decoration: none;
+  transition: transform var(--na-motion-base) var(--na-ease), box-shadow var(--na-motion-base) var(--na-ease);
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--na-shadow-md);
+}
+.card__value {
+  font-size: var(--na-text-2xl, 2rem);
+  font-weight: var(--na-font-bold);
+  font-family: var(--na-font-display);
+}
+.card__label {
+  font-weight: var(--na-font-semibold);
+}
+.card--accent .card__value {
+  color: var(--na-info);
+}
+.inbox-link {
+  font-weight: var(--na-font-semibold);
+}

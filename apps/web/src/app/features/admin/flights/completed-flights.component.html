@@ -1,0 +1,172 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Flight Management', link: '/admin/flights/overview' }, { label: 'Completed flights' }]"
+  />
+  <header class="page__head">
+    <div>
+      <h1>Completed flights</h1>
+      <p class="subtitle">
+        Flights whose operation finished (status COMPLETED). Records are historical — nothing is
+        deleted or duplicated.
+      </p>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="na-field filters__search">
+      <label class="na-label" for="filter-search">Search</label>
+      <input
+        id="filter-search"
+        class="na-input"
+        type="search"
+        placeholder="Flight ID (FL-1024), number (NV720) or airport (CAI)"
+        [(ngModel)]="filterSearch"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-from">From date</label>
+      <input
+        id="filter-from"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterFrom"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-to">To date</label>
+      <input
+        id="filter-to"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterTo"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field filters__clear">
+      <na-button variant="secondary" size="sm" (clicked)="clearFilters()">Clear filters</na-button>
+    </div>
+  </div>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [loading]="loading()"
+      emptyTitle="No completed flights"
+      emptyMessage="No completed flights match the current search or date range."
+      emptyActionLabel="Clear filters"
+      (rowClick)="openDetail($event.id)"
+      (emptyAction)="clearFilters()"
+    />
+
+    <div class="pagination">
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() <= 1 || loading()"
+        (clicked)="previousPage()"
+      >
+        Previous
+      </na-button>
+      <span class="na-text-muted na-text-small">
+        Page {{ page() }} of {{ totalPages() }} · {{ total() }} flight(s)
+      </span>
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() >= totalPages() || loading()"
+        (clicked)="nextPage()"
+      >
+        Next
+      </na-button>
+    </div>
+  }
+
+  <!-- Detail drawer (read-only) -->
+  @if (selected(); as f) {
+    <div class="backdrop" (click)="closeDetail()" role="presentation"></div>
+    <aside
+      class="drawer"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Flight FL-' + (1000 + f.publicNumber) + ' details'"
+    >
+      <header class="drawer__head">
+        <div>
+          <h2 class="na-text-mono">FL-{{ 1000 + f.publicNumber }}</h2>
+          <p class="subtitle">
+            {{ f.route.origin.city }} ({{ f.route.origin.iataCode }}) →
+            {{ f.route.destination.city }} ({{ f.route.destination.iataCode }})
+          </p>
+        </div>
+        <button type="button" class="drawer__close" aria-label="Close details" (click)="closeDetail()">
+          ×
+        </button>
+      </header>
+
+      <div class="drawer__body">
+        <dl class="facts">
+          <div>
+            <dt>Flight ID</dt>
+            <dd><strong class="na-text-mono">FL-{{ 1000 + f.publicNumber }}</strong></dd>
+          </div>
+          <div>
+            <dt>Flight number</dt>
+            <dd>{{ f.flightNumber }}</dd>
+          </div>
+          <div>
+            <dt>From</dt>
+            <dd>{{ f.route.origin.name }} ({{ f.route.origin.iataCode }})</dd>
+          </div>
+          <div>
+            <dt>To</dt>
+            <dd>{{ f.route.destination.name }} ({{ f.route.destination.iataCode }})</dd>
+          </div>
+          <div>
+            <dt>Departure</dt>
+            <dd>{{ formatDate(f.departureTime) }}</dd>
+          </div>
+          <div>
+            <dt>Completed (arrival)</dt>
+            <dd>{{ formatDate(f.arrivalTime) }}</dd>
+          </div>
+          <div>
+            <dt>Aircraft</dt>
+            <dd>{{ f.aircraft.registration }} · {{ f.aircraft.model }}</dd>
+          </div>
+          <div>
+            <dt>Trip type</dt>
+            <dd>{{ f.tripType === 'ROUND_TRIP' ? 'Round trip' : 'One way' }}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{{ statusOf(f).label }}</dd>
+          </div>
+          <div>
+            <dt>Booked seats</dt>
+            <dd>{{ f.bookedSeats }}</dd>
+          </div>
+        </dl>
+
+        <h3>Fares</h3>
+        <ul class="fares">
+          @for (fare of f.fares; track fare.cabinClass) {
+            <li>
+              <span>{{ fare.cabinClass }}</span>
+              <span class="na-text-mono">{{ formatMoney(fare.basePrice, fare.currency) }}</span>
+            </li>
+          } @empty {
+            <li class="na-text-muted">No fare information recorded.</li>
+          }
+        </ul>
+      </div>
+    </aside>
+  }
+</div>

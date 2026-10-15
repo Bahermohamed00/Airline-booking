@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller.js';
 import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
 import { TokenService } from './token.service.js';
+import { MfaEmailService } from './mfa-email.service.js';
 import { TokenCleanupService } from './token-cleanup.service.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { JwtAuthGuard } from './auth.guard.js';
@@ -39,6 +40,7 @@ import { MailModule } from '../mail/mail.module.js';
     PasswordService,
     SessionService,
     TokenService,
+    MfaEmailService,
     TokenCleanupService,
     JwtStrategy,
     JwtAuthGuard,
@@ -55,6 +57,10 @@ import { MailModule } from '../mail/mail.module.js';
     RolesGuard,
     PermissionsGuard,
     OwnershipGuard,
+    // Exported so non-HTTP transports (WebSocket gateway) can reuse the exact
+    // same JWT verification + AuthUser resolution as REST.
+    JwtModule,
+    JwtStrategy,
   ],
 })
 export class AuthModule {}

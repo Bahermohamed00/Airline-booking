@@ -1,0 +1,69 @@
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--na-space-3);
+  margin-bottom: var(--na-space-4);
+}
+.kpi {
+  display: grid;
+  grid-template-areas: 'icon value' 'label label' 'hint hint';
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: var(--na-space-2);
+  padding: var(--na-space-4);
+}
+.kpi__icon { grid-area: icon; font-size: 1.4rem; color: var(--na-blue-600); }
+.kpi__value { grid-area: value; font-size: 1.6rem; font-weight: var(--na-font-bold); font-family: var(--na-font-display); }
+.kpi__label { grid-area: label; font-weight: var(--na-font-semibold); margin-top: var(--na-space-1); }
+.kpi__hint { grid-area: hint; font-size: var(--na-text-xs); }
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--na-space-4);
+  margin-bottom: var(--na-space-4);
+}
+@media (max-width: 900px) {
+  .columns { grid-template-columns: 1fr; }
+}
+.panel { padding: var(--na-space-4); }
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--na-space-2);
+}
+.panel__link { font-weight: var(--na-font-semibold); font-size: var(--na-text-sm); }
+.status-list { list-style: none; margin: 0; padding: 0; }
+.status-list__row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: var(--na-space-3);
+  padding: var(--na-space-2) 0;
+  border-bottom: 1px solid var(--na-border);
+}
+.status-list__row:last-child { border-bottom: none; }
+.status-list__label { font-weight: var(--na-font-medium); }
+.status-list__bar {
+  height: 8px;
+  border-radius: var(--na-radius-full);
+  background: var(--na-border);
+  overflow: hidden;
+}
+.status-list__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--na-radius-full);
+  background: var(--na-blue-600);
+}
+.activity-list { list-style: none; margin: 0 0 var(--na-space-2); padding: 0; }
+.activity-list__row {
+  display: grid;
+  grid-template-columns: 110px auto 1fr;
+  gap: var(--na-space-3);
+  padding: var(--na-space-2) 0;
+  border-bottom: 1px solid var(--na-border);
+  font-size: var(--na-text-sm);
+}
+.activity-list__row:last-child { border-bottom: none; }
+.activity-list__detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,0 +1,24 @@
+model MfaEmailToken {
+  id        String          @id @default(uuid()) @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  purpose   MfaEmailPurpose
+  // SHA-256 digest of the 6-digit code — the plaintext code only exists in the email.
+  codeHash  String          @map("code_hash") @db.VarChar(64)
+  expiresAt DateTime        @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime?       @map("used_at") @db.Timestamptz(6)
+  attempts  Int             @default(0)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, usedAt])
+  @@map("mfa_email_tokens")
+}
+
+enum MfaEmailPurpose {
+  LOGIN
+  ENABLE
+  DISABLE
+
+  @@map("mfa_email_purpose")
+}

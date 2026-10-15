@@ -131,6 +131,7 @@ describe('Bookings (e2e)', () => {
   };
 
   const bodyFor = (flightId: string, seatIds: string[], passengers = 1) => ({
+    idempotencyKey: randomUUID(),
     flightId,
     cabinClass: 'ECONOMY',
     seatIds,
@@ -300,7 +301,11 @@ describe('Bookings (e2e)', () => {
     expect(expiredHold.status).toBe('EXPIRED');
     const freshHold = await prismaTestClient.seatHold.findFirstOrThrow({ where: { seatId: seatsSmall[1]!.id } });
     expect(freshHold.status).toBe('ACTIVE');
-    expect(await prismaTestClient.booking.count({ where: { status: 'PENDING' } })).toBe(2); // bookings preserved
+    // The booking whose only hold expired is auto-cancelled by the sweep
+    // (SeatHoldsService: PENDING + no ACTIVE hold => CANCELLED); the fresh
+    // booking stays PENDING. Both records are preserved.
+    expect(await prismaTestClient.booking.count({ where: { status: 'PENDING' } })).toBe(1);
+    expect(await prismaTestClient.booking.count({ where: { status: 'CANCELLED' } })).toBe(1);
 
     expect(await seatHolds.expireStaleHolds()).toBe(0); // safe to repeat
 

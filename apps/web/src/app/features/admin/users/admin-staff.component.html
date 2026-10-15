@@ -33,6 +33,7 @@
             <th>Status</th>
             <th>MFA</th>
             <th>Role</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -47,6 +48,18 @@
               </td>
               <td data-label="MFA">{{ user.mfaEnabled ? '✓' : '—' }}</td>
               <td data-label="Role">{{ user.roles.join(', ') || '—' }}</td>
+              <td data-label="Actions">
+                <div class="row-actions">
+                  <na-button variant="secondary" (clicked)="openEdit(user)">Edit</na-button>
+                  @if (!isSelf(user)) {
+                    @if (user.status === 'ACTIVE') {
+                      <na-button variant="danger" (clicked)="askStatusChange(user)">Deactivate</na-button>
+                    } @else {
+                      <na-button variant="primary" (clicked)="askStatusChange(user)">Reactivate</na-button>
+                    }
+                  }
+                </div>
+              </td>
             </tr>
           }
         </tbody>
@@ -60,17 +73,17 @@
       class="drawer"
       role="dialog"
       aria-modal="true"
-      aria-label="Add staff member"
+      [attr.aria-label]="editing() ? 'Edit staff member' : 'Add staff member'"
       tabindex="-1"
       (keydown.escape)="closeDrawer()"
     >
       <header class="drawer__head">
-        <h2>Add staff member</h2>
+        <h2>{{ editing() ? 'Edit staff member' : 'Add staff member' }}</h2>
         <button type="button" class="drawer__close" aria-label="Close" (click)="closeDrawer()">
           ×
         </button>
       </header>
-      <form [formGroup]="form" (ngSubmit)="addStaff()">
+      <form [formGroup]="form" (ngSubmit)="submit()">
         <div class="na-field">
           <label class="na-label" for="staff-first">First name</label>
           <input
@@ -107,11 +120,25 @@
           @if (showError('email')) {
             <p class="na-error">A valid email address is required.</p>
           }
-          <p class="na-hint">
-            The account is active immediately — share the password with the staff member through a
-            secure channel.
-          </p>
+          @if (!editing()) {
+            <p class="na-hint">
+              The account is active immediately — share the password with the staff member through a
+              secure channel.
+            </p>
+          }
         </div>
+        @if (editing()) {
+          <div class="na-field">
+            <label class="na-label" for="staff-phone">Phone</label>
+            <input
+              id="staff-phone"
+              class="na-input"
+              formControlName="phone"
+              autocomplete="tel"
+            />
+          </div>
+        }
+        @if (!editing()) {
         <div class="na-field">
           <label class="na-label" for="staff-password">Password</label>
           <input
@@ -138,6 +165,7 @@
             <p class="na-error">Passwords do not match.</p>
           }
         </div>
+        }
         <div class="na-field">
           <label class="na-label" for="staff-role">Role</label>
           <select id="staff-role" class="na-select" formControlName="roleId">
@@ -160,10 +188,32 @@
             type="submit"
             [disabled]="submitting()"
             [loading]="submitting()"
-            >Create account</na-button
+            >{{ editing() ? 'Save changes' : 'Create account' }}</na-button
           >
         </div>
       </form>
     </aside>
   }
+  <na-dialog
+    [open]="pendingStatusUser() !== null"
+    [title]="pendingStatusUser()?.status === 'ACTIVE' ? 'Deactivate staff account' : 'Reactivate staff account'"
+    [confirmLabel]="pendingStatusUser()?.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'"
+    [confirmDanger]="pendingStatusUser()?.status === 'ACTIVE'"
+    (confirmed)="confirmStatusChange()"
+    (cancelled)="pendingStatusUser.set(null)"
+  >
+    @if (pendingStatusUser(); as user) {
+      <p>
+        {{ user.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate' }} the staff account of
+        <strong>{{ user.firstName }} {{ user.lastName }}</strong> ({{ user.email }})?
+      </p>
+      <p class="na-text-muted na-text-small">
+        {{
+          user.status === 'ACTIVE'
+            ? 'They immediately lose access to the staff console and cannot sign in. Roles and permissions are preserved.'
+            : 'They will be able to sign in again immediately with their existing roles and permissions.'
+        }}
+      </p>
+    }
+  </na-dialog>
 </section>

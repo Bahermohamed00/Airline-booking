@@ -2,7 +2,7 @@
   <na-breadcrumbs [items]="crumbs" />
   <header class="page__head">
     <h1>Users &amp; Passengers</h1>
-    <p class="page__sub">Customer and staff accounts, their roles and security posture.</p>
+    <p class="page__sub">Customer accounts, their roles and security posture.</p>
   </header>
 
   @if (loading()) {
@@ -106,7 +106,9 @@
 
           <h3 class="panel__section">Activity</h3>
           <p class="na-text-small">
-            <a [routerLink]="['/admin/bookings']">View booking history →</a>
+            <a [routerLink]="['/admin/bookings']" [queryParams]="{ email: user.email }"
+              >View booking history →</a
+            >
           </p>
 
           <div class="panel__actions">
@@ -141,7 +143,7 @@
       <p class="na-text-muted na-text-small">
         {{
           user.status === 'ACTIVE'
-            ? 'A suspended user cannot sign in. Active sessions are revoked.'
+            ? 'A suspended user cannot sign in. Existing sessions lose access immediately.'
             : 'The user will be able to sign in again immediately.'
         }}
       </p>

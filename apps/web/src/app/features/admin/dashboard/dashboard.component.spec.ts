@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { DashboardPage } from './dashboard.component';
 import { DashboardService, type DashboardData } from './dashboard.service';
+import { DashboardRealtimeService } from './dashboard-realtime.service';
 import { AuthService } from '../../../core/services/auth.service';
 
 function data(partial: Partial<DashboardData> = {}): DashboardData {
@@ -17,6 +18,9 @@ function data(partial: Partial<DashboardData> = {}): DashboardData {
     revenue: null,
     currency: 'EUR',
     scheduledCount: 2,
+    boardingCount: 0,
+    departedCount: 0,
+    arrivedCount: 0,
     delayedCount: 0,
     cancelledCount: 0,
     completedCount: 0,
@@ -54,9 +58,16 @@ function data(partial: Partial<DashboardData> = {}): DashboardData {
 }
 
 function mocks(overrides: Partial<DashboardData> = {}) {
+  const invalidate = new Subject<string>();
   return {
     dashboard: { getDashboard: vi.fn().mockReturnValue(of(data(overrides))) },
     auth: { hasPermission: vi.fn().mockReturnValue(true) },
+    realtime: {
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      invalidate$: invalidate.asObservable(),
+    },
+    invalidate,
   };
 }
 
@@ -69,6 +80,7 @@ async function setup(m: Mocks): Promise<ComponentFixture<DashboardPage>> {
       provideRouter([]),
       { provide: DashboardService, useValue: m.dashboard },
       { provide: AuthService, useValue: m.auth },
+      { provide: DashboardRealtimeService, useValue: m.realtime },
     ],
   }).compileComponents();
 
@@ -201,5 +213,62 @@ describe('DashboardPage', () => {
     // the mock AdminService, TestBed would fail without providing it.
     const fixture = await setup(mocks());
     expect(fixture.componentInstance).toBeTruthy();
+  });
+
+  describe('real-time invalidation', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('connects the socket and reloads stats via REST when an event arrives (debounced)', async () => {
+      vi.useFakeTimers();
+      const m = mocks();
+      await setup(m);
+
+      expect(m.realtime.connect).toHaveBeenCalledTimes(1);
+      expect(m.dashboard.getDashboard).toHaveBeenCalledTimes(1); // initial REST load
+
+      m.invalidate.next('flight.created');
+      await vi.advanceTimersByTimeAsync(399);
+      expect(m.dashboard.getDashboard).toHaveBeenCalledTimes(1); // debounce window not elapsed
+      await vi.advanceTimersByTimeAsync(1);
+      expect(m.dashboard.getDashboard).toHaveBeenCalledTimes(2);
+    });
+
+    it('coalesces a burst of events into a single REST reload', async () => {
+      vi.useFakeTimers();
+      const m = mocks();
+      await setup(m);
+
+      m.invalidate.next('flight.created');
+      m.invalidate.next('flight.status.changed');
+      m.invalidate.next('schedule-rule.updated');
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(m.dashboard.getDashboard).toHaveBeenCalledTimes(2); // initial + one coalesced reload
+    });
+
+    it('a reconnect sync event refreshes the statistics once', async () => {
+      vi.useFakeTimers();
+      const m = mocks();
+      await setup(m);
+
+      m.invalidate.next('sync');
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(m.dashboard.getDashboard).toHaveBeenCalledTimes(2);
+    });
+
+    it('works REST-only when the socket never connects, and disconnects on teardown', async () => {
+      const m = mocks();
+      m.realtime.connect.mockImplementation(() => undefined); // socket never connects, no events
+      const fixture = await setup(m);
+      const el = fixture.nativeElement as HTMLElement;
+
+      expect(el.textContent).toContain('Total flights'); // REST data rendered regardless
+
+      fixture.destroy();
+      expect(m.realtime.disconnect).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -10,6 +10,7 @@ const createMockPrisma = () => {
     refreshToken: {
       create: vi.fn().mockResolvedValue({ id: 'new-token-id' }),
       update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     session: {
       update: vi.fn().mockResolvedValue({}),
@@ -122,6 +123,74 @@ describe('TokenService', () => {
       expect.objectContaining({
         where: { id: 'token-1' },
         data: expect.objectContaining({ replacedById: 'new-token-id' }),
+      }),
+    );
+  });
+
+  it('audits TOKEN_REFRESHED on successful rotation with session/user IDs only', async () => {
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      id: 'token-1',
+      rotatedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      session: activeSessionWithUser,
+    });
+
+    const result = await service.rotate('valid-token');
+
+    expect(audit.log).toHaveBeenCalledWith({
+      actorId: 'user-1',
+      actorType: 'User',
+      action: 'TOKEN_REFRESHED',
+      targetType: 'Session',
+      targetId: 'session-1',
+    });
+    // No raw token, token hash, or other credential material in the audit entry.
+    const auditBlob = JSON.stringify(audit.log.mock.calls.flat());
+    expect(auditBlob).not.toContain(result.rawToken);
+    expect(auditBlob).not.toContain('valid-token');
+  });
+
+  it('claims rotation atomically: a concurrent loser is treated as reuse and the session is revoked', async () => {
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      id: 'token-1',
+      rotatedAt: null, // fast path looked unrotated…
+      expiresAt: new Date(Date.now() + 60_000),
+      session: activeSessionWithUser,
+    });
+    // …but a concurrent request won the CAS inside the transaction.
+    prisma.__tx.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.rotate('raced-token')).rejects.toThrow(UnauthorizedException);
+
+    // No new token row was created, the old one was not linked, and the whole
+    // session family was killed with the reuse audit trail.
+    expect(prisma.__tx.refreshToken.create).not.toHaveBeenCalled();
+    expect(prisma.__tx.refreshToken.update).not.toHaveBeenCalled();
+    expect(prisma.session.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'session-1', revokedAt: null },
+        data: expect.objectContaining({ revokeReason: 'reuse_detected' }),
+      }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'TOKEN_REUSE_DETECTED', targetId: 'session-1' }),
+    );
+  });
+
+  it('claims rotation via CAS before writing the replacement token', async () => {
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      id: 'token-1',
+      rotatedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      session: activeSessionWithUser,
+    });
+
+    await service.rotate('valid-token');
+
+    expect(prisma.__tx.refreshToken.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'token-1', rotatedAt: null },
+        data: expect.objectContaining({ rotatedAt: expect.any(Date) }),
       }),
     );
   });

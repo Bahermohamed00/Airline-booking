@@ -196,7 +196,10 @@ async function adoptExistingFlights(rules: ScheduleRule[]): Promise<number> {
   return adopted;
 }
 
-/** Generates the rolling 14-day flight window from the active schedule rules. */
+/** One-time initial flight window for development seeding (today → +13 days).
+ *  Not a recurring job: this runs only when `db:seed` is executed. There is no
+ *  automatic rolling generation — after seeding, flights are created only via
+ *  manual generation by the Flight Manager (POST /flights/generate). */
 async function seedGenerateFlights(): Promise<void> {
   const from = new Date();
   const to = new Date(from);

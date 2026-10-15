@@ -25,6 +25,7 @@ interface Mocks {
     login: ReturnType<typeof vi.fn>;
     setSession: ReturnType<typeof vi.fn>;
     isStaff: () => boolean;
+    isSupportStaff: () => boolean;
     logout: ReturnType<typeof vi.fn>;
   };
 }
@@ -59,7 +60,7 @@ describe('AdminLoginPage', () => {
   beforeEach(() => TestBed.resetTestingModule());
 
   it('renders a credential form, not a role picker', async () => {
-    await setup({ login: vi.fn(), setSession: vi.fn(), isStaff: () => false, logout: vi.fn() });
+    await setup({ login: vi.fn(), setSession: vi.fn(), isStaff: () => false, isSupportStaff: () => false, logout: vi.fn() });
     const fixture = TestBed.createComponent(AdminLoginPage);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -76,6 +77,7 @@ describe('AdminLoginPage', () => {
       login: vi.fn().mockReturnValue(of({ user: makeUser(['Flight Manager']), accessToken: 't' })),
       setSession: vi.fn(),
       isStaff: () => true,
+      isSupportStaff: () => false,
       logout: vi.fn(),
     };
     await setup(auth);
@@ -88,11 +90,30 @@ describe('AdminLoginPage', () => {
     expect(auth.logout).not.toHaveBeenCalled();
   });
 
+  it('signs Support Staff in and navigates to the dedicated support area, not the Admin Overview', async () => {
+    const auth: Mocks['auth'] = {
+      login: vi.fn().mockReturnValue(of({ user: makeUser(['Support Staff']), accessToken: 't' })),
+      setSession: vi.fn(),
+      isStaff: () => true,
+      isSupportStaff: () => true,
+      logout: vi.fn(),
+    };
+    await setup(auth);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+
+    await renderAndSubmit();
+
+    expect(auth.setSession).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/admin/support/overview');
+    expect(auth.logout).not.toHaveBeenCalled();
+  });
+
   it('rejects non-staff accounts and drops the session', async () => {
     const auth: Mocks['auth'] = {
       login: vi.fn().mockReturnValue(of({ user: makeUser(['Customer']), accessToken: 't' })),
       setSession: vi.fn(),
       isStaff: () => false,
+      isSupportStaff: () => false,
       logout: vi.fn(),
     };
     await setup(auth);
@@ -110,6 +131,7 @@ describe('AdminLoginPage', () => {
       login: vi.fn().mockReturnValue(throwError(() => ({ status: 401, message: 'Invalid credentials' }))),
       setSession: vi.fn(),
       isStaff: () => false,
+      isSupportStaff: () => false,
       logout: vi.fn(),
     };
     await setup(auth);
@@ -118,5 +140,53 @@ describe('AdminLoginPage', () => {
 
     expect(el.textContent).toContain('Invalid credentials');
     expect(auth.logout).not.toHaveBeenCalled();
+  });
+
+  it('shows the security-code step on an MFA challenge and completes staff login with the code', async () => {
+    const auth: Mocks['auth'] = {
+      login: vi
+        .fn()
+        .mockReturnValueOnce(of({ mfaRequired: true as const }))
+        .mockReturnValueOnce(of({ user: makeUser(['Flight Manager']), accessToken: 't' })),
+      setSession: vi.fn(),
+      isStaff: () => true,
+      isSupportStaff: () => false,
+      logout: vi.fn(),
+    };
+    await setup(auth);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+
+    const fixture = TestBed.createComponent(AdminLoginPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    // Step 1: credentials → MFA challenge.
+    const email = el.querySelector<HTMLInputElement>('#admin-email')!;
+    const password = el.querySelector<HTMLInputElement>('#admin-password')!;
+    email.value = 'ops@example.com';
+    password.value = 'Password123!';
+    email.dispatchEvent(new Event('input'));
+    password.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(auth.login).toHaveBeenCalledWith('ops@example.com', 'Password123!', undefined);
+    expect(el.textContent).toContain('security code');
+    expect(el.querySelector<HTMLInputElement>('#admin-mfa-code')).not.toBeNull();
+    expect(auth.setSession).not.toHaveBeenCalled();
+
+    // Step 2: emailed code → staff login completes and lands on the dashboard.
+    const code = el.querySelector<HTMLInputElement>('#admin-mfa-code')!;
+    code.value = '482910';
+    code.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+
+    expect(auth.login).toHaveBeenNthCalledWith(2, 'ops@example.com', 'Password123!', '482910');
+    expect(auth.setSession).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/admin/dashboard');
   });
 });

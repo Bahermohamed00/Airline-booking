@@ -6,7 +6,16 @@ export type CabinClass = 'ECONOMY' | 'PREMIUM_ECONOMY' | 'BUSINESS' | 'FIRST';
 export type AirportStatus = 'ACTIVE' | 'INACTIVE';
 export type RouteStatus = 'ACTIVE' | 'INACTIVE';
 export type AircraftStatus = 'ACTIVE' | 'MAINTENANCE' | 'RETIRED';
-export type FlightStatus = 'SCHEDULED' | 'ACTIVE' | 'DELAYED' | 'CANCELLED' | 'COMPLETED';
+export type FlightStatus =
+  | 'SCHEDULED'
+  | 'BOARDING'
+  | 'DEPARTED'
+  | 'ARRIVED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  // Pre-lifecycle values, kept for backward compatibility with existing rows.
+  | 'ACTIVE'
+  | 'DELAYED';
 export type SeatHoldStatus = 'ACTIVE' | 'EXPIRED' | 'CONVERTED' | 'RELEASED';
 export type BookingStatus =
   'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'CHECKED_IN' | 'BOARDED' | 'NO_SHOW';
@@ -18,6 +27,7 @@ export type BaggageType = 'CARRY_ON' | 'CHECKED' | 'SPECIAL';
 export type BaggageStatus =
   'CHECKED_IN' | 'LOADED' | 'IN_TRANSIT' | 'ARRIVED' | 'DELIVERED' | 'LOST' | 'DELAYED';
 export type CheckInStatus = 'COMPLETED' | 'CANCELLED';
+export type SupportTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
 export type NotificationChannel = 'EMAIL' | 'SMS' | 'PUSH' | 'IN_APP';
 export type NotificationStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'FAILED' | 'RETRYING';
 export type LoyaltyTier = 'MEMBER' | 'SILVER' | 'GOLD' | 'HON_CIRCLE';
@@ -30,6 +40,9 @@ export interface User {
   firstName: string;
   lastName: string;
   phone?: string | null;
+  streetAddress?: string | null;
+  /** Owner-only field: present only in the user's own GET /auth/me payload. */
+  nationalId?: string | null;
   dateOfBirth?: string | null;
   emailVerified: boolean;
   mfaEnabled: boolean;
@@ -115,6 +128,10 @@ export interface Seat {
 export interface Flight {
   id: string;
   flightNumber: string;
+  /** Customer-facing sequential public identifier (rendered as "FL-<1000+n>"). */
+  publicNumber: number;
+  /** Schedule attribute: one-way or out-and-back. */
+  tripType: 'ONE_WAY' | 'ROUND_TRIP';
   routeId: string;
   route: Route;
   aircraftId: string;

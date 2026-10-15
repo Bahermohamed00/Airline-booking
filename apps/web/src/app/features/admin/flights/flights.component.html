@@ -6,25 +6,24 @@
     <div>
       <h1>Flight schedule</h1>
       <p class="subtitle">
-        Flights are created from schedule rules via generation — there is no manual flight creation
-        or per-flight editing.
+        Flights are created manually by the Flight Manager — there is no automatic generation.
       </p>
     </div>
     <na-button variant="cta" *naHasPermission="'flights:manage'" (clicked)="openGenerate()"
-      >Generate flights</na-button
+      >New flight</na-button
     >
   </header>
 
   <div class="filters">
     <div class="na-field filters__search">
-      <label class="na-label" for="flight-search">Search</label>
+      <label class="na-label" for="filter-number">Flight number</label>
       <input
-        id="flight-search"
+        id="filter-number"
         class="na-input"
         type="search"
-        placeholder="Flight number or airport code…"
-        [ngModel]="query()"
-        (ngModelChange)="query.set($event)"
+        placeholder="e.g. NV100"
+        [(ngModel)]="filterFlightNumber"
+        (ngModelChange)="onFilterChange()"
       />
     </div>
     <div class="na-field">
@@ -33,13 +32,36 @@
         id="status-filter"
         class="na-select"
         [ngModel]="statusFilter()"
-        (ngModelChange)="statusFilter.set($event)"
+        (ngModelChange)="statusFilter.set($event); onFilterChange()"
       >
         <option value="ALL">All statuses</option>
         @for (s of statusOptions; track s) {
           <option [value]="s">{{ flightStatusLabel(s) }}</option>
         }
       </select>
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-from">From date</label>
+      <input
+        id="filter-from"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterFrom"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field">
+      <label class="na-label" for="filter-to">To date</label>
+      <input
+        id="filter-to"
+        class="na-input"
+        type="date"
+        [(ngModel)]="filterTo"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+    <div class="na-field filters__clear">
+      <na-button variant="secondary" size="sm" (clicked)="clearFilters()">Clear filters</na-button>
     </div>
   </div>
 
@@ -54,9 +76,9 @@
       [rows]="rows()"
       [loading]="loading()"
       emptyTitle="No flights match"
-      emptyMessage="Try a different search term or status filter."
+      emptyMessage="Try a different flight ID, number, status or date range."
       emptyActionLabel="Clear filters"
-      (rowClick)="openDetail($event.id)"
+      (rowClick)="openDetailByRow($event.id)"
       (emptyAction)="clearFilters()"
     />
   }
@@ -91,6 +113,18 @@
       <div class="drawer__body">
         <dl class="facts">
           <div>
+            <dt>Flight ID</dt>
+            <dd><strong class="na-text-mono">{{ publicId(f) }}</strong></dd>
+          </div>
+          <div>
+            <dt>Flight number</dt>
+            <dd class="na-text-mono">{{ f.flightNumber }}</dd>
+          </div>
+          <div>
+            <dt>Internal ID (UUID)</dt>
+            <dd class="na-text-mono na-text-small na-text-muted">{{ f.id }}</dd>
+          </div>
+          <div>
             <dt>Status</dt>
             <dd>
               <na-badge [tone]="flightStatus(f).tone">{{ flightStatus(f).label }}</na-badge>
@@ -112,11 +146,93 @@
             <dt>Aircraft</dt>
             <dd>{{ f.aircraft.registration }} — {{ f.aircraft.model }}</dd>
           </div>
+          @if (economyFare(f); as economy) {
+            <div>
+              <dt>Price</dt>
+              <dd>{{ formatMoney(economy.basePrice, economy.currency) }} <span class="na-text-muted na-text-small">economy base</span></dd>
+            </div>
+          }
           <div>
             <dt>Distance</dt>
             <dd>{{ f.route.distanceKm ?? '—' }} km</dd>
           </div>
         </dl>
+
+        @if (allowedTransitions(f).length > 0) {
+          <section class="status-actions" *naHasPermission="'flights:manage'">
+            <h3>Change status</h3>
+            <div class="status-actions__buttons">
+              @for (target of allowedTransitions(f); track target) {
+                <na-button
+                  [variant]="target === 'CANCELLED' ? 'secondary' : 'cta'"
+                  size="sm"
+                  [disabled]="statusChanging()"
+                  [loading]="statusChanging()"
+                  (clicked)="changeStatus(f, target)"
+                  >{{ transitionLabel(target) }}</na-button
+                >
+              }
+            </div>
+            @if (statusError()) {
+              <p class="na-error" role="alert">{{ statusError() }}</p>
+            }
+          </section>
+        }
+
+        @if (canEdit(f)) {
+          <section class="edit-times" *naHasPermission="'flights:manage'">
+            @if (!editOpen()) {
+              <na-button variant="secondary" size="sm" (clicked)="openEdit(f)">Edit times</na-button>
+            } @else {
+              <h3>Edit schedule times &amp; price</h3>
+              <div class="edit-times__form">
+                <div class="na-field">
+                  <label class="na-label" for="edit-departure">Departure</label>
+                  <input
+                    id="edit-departure"
+                    class="na-input"
+                    type="datetime-local"
+                    name="editDeparture"
+                    [(ngModel)]="editDeparture"
+                  />
+                </div>
+                <div class="na-field">
+                  <label class="na-label" for="edit-arrival">Arrival</label>
+                  <input
+                    id="edit-arrival"
+                    class="na-input"
+                    type="datetime-local"
+                    name="editArrival"
+                    [(ngModel)]="editArrival"
+                  />
+                </div>
+                <div class="na-field">
+                  <label class="na-label" for="edit-price">Price (EUR, economy base)</label>
+                  <input
+                    id="edit-price"
+                    class="na-input"
+                    type="number"
+                    name="editPrice"
+                    min="0.01"
+                    step="0.01"
+                    [(ngModel)]="editPrice"
+                  />
+                </div>
+              </div>
+              @if (editError()) {
+                <p class="na-error" role="alert">{{ editError() }}</p>
+              }
+              <div class="edit-times__actions">
+                <na-button variant="secondary" size="sm" [disabled]="editSaving()" (clicked)="closeEdit()">
+                  Cancel
+                </na-button>
+                <na-button variant="cta" size="sm" [disabled]="editSaving()" [loading]="editSaving()" (clicked)="submitEdit(f)">
+                  Save times
+                </na-button>
+              </div>
+            }
+          </section>
+        }
 
         <h3>Segments</h3>
         @if (detailLoading()) {
@@ -168,17 +284,17 @@
     </aside>
   }
 
-  <!-- Generate flights drawer -->
+  <!-- New flight drawer -->
   @if (generateOpen()) {
     <div class="backdrop" (click)="closeGenerate()" role="presentation"></div>
     <aside
       class="drawer"
       role="dialog"
       aria-modal="true"
-      aria-label="Generate flights from schedule rules"
+      aria-label="Create a flight"
     >
       <header class="drawer__head">
-        <h2>Generate flights</h2>
+        <h2>New flight</h2>
         <button
           type="button"
           class="drawer__close"
@@ -190,80 +306,265 @@
       </header>
       <form class="drawer__body" (submit)="submitGenerate($event)">
         <p class="na-hint">
-          Creates and updates flights from the ACTIVE schedule rules whose operating days fall
-          inside the range (max {{ maxRangeDays }} days). Generation is idempotent — re-running the
-          same range updates existing flights instead of duplicating them.
+          Create one flight from the registered routes and aircraft. Departure time is origin-local;
+          arrival time is destination-local. Nothing is created until you confirm below.
         </p>
+
         <div class="na-field">
-          <label class="na-label" for="gen-from">From</label>
-          <input
-            id="gen-from"
-            class="na-input"
-            type="date"
-            name="genFrom"
-            [(ngModel)]="generateFrom"
+          <label class="na-label" for="gen-route">Route</label>
+          <select
+            id="gen-route"
+            class="na-select"
+            [ngModel]="genRouteId()"
+            (ngModelChange)="genRouteId.set($event)"
+            (blur)="markTouched('route')"
+            [attr.aria-invalid]="showFieldError('route') && routeError() ? true : null"
+            name="genRoute"
             required
-          />
-        </div>
-        <div class="na-field">
-          <label class="na-label" for="gen-to">To</label>
-          <input
-            id="gen-to"
-            class="na-input"
-            type="date"
-            name="genTo"
-            [(ngModel)]="generateTo"
-            required
-          />
-          @if (generateError()) {
-            <p class="na-error" role="alert">{{ generateError() }}</p>
+          >
+            <option value="" disabled>Select a route…</option>
+            @for (r of formRoutes(); track r.id) {
+              <option [value]="r.id">{{ r.origin.iataCode }} → {{ r.destination.iataCode }}</option>
+            }
+          </select>
+          @if (showFieldError('route') && routeError(); as err) {
+            <p class="na-error" role="alert">{{ err }}</p>
           }
         </div>
 
-        @if (summary(); as s) {
-          <section class="gen-summary" aria-label="Generation summary">
-            <h3>Generation summary</h3>
+        @if (selectedRoute(); as route) {
+          <div class="gen-airports">
+            <div>
+              <span class="na-label">Departure airport</span>
+              <p>{{ route.origin.iataCode }} — {{ route.origin.name }}</p>
+            </div>
+            <div>
+              <span class="na-label">Arrival airport</span>
+              <p>{{ route.destination.iataCode }} — {{ route.destination.name }}</p>
+            </div>
+          </div>
+        }
+
+        <div class="na-field">
+          <label class="na-label" for="gen-aircraft">Aircraft</label>
+          <select
+            id="gen-aircraft"
+            class="na-select"
+            [ngModel]="genAircraftId()"
+            (ngModelChange)="onGenAircraftChange($event)"
+            (blur)="markTouched('aircraft')"
+            [attr.aria-invalid]="showFieldError('aircraft') && aircraftError() ? true : null"
+            name="genAircraft"
+            required
+          >
+            <option value="" disabled>Select an aircraft…</option>
+            @for (a of formAircraft(); track a.id) {
+              <option [value]="a.id">{{ a.registration }} — {{ a.model }}</option>
+            }
+          </select>
+          @if (showFieldError('aircraft') && aircraftError(); as err) {
+            <p class="na-error" role="alert">{{ err }}</p>
+          }
+        </div>
+
+        @if (genCabinSummary().length > 0) {
+          <div class="gen-cabins" aria-label="Cabin classes on this aircraft">
+            <span class="na-label">Cabin classes</span>
+            <ul>
+              @for (cabin of genCabinSummary(); track cabin.cabinClass) {
+                <li>
+                  <span>{{ cabin.cabinClass.replace('_', ' ') }}</span>
+                  <span class="na-text-muted na-text-small">{{ cabin.seats }} seats</span>
+                </li>
+              }
+            </ul>
+            <p class="na-hint">
+              Fares are created per cabin from the aircraft seat map (Business 3.5× and First 5.5×
+              the economy base).
+            </p>
+          </div>
+        }
+
+        <div class="na-field">
+          <label class="na-label" for="gen-trip-type">Trip type</label>
+          <select
+            id="gen-trip-type"
+            class="na-select"
+            [ngModel]="genTripType()"
+            (ngModelChange)="genTripType.set($event)"
+            name="genTripType"
+            required
+          >
+            <option value="ONE_WAY">One way</option>
+            <option value="ROUND_TRIP">Round trip</option>
+          </select>
+          <p class="na-hint">
+            Schedule attribute only — each flight stays an independent record; a round trip never
+            creates a second flight.
+          </p>
+        </div>
+
+        <div class="gen-times">
+          <div class="na-field">
+            <label class="na-label" for="gen-dep-date">Departure date</label>
+            <input
+              id="gen-dep-date"
+              class="na-input"
+              type="date"
+              name="genDepDate"
+              [ngModel]="genDepartureDate()"
+              (ngModelChange)="genDepartureDate.set($event)"
+              (blur)="markTouched('departureDate')"
+              [attr.aria-invalid]="showFieldError('departureDate') && departureDateError() ? true : null"
+              required
+            />
+            @if (showFieldError('departureDate') && departureDateError(); as err) {
+              <p class="na-error" role="alert">{{ err }}</p>
+            }
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="gen-dep-time">Departure time (origin-local)</label>
+            <input
+              id="gen-dep-time"
+              class="na-input"
+              type="time"
+              name="genDepTime"
+              [ngModel]="genDepartureTime()"
+              (ngModelChange)="genDepartureTime.set($event)"
+              (blur)="markTouched('departureTime')"
+              [attr.aria-invalid]="showFieldError('departureTime') && departureTimeError() ? true : null"
+              required
+            />
+            @if (showFieldError('departureTime') && departureTimeError(); as err) {
+              <p class="na-error" role="alert">{{ err }}</p>
+            }
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="gen-arr-date">Arrival date</label>
+            <input
+              id="gen-arr-date"
+              class="na-input"
+              type="date"
+              name="genArrDate"
+              [ngModel]="genArrivalDate()"
+              (ngModelChange)="genArrivalDate.set($event)"
+              (blur)="markTouched('arrivalDate')"
+              [attr.aria-invalid]="showFieldError('arrivalDate') && arrivalDateError() ? true : null"
+              required
+            />
+            @if (showFieldError('arrivalDate') && arrivalDateError(); as err) {
+              <p class="na-error" role="alert">{{ err }}</p>
+            }
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="gen-arr-time">Arrival time (destination-local)</label>
+            <input
+              id="gen-arr-time"
+              class="na-input"
+              type="time"
+              name="genArrTime"
+              [ngModel]="genArrivalTime()"
+              (ngModelChange)="genArrivalTime.set($event); arrivalOrderError.set(null)"
+              (blur)="markTouched('arrivalTime')"
+              [attr.aria-invalid]="(showFieldError('arrivalTime') && arrivalTimeError()) || arrivalOrderError() ? true : null"
+              required
+            />
+            @if (showFieldError('arrivalTime') && arrivalTimeError(); as err) {
+              <p class="na-error" role="alert">{{ err }}</p>
+            } @else if (arrivalOrderError(); as err) {
+              <p class="na-error" role="alert">{{ err }}</p>
+            }
+          </div>
+        </div>
+
+        <div class="na-field">
+          <label class="na-label" for="gen-number">Flight number</label>
+          <input
+            id="gen-number"
+            class="na-input"
+            type="text"
+            name="genNumber"
+            placeholder="NV900"
+            [ngModel]="genFlightNumber()"
+            (ngModelChange)="genFlightNumber.set($event)"
+            (blur)="markTouched('flightNumber')"
+            [attr.aria-invalid]="showFieldError('flightNumber') && flightNumberError() ? true : null"
+            required
+          />
+          @if (showFieldError('flightNumber') && flightNumberError(); as err) {
+            <p class="na-error" role="alert">{{ err }}</p>
+          }
+        </div>
+
+        <div class="na-field">
+          <label class="na-label" for="gen-price">Flight price (EUR, economy base)</label>
+          <input
+            id="gen-price"
+            class="na-input"
+            type="number"
+            name="genPrice"
+            min="0.01"
+            step="any"
+            placeholder="250.00"
+            [ngModel]="genPrice()"
+            (ngModelChange)="genPrice.set($event)"
+            (blur)="markTouched('price')"
+            [attr.aria-invalid]="showFieldError('price') && priceError() ? true : null"
+            required
+          />
+          @if (showFieldError('price') && priceError(); as err) {
+            <p class="na-error" role="alert">{{ err }}</p>
+          }
+        </div>
+
+        @if (previewReady()) {
+          <section class="gen-preview" aria-label="Flight preview">
+            <h3>Flight preview</h3>
             <dl class="facts">
               <div>
-                <dt>Rules evaluated</dt>
-                <dd>{{ s.rulesEvaluated }}</dd>
+                <dt>Route</dt>
+                <dd>{{ selectedRoute()!.origin.city }} → {{ selectedRoute()!.destination.city }}</dd>
               </div>
               <div>
-                <dt>Operating dates</dt>
-                <dd>{{ s.operatingDates }}</dd>
+                <dt>Departure airport</dt>
+                <dd>{{ selectedRoute()!.origin.iataCode }} — {{ selectedRoute()!.origin.name }}</dd>
               </div>
               <div>
-                <dt>Flights created</dt>
-                <dd>{{ s.flightsCreated }}</dd>
+                <dt>Arrival airport</dt>
+                <dd>{{ selectedRoute()!.destination.iataCode }} — {{ selectedRoute()!.destination.name }}</dd>
               </div>
               <div>
-                <dt>Flights updated</dt>
-                <dd>{{ s.flightsUpdated }}</dd>
+                <dt>Aircraft</dt>
+                <dd>{{ selectedAircraft()!.registration }} — {{ selectedAircraft()!.model }}</dd>
               </div>
               <div>
-                <dt>Segments created</dt>
-                <dd>{{ s.segmentsCreated }}</dd>
+                <dt>Departure</dt>
+                <dd>{{ genDepartureDate() }} · {{ genDepartureTime() }} (origin-local)</dd>
               </div>
               <div>
-                <dt>Segments updated</dt>
-                <dd>{{ s.segmentsUpdated }}</dd>
+                <dt>Arrival</dt>
+                <dd>{{ genArrivalDate() }} · {{ genArrivalTime() }} (destination-local)</dd>
               </div>
               <div>
-                <dt>Fares created</dt>
-                <dd>{{ s.faresCreated }}</dd>
+                <dt>Flight number</dt>
+                <dd>{{ normalizedFlightNumber() }}</dd>
               </div>
               <div>
-                <dt>Fares updated</dt>
-                <dd>{{ s.faresUpdated }}</dd>
+                <dt>Trip type</dt>
+                <dd>{{ genTripType() === 'ROUND_TRIP' ? 'Round trip' : 'One way' }}</dd>
+              </div>
+              <div>
+                <dt>Price</dt>
+                <dd>{{ formatMoney(parsedGenPrice() ?? 0, 'EUR') }} <span class="na-text-muted na-text-small">economy base</span></dd>
               </div>
             </dl>
-            @if (s.skippedRules.length > 0) {
-              <h3>Skipped rules</h3>
-              <ul class="skipped">
-                @for (skip of s.skippedRules; track skip.flightNumber) {
+            @if (genCabinFares().length > 0) {
+              <h4>Cabin fares</h4>
+              <ul class="gen-cabin-fares">
+                @for (fare of genCabinFares(); track fare.cabinClass) {
                   <li>
-                    <span class="na-text-mono">{{ skip.flightNumber }}</span>
-                    <span class="na-text-muted na-text-small">{{ skip.reason }}</span>
+                    <span>{{ fare.cabinClass.replace('_', ' ') }} ({{ fare.seats }} seats)</span>
+                    <span class="na-text-mono">{{ formatMoney(fare.basePrice, 'EUR') }}</span>
                   </li>
                 }
               </ul>
@@ -271,8 +572,12 @@
           </section>
         }
 
+        @if (generateError()) {
+          <p class="na-error" role="alert">{{ generateError() }}</p>
+        }
+
         <div class="drawer__actions">
-          <na-button variant="secondary" (clicked)="closeGenerate()">Close</na-button>
+          <na-button variant="secondary" (clicked)="closeGenerate()">Cancel</na-button>
           <na-button variant="cta" type="submit" [disabled]="generating()" [loading]="generating()"
             >Generate</na-button
           >

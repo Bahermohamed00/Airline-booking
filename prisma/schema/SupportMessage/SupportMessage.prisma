@@ -1,0 +1,36 @@
+model SupportMessage {
+  id             String                 @id @default(uuid()) @db.Uuid
+  body           String                 @db.Text
+  senderType     SupportMessageSender   @map("sender_type")
+  // NONE = no email involved (customer messages), SENT/FAILED = staff reply
+  // email delivery outcome. A reply is never marked SENT when delivery failed.
+  deliveryStatus SupportMessageDelivery @default(NONE) @map("delivery_status")
+  // Unread tracking for the support inbox: customer messages are unread
+  // while this is null. Set when an agent opens the conversation.
+  readByStaffAt  DateTime?              @map("read_by_staff_at") @db.Timestamptz(6)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ticketId String  @map("ticket_id") @db.Uuid
+  senderId String? @map("sender_id") @db.Uuid
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender User?         @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}
+
+enum SupportMessageSender {
+  CUSTOMER
+  SUPPORT_STAFF
+
+  @@map("support_message_sender")
+}
+
+enum SupportMessageDelivery {
+  NONE
+  SENT
+  FAILED
+
+  @@map("support_message_delivery")
+}

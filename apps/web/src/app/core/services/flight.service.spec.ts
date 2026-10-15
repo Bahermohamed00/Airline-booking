@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { FlightService } from './flight.service';
+import { FlightService, sortAlternatives } from './flight.service';
 import { API_CONFIG } from '../config/api-config';
 import type { SearchCriteria } from '../models/booking-flow.model';
 
@@ -30,6 +30,8 @@ function apiFlight(overrides: Record<string, unknown> = {}) {
   return {
     id: 'f1',
     flightNumber: 'NV100',
+    publicNumber: 100,
+    tripType: 'ONE_WAY',
     routeId: 'r1',
     aircraftId: 'ac1',
     scheduleRuleId: null,
@@ -173,5 +175,107 @@ describe('FlightService', () => {
     const req = http.expectOne('http://api.test/api/flights?origin=FRA&destination=JFK');
     expect(req.request.method).toBe('GET');
     req.flush([]);
+  });
+
+  it('updateFlightStatus PATCHes /flights/:id/status and maps the response', () => {
+    let result: unknown;
+    service.updateFlightStatus('f1', 'BOARDING').subscribe((r) => (result = r));
+    const req = http.expectOne('http://api.test/api/flights/f1/status');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'BOARDING' });
+    req.flush(apiFlight({ status: 'BOARDING' }));
+    expect((result as { status: string }).status).toBe('BOARDING');
+  });
+
+  it('updateFlight PATCHes /flights/:id with the time payload and maps the response', () => {
+    let result: unknown;
+    const payload = { departureTime: '2026-10-05T13:00:00.000Z', arrivalTime: '2026-10-05T15:00:00.000Z' };
+    service.updateFlight('f1', payload).subscribe((r) => (result = r));
+    const req = http.expectOne('http://api.test/api/flights/f1');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(payload);
+    req.flush(apiFlight());
+    expect((result as { id: string }).id).toBe('f1');
+  });
+
+  it('createFlight POSTs /flights with the explicit flight number and maps the response', () => {
+    let result: unknown;
+    const payload = {
+      routeId: 'r1',
+      aircraftId: 'ac1',
+      departureDate: '2026-10-07',
+      departureTime: '10:00',
+      arrivalDate: '2026-10-07',
+      arrivalTime: '13:30',
+      flightNumber: 'NV720',
+      price: 250,
+    };
+    service.createFlight(payload).subscribe((r) => (result = r));
+    const req = http.expectOne('http://api.test/api/flights');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(payload);
+    req.flush(apiFlight({ flightNumber: 'NV720' }));
+    expect((result as { flightNumber: string }).flightNumber).toBe('NV720');
+  });
+
+  it('adminFlights sends only the provided filters as query params (id stays available for internal use)', () => {
+    service.adminFlights({ id: 'f1', flightNumber: 'NV1', status: 'COMPLETED', from: '2026-10-01', to: '2026-10-07' }).subscribe();
+    const req = http.expectOne('http://api.test/api/flights?id=f1&flightNumber=NV1&status=COMPLETED&from=2026-10-01&to=2026-10-07');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+
+    service.adminFlights({ flightNumber: 'NV100' }).subscribe();
+    const bare = http.expectOne('http://api.test/api/flights?flightNumber=NV100');
+    bare.flush([]);
+
+    service.adminFlights().subscribe();
+    const none = http.expectOne('http://api.test/api/flights');
+    none.flush([]);
+  });
+
+  it('findAlternatives queries ±3 days on the same route, excludes the exact date, and returns the closest first', () => {
+    let result: unknown;
+    service.findAlternatives(CRITERIA).subscribe((r) => (result = r));
+
+    const req = http.expectOne(
+      'http://api.test/api/flights?origin=FRA&destination=JFK&from=2026-09-28&to=2026-10-04',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush([
+      apiFlight({ id: 'exact', operatingDate: '2026-10-01' }), // excluded — the searched date
+      apiFlight({ id: 'plus2', operatingDate: '2026-10-03' }),
+      apiFlight({ id: 'minus1', operatingDate: '2026-09-30' }),
+      apiFlight({ id: 'plus1', operatingDate: '2026-10-02' }),
+      // The ±3-day window is enforced by the from/to query params server-side;
+      // the API never returns out-of-window flights.
+      apiFlight({ id: 'cancelled', operatingDate: '2026-10-02', status: 'CANCELLED' }), // unbookable
+    ]);
+
+    const flights = result as { id: string }[];
+    expect(flights.map((f) => f.id)).toEqual(['minus1', 'plus1', 'plus2']);
+  });
+
+  it('sortAlternatives orders by absolute day distance then departure time', () => {
+    const f = (id: string, operatingDate: string, departureTime: string) =>
+      ({ id, operatingDate, departureTime }) as never;
+
+    const sorted = sortAlternatives(
+      [
+        f('b-late', '2026-10-03', '2026-10-03T18:00:00Z'),
+        f('a-early', '2026-10-03', '2026-10-03T07:00:00Z'),
+        f('minus1', '2026-09-30', '2026-09-30T12:00:00Z'),
+        f('plus3', '2026-10-04', '2026-10-04T12:00:00Z'),
+        f('same-day', '2026-10-01', '2026-10-01T06:00:00Z'),
+      ],
+      '2026-10-01',
+    );
+
+    expect(sorted.map((x: { id: string }) => x.id)).toEqual([
+      'same-day', // offset 0
+      'minus1', // offset 1
+      'a-early', // offset 2, earlier time first
+      'b-late', // offset 2
+      'plus3', // offset 3
+    ]);
   });
 });

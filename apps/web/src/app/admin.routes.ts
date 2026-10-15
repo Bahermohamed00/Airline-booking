@@ -20,6 +20,9 @@ export const ADMIN_ROUTES: Routes = [
     children: [
       { path: 'denied', loadComponent: () => import('./features/admin/denied.component').then((m) => m.DeniedPage) },
       { path: 'dashboard', loadComponent: () => import('./features/admin/dashboard/dashboard.component').then((m) => m.DashboardPage), canActivate: [permissionGuard('dashboard:read')] },
+      { path: 'flights/overview', loadComponent: () => import('./features/admin/flights/flight-overview.component').then((m) => m.FlightOverviewPage), canActivate: [permissionGuard('flights:read')] },
+      { path: 'flights/completed', loadComponent: () => import('./features/admin/flights/completed-flights.component').then((m) => m.CompletedFlightsPage), canActivate: [permissionGuard('flights:read')] },
+      { path: 'flights/history', loadComponent: () => import('./features/admin/flights/flight-history.component').then((m) => m.FlightHistoryPage), canActivate: [permissionGuard('flights:read')] },
       { path: 'flights', loadComponent: () => import('./features/admin/flights/flights.component').then((m) => m.FlightsPage), canActivate: [permissionGuard('flights:read')] },
       { path: 'schedule-rules', loadComponent: () => import('./features/admin/flights/schedule-rules.component').then((m) => m.ScheduleRulesPage), canActivate: [permissionGuard('flights:read')] },
       { path: 'airports', loadComponent: () => import('./features/admin/catalog/airports.component').then((m) => m.AirportsPage), canActivate: [permissionGuard('airports:manage')] },
@@ -32,6 +35,11 @@ export const ADMIN_ROUTES: Routes = [
       { path: 'payments', loadComponent: () => import('./features/admin/payments/admin-payments.component').then((m) => m.AdminPaymentsPage), canActivate: [permissionGuard('payments:read')] },
       { path: 'refunds', loadComponent: () => import('./features/admin/payments/admin-refunds.component').then((m) => m.AdminRefundsPage), canActivate: [permissionGuard('payments:refund')] },
       { path: 'baggage', loadComponent: () => import('./features/admin/baggage/admin-baggage.component').then((m) => m.AdminBaggagePage), canActivate: [permissionGuard('baggage:manage')] },
+      // Support Staff workspace — the ONLY pages they can reach (seed grants
+      // support:* only; the shell filters their nav to these two entries).
+      { path: 'support/overview', loadComponent: () => import('./features/admin/support/support-overview.component').then((m) => m.AdminSupportOverviewPage), canActivate: [permissionGuard('support:read')] },
+      { path: 'support/history', loadComponent: () => import('./features/admin/support/support-history.component').then((m) => m.AdminSupportHistoryPage), canActivate: [permissionGuard('support:read')] },
+      { path: 'support', loadComponent: () => import('./features/admin/support/support.component').then((m) => m.AdminSupportPage), canActivate: [permissionGuard('support:read')] },
       { path: 'checkin', loadComponent: () => import('./features/admin/checkin/admin-checkin.component').then((m) => m.AdminCheckInPage), canActivate: [permissionGuard('checkin:manage')] },
       { path: 'loyalty', loadComponent: () => import('./features/admin/loyalty/admin-loyalty.component').then((m) => m.AdminLoyaltyPage), canActivate: [permissionGuard('loyalty:manage')] },
       { path: 'offers', loadComponent: () => import('./features/admin/offers/admin-offers.component').then((m) => m.AdminOffersPage), canActivate: [permissionGuard('offers:manage')] },

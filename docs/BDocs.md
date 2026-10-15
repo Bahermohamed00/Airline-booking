@@ -59,7 +59,7 @@ Authorization is **backend-enforced RBAC**: every protected operation checks per
 | **Flight Manager**  | Flights (read/manage), airports, aircraft, routes management, dashboard.                                                                                                                                   |
 | **Booking Manager** | Bookings (read/manage), user read, dashboard.                                                                                                                                                              |
 | **Finance Staff**   | Payments read, refunds, reports, dashboard.                                                                                                                                                                |
-| **Support Staff**   | User read, booking read, baggage manage, check-in manage, dashboard.                                                                                                                                       |
+| **Support Staff**   | Support tickets only (read/manage): ticket list/detail, claim, resolve, close, reopen. Dedicated `/admin/support` workspace — no Admin Overview or other admin modules in their navigation.              |
 | **Customer**        | Own profile, bookings, payments, check-in, baggage, loyalty only (BR-12 data isolation).                                                                                                                   |
 
 ### 3.3 Permission catalog

@@ -9,6 +9,7 @@ const createMockPrisma = () => ({
     deleteMany: vi.fn().mockResolvedValue({ count: 4 }),
   },
   passwordResetToken: { deleteMany: vi.fn().mockResolvedValue({ count: 5 }) },
+  mfaEmailToken: { deleteMany: vi.fn().mockResolvedValue({ count: 6 }) },
 });
 
 describe('TokenCleanupService', () => {
@@ -41,11 +42,15 @@ describe('TokenCleanupService', () => {
     expect(prisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
       where: { OR: [{ expiresAt: { lt: now } }, { usedAt: { not: null } }] },
     });
+    expect(prisma.mfaEmailToken.deleteMany).toHaveBeenCalledWith({
+      where: { OR: [{ expiresAt: { lt: now } }, { usedAt: { not: null } }] },
+    });
     expect(deleted).toEqual({
       sessions: 2,
       refreshTokens: 3,
       verificationTokens: 4,
       resetTokens: 5,
+      mfaEmailTokens: 6,
     });
   });
 
@@ -58,6 +63,7 @@ describe('TokenCleanupService', () => {
     expect(prisma.refreshToken.deleteMany).not.toHaveBeenCalled();
     expect(prisma.emailVerificationToken.deleteMany).not.toHaveBeenCalled();
     expect(prisma.passwordResetToken.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.mfaEmailToken.deleteMany).not.toHaveBeenCalled();
   });
 
   it('cron wrapper purges outside the test environment', async () => {

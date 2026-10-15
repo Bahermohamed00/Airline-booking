@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router, RouterLink, ActivatedRoute } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AuthService } from '../../../core/services/auth.service';
+import { AuthService, isMfaChallenge } from '../../../core/services/auth.service';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaAuthLayout } from './auth-layout.component';
@@ -22,20 +22,45 @@ import { NaAuthLayout } from './auth-layout.component';
       @if (notice()) {
         <na-alert tone="info" title="Signed out">{{ notice() }}</na-alert>
       }
+      @if (mfaPending()) {
+        <na-alert tone="info" title="Security code sent">
+          We emailed you a 6-digit security code. Enter it below to finish signing in.
+        </na-alert>
+      }
 
       <form [formGroup]="form" (ngSubmit)="submit()">
-        <div class="na-field">
-          <label class="na-label" for="email">Email</label>
-          <input id="email" class="na-input" type="email" formControlName="email" autocomplete="email" [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched" />
-          @if (form.controls.email.touched && form.controls.email.errors?.['required']) { <span class="na-error">Email is required.</span> }
-          @if (form.controls.email.touched && form.controls.email.errors?.['email']) { <span class="na-error">Enter a valid email address.</span> }
-        </div>
-        <div class="na-field">
-          <label class="na-label" for="password">Password</label>
-          <input id="password" class="na-input" type="password" formControlName="password" autocomplete="current-password" [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched" />
-          @if (form.controls.password.touched && form.controls.password.errors?.['required']) { <span class="na-error">Password is required.</span> }
-        </div>
-        <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Sign in</na-button>
+        @if (!mfaPending()) {
+          <div class="na-field">
+            <label class="na-label" for="email">Email</label>
+            <input id="email" class="na-input" type="email" formControlName="email" autocomplete="email" [attr.aria-invalid]="form.controls.email.invalid && form.controls.email.touched" />
+            @if (form.controls.email.touched && form.controls.email.errors?.['required']) { <span class="na-error">Email is required.</span> }
+            @if (form.controls.email.touched && form.controls.email.errors?.['email']) { <span class="na-error">Enter a valid email address.</span> }
+          </div>
+          <div class="na-field">
+            <label class="na-label" for="password">Password</label>
+            <input id="password" class="na-input" type="password" formControlName="password" autocomplete="current-password" [attr.aria-invalid]="form.controls.password.invalid && form.controls.password.touched" />
+            @if (form.controls.password.touched && form.controls.password.errors?.['required']) { <span class="na-error">Password is required.</span> }
+          </div>
+        } @else {
+          <div class="na-field">
+            <label class="na-label" for="mfaCode">Security code</label>
+            <input
+              id="mfaCode"
+              class="na-input na-text-mono"
+              type="text"
+              formControlName="mfaCode"
+              inputmode="numeric"
+              maxlength="6"
+              autocomplete="one-time-code"
+            />
+            @if (form.controls.mfaCode.touched && form.controls.mfaCode.errors) { <span class="na-error">Enter the 6-digit code from your email.</span> }
+          </div>
+        }
+        @if (!mfaPending()) {
+          <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.controls.email.invalid || form.controls.password.invalid">Sign in</na-button>
+        } @else {
+          <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.controls.mfaCode.invalid">Verify &amp; sign in</na-button>
+        }
       </form>
 
       <div class="auth-links">
@@ -44,7 +69,6 @@ import { NaAuthLayout } from './auth-layout.component';
         <a routerLink="/register">Create an account</a>
       </div>
 
-      <p class="demo-hint">Demo account: <strong>customer@example.com</strong> / <strong>Customer123!</strong></p>
     </na-auth-layout>
   `,
   styles: `
@@ -63,6 +87,7 @@ export class LoginPage {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+  readonly mfaPending = signal(false);
   readonly notice = signal<string | null>(
     this.route.snapshot.queryParamMap.get('reason') === 'session-expired'
       ? 'Your session has expired. Please sign in again.'
@@ -72,16 +97,24 @@ export class LoginPage {
   readonly form = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
+    mfaCode: ['', [Validators.pattern(/^\d{6}$/)]],
   });
 
   submit(): void {
-    if (this.form.invalid) return;
+    if (this.loading()) return;
+    const { email, password, mfaCode } = this.form.getRawValue();
+    if (this.mfaPending() && this.form.controls.mfaCode.invalid) return;
+    if (!this.mfaPending() && (this.form.controls.email.invalid || this.form.controls.password.invalid)) return;
     this.loading.set(true);
     this.error.set(null);
-    const { email, password } = this.form.getRawValue();
-    this.auth.login(email, password).subscribe({
-      next: (result) => {
-        this.auth.setSession(result.user);
+    this.auth.login(email, password, this.mfaPending() ? mfaCode : undefined).subscribe({
+      next: (outcome) => {
+        if (isMfaChallenge(outcome)) {
+          this.loading.set(false);
+          this.mfaPending.set(true);
+          return;
+        }
+        this.auth.setSession(outcome.user);
         if (this.auth.isStaff()) {
           // Valid credentials, wrong portal: drop the session again.
           this.auth.logout();

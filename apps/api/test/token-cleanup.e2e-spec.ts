@@ -98,6 +98,14 @@ describe('TokenCleanupService (e2e)', () => {
       data: { userId: user.id, tokenHash: hash('g'), expiresAt: future },
     });
 
+    // Used MFA email code (dead despite future expiry) plus one still-valid.
+    await prismaTestClient.mfaEmailToken.create({
+      data: { userId: user.id, purpose: 'LOGIN', codeHash: hash('h'), expiresAt: future, usedAt: past },
+    });
+    await prismaTestClient.mfaEmailToken.create({
+      data: { userId: user.id, purpose: 'LOGIN', codeHash: hash('i'), expiresAt: future },
+    });
+
     const deleted = await service.purge(now);
 
     expect(deleted).toEqual({
@@ -105,12 +113,14 @@ describe('TokenCleanupService (e2e)', () => {
       refreshTokens: 1,
       verificationTokens: 1,
       resetTokens: 1,
+      mfaEmailTokens: 1,
     });
 
     expect(await prismaTestClient.session.count()).toBe(1);
     expect(await prismaTestClient.refreshToken.count()).toBe(1);
     expect(await prismaTestClient.emailVerificationToken.count()).toBe(0);
     expect(await prismaTestClient.passwordResetToken.count()).toBe(1);
+    expect(await prismaTestClient.mfaEmailToken.count()).toBe(1);
 
     const survivingSession = await prismaTestClient.session.findFirstOrThrow();
     expect(survivingSession.id).toBe(liveSession.id);

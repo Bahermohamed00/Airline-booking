@@ -21,10 +21,19 @@ export interface LoginResult {
   accessToken: string;
 }
 
+/** Either a completed login or an MFA challenge (code emailed, nothing issued yet). */
+export type LoginOutcome = LoginResult | { mfaRequired: true };
+
+export function isMfaChallenge(outcome: LoginOutcome): outcome is { mfaRequired: true } {
+  return 'mfaRequired' in outcome && outcome.mfaRequired === true;
+}
+
 export interface AuthError {
   status: number;
   message: string;
   code?: string;
+  /** Individual validation messages when the API returns a 400 message array. */
+  messages?: string[];
 }
 
 interface LoginResponse {
@@ -39,6 +48,9 @@ interface MeResponse {
   firstName: string;
   lastName: string;
   dateOfBirth: string | null;
+  phone: string | null;
+  streetAddress: string | null;
+  nationalId: string | null;
   emailVerified: boolean;
   mfaEnabled: boolean;
   roles: string[];
@@ -66,9 +78,13 @@ export class AuthService {
     const u = this.userSignal();
     return u !== null && u.roles.some((r) => r !== 'Customer');
   });
+  readonly isSupportStaff = computed(() => {
+  const u = this.userSignal();
+  return u !== null && u.roles.includes('Support Staff');
+});
 
   /** Mock login — accepts the seeded demo credentials. */
-  login(email: string, password: string): Observable<LoginResult> {
+  login(email: string, password: string, mfaCode?: string): Observable<LoginOutcome> {
     if (!this.config.useRealApi) {
       const all = [DEMO_CUSTOMER, ...STAFF_USERS];
       const user = all.find((u) => u.email.toLowerCase() === email.toLowerCase());
@@ -83,19 +99,22 @@ export class AuthService {
     }
 
     return this.http
-      .post<LoginResponse>(`${this.config.baseUrl}/auth/login`, { email, password })
+      .post<LoginResponse>(`${this.config.baseUrl}/auth/login`, { email, password, ...(mfaCode ? { mfaCode } : {}) })
       .pipe(
-        switchMap((res) => {
-          if (res.mfaRequired || !res.accessToken) {
+        switchMap((res): Observable<LoginOutcome> => {
+          // MFA challenge: the backend emailed a code; no tokens were issued.
+          if (res.mfaRequired) {
+            return of({ mfaRequired: true });
+          }
+          if (!res.accessToken) {
             return throwError((): AuthError => ({
               status: 401,
-              message: 'This account requires multi-factor authentication.',
-              code: 'MFA_REQUIRED',
+              message: 'Sign-in failed. Please try again.',
             }));
           }
           const accessToken = res.accessToken;
           this.accessTokenSignal.set(accessToken);
-          return this.fetchMe().pipe(map((user): LoginResult => ({ user, accessToken })));
+          return this.fetchMe().pipe(map((user): LoginOutcome => ({ user, accessToken })));
         }),
         catchError((err) => throwError(() => this.toAuthError(err))),
       );
@@ -107,6 +126,9 @@ export class AuthService {
     firstName: string;
     lastName: string;
     dateOfBirth: string;
+    phone: string;
+    streetAddress: string;
+    nationalId: string;
   }): Observable<User> {
     if (!this.config.useRealApi) {
       const user: User = {
@@ -280,8 +302,13 @@ export class AuthService {
       .pipe(catchError((err) => throwError(() => this.toAuthError(err))));
   }
 
-  /** Updates the caller's own profile (name/phone only — email change is not supported). */
-  updateProfile(input: { firstName: string; lastName: string; phone?: string }): Observable<User> {
+  /** Updates the caller's own profile (name/phone/address — email change is not supported). */
+  updateProfile(input: {
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    streetAddress?: string;
+  }): Observable<User> {
     if (!this.config.useRealApi) {
       const updated = { ...this.userSignal()!, ...input };
       this.userSignal.set(updated);
@@ -332,15 +359,23 @@ export class AuthService {
       .pipe(catchError((err) => throwError(() => this.toAuthError(err))));
   }
 
-  setupMfa(): Observable<{ secret: string; qrCodeUrl: string }> {
+  /** Starts email-OTP MFA enrollment: the backend emails a 6-digit code. */
+  setupMfa(): Observable<{ message: string }> {
     if (!this.config.useRealApi) {
-      return of({
-        secret: 'NB2W4Z3FMU2G43TFOZSWKZLR',
-        qrCodeUrl: 'otpauth://totp/NovaAir:demo?secret=NB2W4Z3FMU2G43TFOZSWKZLR',
-      }).pipe(delay(400));
+      return of({ message: 'A 6-digit security code was sent to your email address.' }).pipe(delay(400));
     }
     return this.http
-      .post<{ secret: string; qrCodeUrl: string }>(`${this.config.baseUrl}/auth/mfa/setup`, {})
+      .post<{ message: string }>(`${this.config.baseUrl}/auth/mfa/setup`, {})
+      .pipe(catchError((err) => throwError(() => this.toAuthError(err))));
+  }
+
+  /** Completes enrollment after the emailed code verifies server-side. */
+  verifyMfa(code: string): Observable<{ enabled: boolean }> {
+    if (!this.config.useRealApi) {
+      return of({ enabled: true }).pipe(delay(300));
+    }
+    return this.http
+      .post<{ enabled: boolean }>(`${this.config.baseUrl}/auth/mfa/verify`, { code })
       .pipe(catchError((err) => throwError(() => this.toAuthError(err))));
   }
 
@@ -352,6 +387,9 @@ export class AuthService {
         firstName: me.firstName,
         lastName: me.lastName,
         dateOfBirth: me.dateOfBirth,
+        phone: me.phone,
+        streetAddress: me.streetAddress,
+        nationalId: me.nationalId,
         emailVerified: me.emailVerified,
         mfaEnabled: me.mfaEnabled,
         status: 'ACTIVE',
@@ -370,10 +408,11 @@ export class AuthService {
   private toAuthError(err: unknown): AuthError {
     if (err instanceof HttpErrorResponse) {
       const body = err.error as { message?: string | string[] } | undefined;
-      const message = Array.isArray(body?.message)
-        ? body.message.join(' ')
-        : (body?.message ?? 'Request failed. Please try again.');
-      return { status: err.status, message };
+      const raw = body?.message;
+      const messages = Array.isArray(raw) ? raw : undefined;
+      const message =
+        typeof raw === 'string' ? raw : (messages?.join(' ') ?? 'Request failed. Please try again.');
+      return { status: err.status, message, ...(messages ? { messages } : {}) };
     }
     if (err && typeof err === 'object' && 'message' in err) {
       return err as AuthError;

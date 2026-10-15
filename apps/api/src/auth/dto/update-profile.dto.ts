@@ -1,5 +1,6 @@
-import { IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MinLength, MaxLength, Matches } from 'class-validator';
 import { TrimString } from './transforms.js';
+import { STREET_ADDRESS_PATTERN } from './register.dto.js';
 
 /** Self-service profile update. Email change is intentionally not supported (deferred). */
 export class UpdateProfileDto {
@@ -22,4 +23,10 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(50)
   phone?: string;
+
+  /** Optional; an empty string clears the stored address (mirrors phone). */
+  @IsOptional()
+  @TrimString()
+  @Matches(STREET_ADDRESS_PATTERN, { message: 'Invalid street address.' })
+  streetAddress?: string;
 }

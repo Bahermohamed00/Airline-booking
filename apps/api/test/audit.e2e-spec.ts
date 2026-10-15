@@ -36,6 +36,11 @@ describe('Audit log API (e2e)', () => {
       update: {},
       create: { resource: 'audit', action: 'read' },
     });
+    const usersRead = await prismaTestClient.permission.upsert({
+      where: { resource_action: { resource: 'users', action: 'read' } },
+      update: {},
+      create: { resource: 'users', action: 'read' },
+    });
 
     const role = async (name: string, isSuperAdmin: boolean, permissionIds: string[]) => {
       const r = await prismaTestClient.role.upsert({
@@ -54,7 +59,8 @@ describe('Audit log API (e2e)', () => {
     };
 
     const superAdmin = await role('Super Admin', true, []);
-    const administrator = await role('Administrator', false, [auditRead.id]);
+    // Mirrors the real seed: Administrator holds both audit:read and users:read.
+    const administrator = await role('Administrator', false, [auditRead.id, usersRead.id]);
     const flightManager = await role('Flight Manager', false, []);
     const bookingManager = await role('Booking Manager', false, []);
     const financeStaff = await role('Finance Staff', false, []);
@@ -212,6 +218,32 @@ describe('Audit log API (e2e)', () => {
       expect((combo.body.items as Array<{ event: string; actorType: string }>).every((i) => i.event === 'TOKEN_REUSE_DETECTED' && i.actorType === 'Staff')).toBe(true);
     });
 
+    it('includes the linked actor display name and email, null for unlinked rows', async () => {
+      const token = await loginAs('admin-identity@audit.test', 'Administrator');
+
+      const linked = await getAudit(token, `?actorId=${realActorId}`).expect(200);
+      const linkedRow = (linked.body.items as Array<{ actorName: string | null; actorEmail: string | null }>)[0]!;
+      expect(linkedRow.actorName).toBe('Real Actor');
+      expect(linkedRow.actorEmail).toBe('actor@audit.test');
+
+      const unlinked = await getAudit(token, '?actorType=Guest').expect(200);
+      const guestRow = (unlinked.body.items as Array<{ actorName: string | null; actorEmail: string | null }>)[0]!;
+      expect(guestRow.actorName).toBeNull();
+      expect(guestRow.actorEmail).toBeNull();
+    });
+
+    it('audit:read without users:read still reads the log but actor identity is null', async () => {
+      const token = await loginAs('intern-identity@audit.test', 'Audit Intern');
+
+      const res = await getAudit(token, `?actorId=${realActorId}`).expect(200);
+      const row = (res.body.items as Array<Record<string, unknown>>)[0]!;
+      expect(row['actorId']).toBe(realActorId); // UUID stays for correlation
+      expect(row['actorName']).toBeNull();
+      expect(row['actorEmail']).toBeNull();
+      expect(row['event']).toBeDefined();
+      expect(row['targetType']).toBeDefined();
+    });
+
     it('filters by date range and rejects invalid dates', async () => {
       const token = await loginAs('admin-dates@audit.test', 'Administrator');
 
@@ -276,7 +308,7 @@ describe('Audit log API (e2e)', () => {
       const res = await getAudit(token, '?actorType=Guest').expect(200);
 
       const item = (res.body.items as Array<Record<string, unknown>>)[0]!;
-      expect(Object.keys(item).sort()).toEqual(['actorId', 'actorType', 'createdAt', 'event', 'id', 'ipAddress', 'metadata', 'targetId', 'targetType']);
+      expect(Object.keys(item).sort()).toEqual(['actorEmail', 'actorId', 'actorName', 'actorType', 'createdAt', 'event', 'id', 'ipAddress', 'metadata', 'targetId', 'targetType']);
       expect(item['metadata']).toEqual({ reason: 'invalid_or_expired' });
 
       const raw = JSON.stringify(res.body);

@@ -5,7 +5,6 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import * as speakeasy from 'speakeasy';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -168,10 +167,10 @@ describe('Login & access token (e2e)', () => {
   });
 
   it('MFA-enabled account: login without a code returns mfaRequired without tokens; a wrong code is rejected', async () => {
-    const secret = speakeasy.generateSecret({ length: 20 });
+    // Email-OTP MFA: the challenge code is generated server-side and emailed.
     await prismaTestClient.user.update({
       where: { email: TEST_USER.email },
-      data: { mfaEnabled: true, mfaSecret: secret.base32 },
+      data: { mfaEnabled: true },
     });
 
     const noCode = await login();
@@ -179,15 +178,10 @@ describe('Login & access token (e2e)', () => {
     expect(noCode.body).toEqual({ mfaRequired: true });
     expect(noCode.headers['set-cookie']).toBeUndefined();
 
-    // Pick a code that is guaranteed not to match the valid TOTP in the ±1 window.
-    const now = Math.floor(Date.now() / 1000);
-    const validCodes = new Set(
-      [-30, 0, 30].map((offset) => speakeasy.totp({ secret: secret.base32, encoding: 'base32', time: now + offset })),
-    );
-    const wrongCode = ['000000', '123456', '654321', '111111', '999999', '222222'].find((c) => !validCodes.has(c))!;
+    // A malformed/guessed code never matches the hashed server-side code.
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')
-      .send({ email: TEST_USER.email, password: TEST_USER.password, mfaCode: wrongCode });
+      .send({ email: TEST_USER.email, password: TEST_USER.password, mfaCode: 'not-a-code' });
     expect(res.status).toBe(401);
   });
 

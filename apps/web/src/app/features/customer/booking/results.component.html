@@ -149,6 +149,71 @@
             }
           </div>
           <span class="na-visually-hidden">Loading flights…</span>
+        } @else if (noMatch()) {
+          <!-- Friendly no-match state — an empty result, never an error. -->
+          <section class="na-card no-match" aria-live="polite">
+            <span class="no-match__icon" aria-hidden="true">✈</span>
+            <h2 class="no-match__title">No flights at this time</h2>
+            <p class="no-match__message">
+              We couldn't find a flight from {{ c.originCode }} to {{ c.destinationCode }} on
+              {{ prettyDate(c.departureDate + 'T00:00:00Z') }}.
+            </p>
+            <p class="na-text-muted">
+              @if (alternatives().length > 0) {
+                But we found some nearby alternatives that might work for you.
+              } @else {
+                Try a nearby date above, or modify your search.
+              }
+            </p>
+            <div class="no-match__actions">
+              @if (alternatives().length > 0) {
+                <a class="na-btn no-match__cta" href="#alternatives">View alternative flights</a>
+              }
+              <a class="no-match__modify" routerLink="/search">Modify search</a>
+            </div>
+          </section>
+
+          @if (alternatives().length > 0) {
+            <section id="alternatives" class="alternatives">
+              <h3>Nearby alternatives — same route</h3>
+              <ol class="cards" role="list">
+                @for (f of alternatives(); track f.id) {
+                  <li class="na-card card">
+                    <div class="card__top">
+                      <p class="card__airline">
+                        NovaAir · Flight {{ publicId(f) }} · {{ f.aircraft.model }}
+                      </p>
+                    </div>
+                    <div class="card__times">
+                      <div class="card__endpoint">
+                        <strong>{{ time(f.departureTime) }}</strong>
+                        <span class="na-text-muted">{{ shortDate(f.departureTime) }}</span>
+                      </div>
+                      <div class="card__duration na-text-muted">
+                        <span>{{ duration(f) }}</span>
+                      </div>
+                      <div class="card__endpoint">
+                        <strong>{{ time(f.arrivalTime) }}</strong>
+                        <span class="na-text-muted">{{ shortDate(f.arrivalTime) }}</span>
+                      </div>
+                    </div>
+                    @if (fareOf(f, c); as fare) {
+                      <div class="card__bottom">
+                        <div>
+                          <span class="na-text-muted na-text-small">From</span>
+                          <p class="card__price">{{ fareTotal(fare) }}</p>
+                          <span class="na-text-muted na-text-small">per passenger</span>
+                        </div>
+                        <button type="button" class="na-btn card__select" (click)="select(f, fare)">
+                          Select Flight →
+                        </button>
+                      </div>
+                    }
+                  </li>
+                }
+              </ol>
+            </section>
+          }
         } @else if (visibleFlights().length === 0) {
           <na-empty-state
             icon="✈"
@@ -163,7 +228,7 @@
               <li class="na-card card">
                 <div class="card__top">
                   <p class="card__airline">
-                    NovaAir · {{ f.flightNumber }} · {{ f.aircraft.model }}
+                    NovaAir · Flight {{ publicId(f) }} · {{ f.aircraft.model }}
                   </p>
                   <div class="card__badges">
                     @if (f.scheduleStatus === 'DELAYED') {

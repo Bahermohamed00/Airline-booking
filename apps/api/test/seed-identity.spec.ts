@@ -11,7 +11,15 @@ import {
 } from '../../prisma/seed';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const seedSource = readFileSync(join(repoRoot, 'prisma', 'seed.ts'), 'utf8');
+// Scan the orchestrator AND every split seed module — after the prisma/seed/
+// split, scanning only prisma/seed.ts would miss identifiers in the modules.
+const seedDir = join(repoRoot, 'prisma', 'seed');
+const seedSources = [
+  readFileSync(join(repoRoot, 'prisma', 'seed.ts'), 'utf8'),
+  ...readdirSync(seedDir)
+    .filter((f) => f.endsWith('.ts'))
+    .map((f) => readFileSync(join(seedDir, f), 'utf8')),
+];
 
 // Phase 1 (NovaAir foundation): the seed must produce only fictional NovaAir
 // operational identifiers — no Lufthansa flight numbers, registrations, or
@@ -51,10 +59,12 @@ describe('seed identity cleanup (Phase 1)', () => {
     }
   });
 
-  it('contains no Lufthansa operational identifiers in the seed source', () => {
-    expect(seedSource).not.toMatch(/D-AIRA|D-AIRB|D-ABYA|D-AIXA/);
-    expect(seedSource).not.toMatch(/`LH\$\{|LH\d{3}/);
-    expect(seedSource).not.toContain('Lufthansa');
+  it('contains no Lufthansa operational identifiers in any seed source file', () => {
+    for (const seedSource of seedSources) {
+      expect(seedSource).not.toMatch(/D-AIRA|D-AIRB|D-ABYA|D-AIXA/);
+      expect(seedSource).not.toMatch(/`LH\$\{|LH\d{3}/);
+      expect(seedSource).not.toContain('Lufthansa');
+    }
   });
 
   it('ships an idempotent migration normalizing already-persisted rows', () => {

@@ -1,0 +1,360 @@
+<div class="page">
+  <na-breadcrumbs
+    [items]="[{ label: 'Support' }]"
+  />
+
+  <header class="page__head">
+    <div>
+      <h1>Support tickets</h1>
+      <p class="subtitle">
+        Customer complaints and requests. Contact the customer by email or phone — the ticket tracks
+        the lifecycle, not the conversation.
+      </p>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="inbox-toggle" role="group" aria-label="Inbox view">
+      <button
+        type="button"
+        class="inbox-toggle__btn"
+        [class.inbox-toggle__btn--active]="!unreadOnly()"
+        (click)="setUnreadOnly(false)"
+      >
+        All
+      </button>
+      <button
+        type="button"
+        class="inbox-toggle__btn"
+        [class.inbox-toggle__btn--active]="unreadOnly()"
+        (click)="setUnreadOnly(true)"
+      >
+        Unread
+      </button>
+    </div>
+
+    <div class="na-field filters__search">
+      <label class="na-label" for="filter-number">Ticket number</label>
+      <input
+        id="filter-number"
+        class="na-input"
+        type="search"
+        placeholder="e.g. NT7K2P9Q"
+        [(ngModel)]="filterTicketNumber"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+
+    <div class="na-field">
+      <label class="na-label" for="filter-email">Customer email</label>
+      <input
+        id="filter-email"
+        class="na-input"
+        type="search"
+        placeholder="customer email…"
+        [(ngModel)]="filterEmail"
+        (ngModelChange)="onFilterChange()"
+      />
+    </div>
+
+    <div class="na-field">
+      <label class="na-label" for="filter-status">Status</label>
+      <select
+        id="filter-status"
+        class="na-select"
+        [ngModel]="filterStatus()"
+        (ngModelChange)="filterStatus.set($event); onFilterChange()"
+      >
+        <option value="ALL">All statuses</option>
+        @for (s of statusOptions; track s) {
+          <option [value]="s">{{ s.replace('_', ' ') }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="na-field filters__clear">
+      <na-button variant="secondary" size="sm" (clicked)="clearFilters()">
+        Clear filters
+      </na-button>
+    </div>
+  </div>
+
+  @if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <na-data-table
+      [columns]="columns"
+      [rows]="rows()"
+      [loading]="loading()"
+      emptyTitle="No tickets found"
+      emptyMessage="No support tickets match the current filters."
+      emptyActionLabel="Clear filters"
+      (rowClick)="openDetail($event.id)"
+      (emptyAction)="clearFilters()"
+    />
+
+    <div class="pagination">
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() <= 1 || loading()"
+        (clicked)="previousPage()"
+      >
+        Previous
+      </na-button>
+
+      <span class="na-text-muted na-text-small">
+        Page {{ page() }} of {{ totalPages() }} · {{ total() }} ticket(s)
+      </span>
+
+      <na-button
+        variant="secondary"
+        size="sm"
+        [disabled]="page() >= totalPages() || loading()"
+        (clicked)="nextPage()"
+      >
+        Next
+      </na-button>
+    </div>
+  }
+
+  <!-- Ticket detail modal -->
+  @if (selected(); as t) {
+    <div class="modal-backdrop" (click)="closeDetail()" role="presentation"></div>
+
+    <section
+      class="ticket-modal"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Ticket ' + t.ticketNumber + ' details'"
+    >
+      <header class="ticket-modal__header">
+        <div>
+          <span class="ticket-modal__label">Support Ticket</span>
+          <h2 class="na-text-mono">{{ t.ticketNumber }}</h2>
+          <p class="ticket-modal__subject">{{ t.subject }}</p>
+        </div>
+
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="Close details"
+          (click)="closeDetail()"
+        >
+          ×
+        </button>
+      </header>
+
+      <div class="ticket-modal__body">
+        <div class="ticket-status-row">
+          <span>Status</span>
+          <na-badge [tone]="statusOf(t).tone">
+            {{ statusOf(t).label }}
+          </na-badge>
+        </div>
+
+        <div class="customer-card">
+          <div class="customer-card__icon">◉</div>
+
+          <div class="customer-card__info">
+            <span class="customer-card__label">Customer</span>
+            <strong>
+              {{ t.customer.firstName }} {{ t.customer.lastName }}
+            </strong>
+
+            <a
+              class="support-email"
+              [href]="'mailto:' + t.customer.email"
+            >
+              {{ t.customer.email }}
+            </a>
+            @if (t.customer.phone) {
+              <a
+                class="support-email"
+                [href]="'tel:' + t.customer.phone"
+              >
+                {{ t.customer.phone }}
+              </a>
+            }
+          </div>
+        </div>
+
+        <div class="ticket-meta">
+          <div>
+            <span>Assigned to</span>
+            <strong>
+              {{ t.assignee
+                ? t.assignee.firstName + ' ' + t.assignee.lastName
+                : 'Unassigned' }}
+            </strong>
+          </div>
+
+          <div>
+            <span>Created</span>
+            <strong>{{ formatDate(t.createdAt) }}</strong>
+          </div>
+
+          @if (t.resolvedAt) {
+            <div>
+              <span>Resolved</span>
+              <strong>{{ formatDate(t.resolvedAt) }}</strong>
+            </div>
+          }
+
+          @if (t.closedAt) {
+            <div>
+              <span>Closed</span>
+              <strong>{{ formatDate(t.closedAt) }}</strong>
+            </div>
+          }
+        </div>
+
+        <section class="complaint">
+          <div class="complaint__heading">
+            <span>Complaint / Request</span>
+          </div>
+
+          <div class="complaint__content">
+            {{ t.description }}
+          </div>
+        </section>
+
+        @if (availableActions(t).length > 0) {
+          <section class="ticket-actions" *naHasPermission="'support:manage'">
+            <div class="ticket-actions__buttons">
+              @for (a of availableActions(t); track a.action) {
+                <na-button
+                  [variant]="
+                    a.action === 'claim' || a.action === 'close'
+                      ? 'cta'
+                      : 'secondary'
+                  "
+                  size="sm"
+                  [disabled]="acting()"
+                  [loading]="acting()"
+                  (clicked)="runAction(t, a.action)"
+                >
+                  {{ a.label }}
+                </na-button>
+              }
+            </div>
+          </section>
+        }
+
+        <section class="conversation">
+          <div class="complaint__heading">
+            <span>Conversation</span>
+          </div>
+
+          @if (messages().length === 0) {
+            <p class="na-text-muted na-text-small">No messages yet.</p>
+          } @else {
+            <ul class="conversation__list">
+              @for (m of messages(); track m.id) {
+                <li
+                  class="message"
+                  [class.message--incoming]="m.senderType === 'CUSTOMER'"
+                  [class.message--outgoing]="m.senderType === 'SUPPORT_STAFF'"
+                >
+                  <div class="message__bubble">
+                    <div class="message__meta na-text-muted na-text-small">
+                      @if (m.senderType === 'CUSTOMER') {
+                        {{ t.customer.firstName }} {{ t.customer.lastName }} (customer)
+                      } @else {
+                        {{ m.sender ? m.sender.firstName + ' ' + m.sender.lastName : 'Support' }} (support)
+                        @if (m.deliveryStatus === 'SENT') { · emailed }
+                        @if (m.deliveryStatus === 'FAILED') { · email failed }
+                      }
+                      · {{ formatDate(m.createdAt) }}
+                    </div>
+                    <p class="message__body">{{ m.body }}</p>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        @if (t.status !== 'CLOSED') {
+          <section class="composer" *naHasPermission="'support:manage'">
+            <div class="na-field">
+              <label class="na-label" for="reply-body">Write your response…</label>
+              <textarea
+                id="reply-body"
+                class="na-input composer__textarea"
+                name="replyBody"
+                rows="4"
+                maxlength="5000"
+                placeholder="Write your response…"
+                [(ngModel)]="replyBody"
+              ></textarea>
+            </div>
+            @if (replyError()) {
+              <p class="na-error" role="alert">{{ replyError() }}</p>
+            }
+            <div class="composer__actions">
+              <na-button
+                variant="cta"
+                size="sm"
+                [disabled]="sending() || !replyBody.trim()"
+                [loading]="sending()"
+                (clicked)="submitReply(t)"
+              >
+                Send Email
+              </na-button>
+            </div>
+          </section>
+        }
+
+        @if (actionError()) {
+          <p class="na-error" role="alert">
+            {{ actionError() }}
+          </p>
+        }
+      </div>
+    </section>
+  } @else if (detailLoading()) {
+    <div class="modal-backdrop" role="presentation"></div>
+
+    <section
+      class="ticket-modal ticket-modal--loading"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Loading ticket"
+    >
+      <div class="ticket-modal__body">
+        <na-skeleton [rows]="[3, 4]" height="1.5rem" />
+      </div>
+    </section>
+  } @else if (detailError()) {
+    <div
+      class="modal-backdrop"
+      (click)="closeDetail()"
+      role="presentation"
+    ></div>
+
+    <section
+      class="ticket-modal ticket-modal--error"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Ticket error"
+    >
+      <div class="ticket-modal__body">
+        <div class="list-error" role="alert">
+          <p>{{ detailError() }}</p>
+
+          <na-button
+            variant="secondary"
+            size="sm"
+            (clicked)="closeDetail()"
+          >
+            Close
+          </na-button>
+        </div>
+      </div>
+    </section>
+  }
+</div>

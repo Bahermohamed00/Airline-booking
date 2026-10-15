@@ -371,8 +371,8 @@ describe('Admin dashboard (e2e)', () => {
     const token = await loginAs('dashboard-data@test.dev', staffRoleId);
     const body = (await get(token).expect(200)).body;
 
-    // Upcoming 7-day departures: NV100, NV101, NV102 (not +10d, not yesterday).
-    expect(body.totalFlights).toBe(3);
+    // True total across all 5 fixture flights (today ×2, +3d, +10d, yesterday).
+    expect(body.totalFlights).toBe(5);
     expect(body.totalBookings).toBe(3);
     expect(body.confirmedBookings).toBe(1);
     // 2 PENDING + 1 CONFIRMED passengers; the CANCELLED one is excluded.
@@ -412,6 +412,30 @@ describe('Admin dashboard (e2e)', () => {
     expect(f100.destinationIata).toBe('JFK');
     expect(f100.aircraftRegistration).toBe('NV-T100');
     expect(f100).not.toHaveProperty('fares');
+  });
+
+  it('Total flights grows by exactly 1 per created flight — no caching, no window', async () => {
+    const token = await loginAs('dashboard-dynamic@test.dev', staffRoleId);
+
+    const before = (await get(token).expect(200)).body.totalFlights as number;
+
+    const route = await prismaTestClient.route.findFirstOrThrow();
+    const aircraft = await prismaTestClient.aircraft.findFirstOrThrow();
+    // Deliberately far outside any operational window: a true total counts it anyway.
+    await makeFlight({
+      flightNumber: 'NV105',
+      routeId: route.id,
+      aircraftId: aircraft.id,
+      departsInMs: 30 * DAY_MS,
+      status: 'SCHEDULED',
+    });
+
+    const after = (await get(token).expect(200)).body.totalFlights as number;
+    expect(after).toBe(before + 1);
+
+    // A repeated read stays consistent (no stale caching).
+    const again = (await get(token).expect(200)).body.totalFlights as number;
+    expect(again).toBe(after);
   });
 
   it('returns recent bookings newest-first without contact PII', async () => {

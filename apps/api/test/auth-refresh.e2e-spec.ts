@@ -254,6 +254,33 @@ describe('Auth refresh flow (e2e)', () => {
     await request(app.getHttpServer()).post('/api/auth/refresh').set('Cookie', cookie).expect(401);
   });
 
+  it('audits TOKEN_REFRESHED on successful rotation without storing token material', async () => {
+    const loginRes = await login();
+    const cookieA = refreshCookieOf(loginRes);
+    const accessA = loginRes.body.accessToken as string;
+
+    const refreshRes = await request(app.getHttpServer())
+      .post('/api/auth/refresh')
+      .set('Cookie', cookieA)
+      .expect(200);
+    const cookieB = refreshCookieOf(refreshRes);
+    const accessB = refreshRes.body.accessToken as string;
+
+    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: TEST_USER.email } });
+    const session = await prismaTestClient.session.findFirstOrThrow({ where: { userId: user.id } });
+    const audit = await prismaTestClient.auditLog.findFirstOrThrow({ where: { action: 'TOKEN_REFRESHED' } });
+    expect(audit.actorId).toBe(user.id);
+    expect(audit.actorType).toBe('User');
+    expect(audit.targetType).toBe('Session');
+    expect(audit.targetId).toBe(session.id);
+
+    const auditBlob = JSON.stringify(audit.metadata) + (audit.targetId ?? '');
+    expect(auditBlob).not.toContain(rawTokenOf(cookieA));
+    expect(auditBlob).not.toContain(rawTokenOf(cookieB));
+    expect(auditBlob).not.toContain(accessA);
+    expect(auditBlob).not.toContain(accessB);
+  });
+
   it('never logs raw tokens during refresh or reuse handling', async () => {
     const loginRes = await login();
     const cookieA = refreshCookieOf(loginRes);

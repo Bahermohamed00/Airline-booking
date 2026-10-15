@@ -156,6 +156,8 @@ function makeFlight(num: number, route: Route, aircraft: Aircraft, dayOffset: nu
   return {
     id,
     flightNumber: `${FLIGHT_NUMBER_PREFIX}${flightNo}`,
+    publicNumber: flightNo,
+    tripType: 'ONE_WAY',
     routeId: route.id,
     route,
     aircraftId: aircraft.id,

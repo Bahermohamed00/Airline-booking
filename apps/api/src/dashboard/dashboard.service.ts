@@ -50,6 +50,9 @@ export interface DashboardView {
   revenue: number;
   currency: string;
   scheduledCount: number;
+  boardingCount: number;
+  departedCount: number;
+  arrivedCount: number;
   delayedCount: number;
   cancelledCount: number;
   completedCount: number;
@@ -121,12 +124,15 @@ export function bucketSumPerDay(
 
 /**
  * Operations dashboard aggregates. Metric definitions:
- * - totalFlights: flights departing in [now, now + 7 days).
+ * - totalFlights: all flights in the system (true total). The KPI is labeled
+ *   "Total flights" and must grow by exactly 1 for every created flight,
+ *   regardless of its departure date — a 7-day window here made newly created
+ *   flights outside the window invisible, which read as a stale count.
  * - passengers: passengers on active (PENDING/CONFIRMED) bookings.
  * - occupancyPercent: seats assigned on active bookings for non-CANCELLED
  *   flights departing in [now, now + 7 days) ÷ total seats of those flights.
- * - status counts (scheduled/delayed/cancelled/completed): today's operations;
- *   ACTIVE flights are counted as scheduled.
+ * - status counts (scheduled/boarding/departed/arrived/delayed/cancelled/
+ *   completed): today's operations; ACTIVE flights are counted as scheduled.
  * - revenue: all-time net revenue = Σ successful payments (by paidAt) − Σ
  *   processed refunds (by processedAt); revenueTrend buckets the same net
  *   amounts per UTC day over the selected range. The platform is
@@ -165,9 +171,7 @@ export class DashboardService {
       revenuePayments,
       revenueRefunds,
     ] = await Promise.all([
-      this.prisma.flight.count({
-        where: { departureTime: { gte: now, lt: upcomingEnd } },
-      }),
+      this.prisma.flight.count(),
       this.prisma.booking.count(),
       this.prisma.booking.count({ where: { status: 'CONFIRMED' } }),
       this.prisma.bookingPassenger.count({
@@ -263,6 +267,9 @@ export class DashboardService {
       revenue,
       currency: 'EUR',
       scheduledCount: countByStatus(['SCHEDULED', 'ACTIVE']),
+      boardingCount: countByStatus(['BOARDING']),
+      departedCount: countByStatus(['DEPARTED']),
+      arrivedCount: countByStatus(['ARRIVED']),
       delayedCount: countByStatus(['DELAYED']),
       cancelledCount: countByStatus(['CANCELLED']),
       completedCount: countByStatus(['COMPLETED']),

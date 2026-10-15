@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
+import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator.js';
 
 @Controller('schedule-rules')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -26,13 +27,13 @@ export class ScheduleRulesController {
 
   @Post()
   @Permissions({ resource: 'flights', action: 'manage' })
-  create(@Body() dto: CreateScheduleRuleDto) {
-    return this.scheduleRules.create(dto);
+  create(@Body() dto: CreateScheduleRuleDto, @CurrentUser() actor: AuthUser) {
+    return this.scheduleRules.create(dto, actor);
   }
 
   @Patch(':id')
   @Permissions({ resource: 'flights', action: 'manage' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateScheduleRuleDto) {
-    return this.scheduleRules.update(id, dto);
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateScheduleRuleDto, @CurrentUser() actor: AuthUser) {
+    return this.scheduleRules.update(id, dto, actor);
   }
 }

@@ -6,7 +6,6 @@ import type { Passenger } from '../../../core/models/domain.model';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
-import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaDialog } from '../../../shared/ui/dialog.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { ToastService } from '../../../shared/ui/toast.service';
@@ -26,6 +25,9 @@ const SECTIONS: { id: ProfileSection; label: string }[] = [
 
 const NOTIF_KEY = 'na-notification-prefs';
 const DATE_ONLY = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
+
+/** Mirrors UpdateProfileDto: valid street address, or empty to clear it. */
+const STREET_ADDRESS_PATTERN = /^$|^(?=.*[\p{L}\p{N}]).{5,255}$/u;
 const CHANNEL_GROUPS = [
   {
     label: 'Direct messages',
@@ -70,7 +72,6 @@ const CHANNEL_GROUPS = [
     NaButton,
     NaAlert,
     NaBadge,
-    NaSkeleton,
     NaDialog,
     NaEmptyState,
     SessionsPanel,
@@ -90,12 +91,13 @@ export class ProfilePage {
   readonly user = this.auth.user;
 
   readonly section = signal<ProfileSection>('profile');
+  // No saved-passengers API exists yet; starts empty so new accounts never see mock data.
   readonly passengers = signal<Passenger[]>([]);
-  readonly paxLoading = signal(false);
-  readonly paxError = signal(false);
-  readonly mfaSecret = signal<string | null>(null);
+  readonly mfaChallengeSent = signal(false);
   readonly mfaCode = signal('');
   readonly mfaError = signal<string | null>(null);
+  readonly mfaSetupLoading = signal(false);
+  readonly mfaVerifyLoading = signal(false);
   readonly mfaEnabled = signal(false);
   readonly resetLoading = signal(false);
   readonly profileLoading = signal(false);
@@ -113,19 +115,12 @@ export class ProfilePage {
 
   private readonly dFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
 
-  readonly qrCells: boolean[] = Array.from({ length: 144 }, (_, i) => {
-    const row = Math.floor(i / 12);
-    const col = i % 12;
-    const inFinder = (row < 3 && col < 3) || (row < 3 && col > 8) || (row > 8 && col < 3);
-    if (inFinder) return (row + col) % 2 === 0;
-    return (i * 2654435761) % 89 < 42;
-  });
-
   readonly profileForm = this.fb.nonNullable.group({
     firstName: ['', Validators.required],
     lastName: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     phone: [''],
+    streetAddress: ['', Validators.pattern(STREET_ADDRESS_PATTERN)],
   });
 
   readonly passwordForm = this.fb.nonNullable.group(
@@ -155,12 +150,12 @@ export class ProfilePage {
         lastName: u.lastName,
         email: u.email,
         phone: u.phone ?? '',
+        streetAddress: u.streetAddress ?? '',
       });
       this.profileForm.controls.email.disable(); // email change is not supported here
       this.mfaEnabled.set(u.mfaEnabled);
     }
 
-    this.loadPassengers();
     this.loadNotifPrefs();
   }
 
@@ -173,8 +168,8 @@ export class ProfilePage {
     this.profileLoading.set(true);
     this.profileError.set(null);
     // Email is intentionally excluded: email change is not supported here.
-    const { firstName, lastName, phone } = this.profileForm.getRawValue();
-    this.auth.updateProfile({ firstName, lastName, phone }).subscribe({
+    const { firstName, lastName, phone, streetAddress } = this.profileForm.getRawValue();
+    this.auth.updateProfile({ firstName, lastName, phone, streetAddress }).subscribe({
       next: () => {
         this.profileLoading.set(false);
         this.toast.success('Profile updated.');
@@ -182,21 +177,6 @@ export class ProfilePage {
       error: (err) => {
         this.profileLoading.set(false);
         this.profileError.set(err?.message ?? 'Could not update your profile. Please try again.');
-      },
-    });
-  }
-
-  loadPassengers(): void {
-    this.paxLoading.set(true);
-    this.paxError.set(false);
-    this.auth.savedPassengers().subscribe({
-      next: (passengers) => {
-        this.passengers.set(passengers);
-        this.paxLoading.set(false);
-      },
-      error: () => {
-        this.paxLoading.set(false);
-        this.paxError.set(true);
       },
     });
   }
@@ -224,20 +204,47 @@ export class ProfilePage {
   }
 
   startMfa(): void {
+    // Guard against repeat clicks while the email is being sent: every setup
+    // request invalidates the previously emailed code, so double-issuing makes
+    // the code the user just received fail with "Invalid or expired code".
+    if (this.mfaSetupLoading() || this.mfaVerifyLoading()) return;
+    this.mfaSetupLoading.set(true);
+    this.mfaError.set(null);
     this.auth.setupMfa().subscribe({
-      next: ({ secret }) => this.mfaSecret.set(secret),
-      error: () => this.toast.error('Could not start MFA setup. Please try again.'),
+      next: () => {
+        this.mfaSetupLoading.set(false);
+        this.mfaCode.set('');
+        this.mfaChallengeSent.set(true);
+      },
+      error: () => {
+        this.mfaSetupLoading.set(false);
+        this.toast.error('Could not start MFA setup. Please try again.');
+      },
     });
   }
 
   verifyMfa(): void {
     if (!/^\d{6}$/.test(this.mfaCode())) {
-      this.mfaError.set('Enter the 6-digit code from your authenticator app.');
+      this.mfaError.set('Enter the 6-digit code from your email.');
       return;
     }
+    if (this.mfaVerifyLoading()) return;
+    this.mfaVerifyLoading.set(true);
     this.mfaError.set(null);
-    this.mfaEnabled.set(true);
-    this.toast.success('Two-factor authentication enabled.');
+    this.auth.verifyMfa(this.mfaCode()).subscribe({
+      next: () => {
+        this.mfaVerifyLoading.set(false);
+        // Enrollment complete: drop the one-time code entry state.
+        this.mfaChallengeSent.set(false);
+        this.mfaCode.set('');
+        this.mfaEnabled.set(true);
+        this.toast.success('Two-factor authentication enabled.');
+      },
+      error: (err) => {
+        this.mfaVerifyLoading.set(false);
+        this.mfaError.set(err?.message ?? 'Invalid or expired code. Request a new one and try again.');
+      },
+    });
   }
 
   requestReset(): void {

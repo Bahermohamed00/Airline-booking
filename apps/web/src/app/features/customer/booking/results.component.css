@@ -376,3 +376,36 @@ h1 {
     display: contents;
   }
 }
+.no-match {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--na-space-3);
+  padding: var(--na-space-8) var(--na-space-6);
+}
+.no-match__icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+.no-match__title {
+  margin: 0;
+}
+.no-match__message {
+  margin: 0;
+  color: var(--na-ink-700);
+}
+.no-match__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--na-space-4);
+  margin-top: var(--na-space-2);
+}
+.no-match__modify {
+  font-weight: var(--na-font-semibold);
+}
+.alternatives {
+  margin-top: var(--na-space-6);
+}

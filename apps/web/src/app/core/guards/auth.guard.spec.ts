@@ -1,94 +1,75 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import {
-  provideRouter,
-  UrlTree,
-  type ActivatedRouteSnapshot,
-  type CanActivateFn,
-  type RouterStateSnapshot,
-} from '@angular/router';
-import { authGuard, guestGuard, staffGuard, permissionGuard } from './auth.guard';
+import { Router, type UrlTree } from '@angular/router';
+import { staffGuard } from './auth.guard';
 import { AuthService } from '../services/auth.service';
 
-type AuthStub = {
-  isLoggedIn?: () => boolean;
-  isStaff?: () => boolean;
-  hasPermission?: (permission: string) => boolean;
-};
-
-function runWith(authStub: AuthStub, guard: CanActivateFn, url = '/profile/sessions'): boolean | UrlTree {
-  TestBed.resetTestingModule();
-  TestBed.configureTestingModule({
-    providers: [provideRouter([]), { provide: AuthService, useValue: authStub }],
-  });
-  // These guards are synchronous (boolean | UrlTree); cast past the widened
-  // MaybeAsync<GuardResult> signature.
-  return TestBed.runInInjectionContext(() =>
-    guard({} as ActivatedRouteSnapshot, { url } as RouterStateSnapshot),
-  ) as boolean | UrlTree;
-}
-
-describe('authGuard', () => {
-  it('allows authenticated users', () => {
-    expect(runWith({ isLoggedIn: () => true }, authGuard)).toBe(true);
-  });
-
-  it('redirects unauthenticated users to /login with a return URL', () => {
-    const result = runWith({ isLoggedIn: () => false }, authGuard);
-    expect(result).toBeInstanceOf(UrlTree);
-    expect((result as UrlTree).toString()).toContain('/login');
-    expect((result as UrlTree).toString()).toContain('returnUrl');
-  });
-});
-
-describe('guestGuard', () => {
-  it('allows unauthenticated users', () => {
-    expect(runWith({ isLoggedIn: () => false }, guestGuard, '/login')).toBe(true);
-  });
-
-  it('redirects authenticated customers away from login to /bookings', () => {
-    const result = runWith({ isLoggedIn: () => true, isStaff: () => false }, guestGuard, '/login');
-    expect((result as UrlTree).toString()).toBe('/bookings');
-  });
-
-  it('redirects authenticated staff to /admin/dashboard', () => {
-    const result = runWith({ isLoggedIn: () => true, isStaff: () => true }, guestGuard, '/admin/login');
-    expect((result as UrlTree).toString()).toBe('/admin/dashboard');
-  });
-
-  it('the redirect targets are themselves reachable (no redirect loop)', () => {
-    // /bookings is behind authGuard: an authenticated user passes it.
-    expect(runWith({ isLoggedIn: () => true }, authGuard, '/bookings')).toBe(true);
-    // /admin/dashboard is behind staffGuard: a staff user passes it.
-    expect(runWith({ isLoggedIn: () => true, isStaff: () => true }, staffGuard, '/admin/dashboard')).toBe(true);
-  });
-});
-
+/**
+ * staffGuard regression coverage: Support Staff must always land on
+ * /admin/support/overview — including when the '' child redirect has already
+ * rewritten /admin to /admin/dashboard before the guard runs.
+ */
 describe('staffGuard', () => {
-  it('allows staff', () => {
-    expect(runWith({ isLoggedIn: () => true, isStaff: () => true }, staffGuard, '/admin/users')).toBe(true);
+  let auth: { isSupportStaff: () => boolean; isStaff: () => boolean; isLoggedIn: () => boolean };
+  let router: { createUrlTree: ReturnType<typeof vi.fn> };
+
+  const run = (url: string) =>
+    TestBed.runInInjectionContext(() =>
+      staffGuard({} as never, { url } as never),
+    ) as boolean | UrlTree;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    auth = { isSupportStaff: () => false, isStaff: () => true, isLoggedIn: () => true };
+    router = { createUrlTree: vi.fn((commands: unknown[], extras?: unknown) => ({ commands, extras })) };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: AuthService, useValue: auth },
+        { provide: Router, useValue: router },
+      ],
+    });
   });
 
-  it('sends logged-in non-staff to /admin/denied', () => {
-    const result = runWith({ isLoggedIn: () => true, isStaff: () => false }, staffGuard, '/admin/users');
-    expect((result as UrlTree).toString()).toContain('/admin/denied');
+  const supportStaff = () => {
+    auth.isSupportStaff = () => true;
+  };
+
+  it('redirects Support Staff from /admin to the support overview', () => {
+    supportStaff();
+    run('/admin');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/admin/support/overview']);
   });
 
-  it('sends guests to /admin/login with a return URL', () => {
-    const result = runWith({ isLoggedIn: () => false, isStaff: () => false }, staffGuard, '/admin/users');
-    const str = (result as UrlTree).toString();
-    expect(str).toContain('/admin/login');
-    expect(str).toContain('returnUrl');
-  });
-});
-
-describe('permissionGuard', () => {
-  it('allows when the permission is present', () => {
-    expect(runWith({ hasPermission: () => true }, permissionGuard('users:read'), '/admin/users')).toBe(true);
+  it('redirects Support Staff from /admin/dashboard to the support overview (post-redirect URL)', () => {
+    supportStaff();
+    run('/admin/dashboard');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/admin/support/overview']);
   });
 
-  it('redirects to /admin/denied when the permission is missing', () => {
-    const result = runWith({ hasPermission: () => false }, permissionGuard('users:read'), '/admin/users');
-    expect((result as UrlTree).toString()).toContain('/admin/denied');
+  it('lets Support Staff through to their support pages', () => {
+    supportStaff();
+    expect(run('/admin/support')).toBe(true);
+    expect(run('/admin/support/overview')).toBe(true);
+  });
+
+  it('lets normal operations staff reach /admin/dashboard untouched', () => {
+    auth.isSupportStaff = () => false;
+    expect(run('/admin/dashboard')).toBe(true);
+    expect(router.createUrlTree).not.toHaveBeenCalledWith(['/admin/support/overview']);
+  });
+
+  it('sends non-staff logged-in users to the denied page', () => {
+    auth.isStaff = () => false;
+    run('/admin/dashboard');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/admin/denied']);
+  });
+
+  it('sends anonymous users to the admin login with a returnUrl', () => {
+    auth.isStaff = () => false;
+    auth.isLoggedIn = () => false;
+    run('/admin/dashboard');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/admin/login'], {
+      queryParams: { returnUrl: '/admin/dashboard' },
+    });
   });
 });

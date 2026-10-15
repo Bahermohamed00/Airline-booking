@@ -76,6 +76,39 @@ describe('Password reset (e2e)', () => {
       .expect(400);
   });
 
+  it('a reset link stays single-use under concurrent submission (CAS)', async () => {
+    const user = await seedUser('race-reset@test.com', 'OldPassword123!');
+    await plantResetToken(user.id, 'race-token');
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/password-reset').send({ token: 'race-token', newPassword: 'NewPassword123!' }),
+      request(app.getHttpServer()).post('/api/auth/password-reset').send({ token: 'race-token', newPassword: 'NewPassword123!' }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 400]);
+
+    // Exactly one consume happened: token used once, password changed once.
+    const row = await prismaTestClient.passwordResetToken.findFirstOrThrow({ where: { userId: user.id } });
+    expect(row.usedAt).not.toBeNull();
+    await request(app.getHttpServer()).post('/api/auth/login').send({ email: 'race-reset@test.com', password: 'NewPassword123!' }).expect(200);
+    expect(
+      await prismaTestClient.auditLog.count({ where: { action: 'PASSWORD_RESET_COMPLETED', targetId: user.id } }),
+    ).toBe(1);
+  });
+
+  it('concurrent reset requests leave exactly one usable token (serialized issuance)', async () => {
+    const user = await seedUser('race-request@test.com', 'OldPassword123!');
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post('/api/auth/password-reset-request').send({ email: 'race-request@test.com' }),
+      request(app.getHttpServer()).post('/api/auth/password-reset-request').send({ email: 'race-request@test.com' }),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    const live = await prismaTestClient.passwordResetToken.findMany({ where: { userId: user.id, usedAt: null } });
+    expect(live).toHaveLength(1);
+  });
+
   it('rejects unknown and expired tokens', async () => {
     const user = await seedUser('expired@test.com', 'OldPassword123!');
     await plantResetToken(user.id, 'expired-token', -1000);

@@ -60,6 +60,8 @@ export interface ApiFlightSegment {
 export interface ApiFlight {
   id: string;
   flightNumber: string;
+  publicNumber: number;
+  tripType: 'ONE_WAY' | 'ROUND_TRIP';
   routeId: string;
   aircraftId: string;
   scheduleRuleId: string | null;
@@ -94,6 +96,8 @@ export function mapFlight(api: ApiFlight): Flight {
   return {
     id: api.id,
     flightNumber: api.flightNumber,
+    publicNumber: api.publicNumber,
+    tripType: api.tripType,
     routeId: api.routeId,
     route: {
       id: api.route.id,

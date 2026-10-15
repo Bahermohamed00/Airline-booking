@@ -1,0 +1,40 @@
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--na-space-3);
+  margin-top: var(--na-space-3);
+}
+.filters {
+  align-items: flex-end;
+}
+.filters__clear {
+  margin-left: auto;
+}
+.conversation__list {
+  list-style: none;
+  margin: var(--na-space-3) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--na-space-3);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.message { display: flex; }
+.message--incoming { justify-content: flex-start; }
+.message--outgoing { justify-content: flex-end; }
+.message__bubble {
+  max-width: 80%;
+  padding: var(--na-space-3);
+  border-radius: var(--na-radius-md);
+  border: 1px solid var(--na-border);
+}
+.message--incoming .message__bubble {
+  background: var(--na-surface-raised);
+  border-bottom-left-radius: 0;
+}
+.message--outgoing .message__bubble {
+  background: var(--na-blue-100, #e3edfb);
+  border-bottom-right-radius: 0;
+}
+.message__body { margin: var(--na-space-1) 0 0; white-space: pre-wrap; }

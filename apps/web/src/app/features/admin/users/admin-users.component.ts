@@ -56,7 +56,7 @@ export class AdminUsersPage {
 
     this.usersService.listUsers().subscribe({
       next: (users) => {
-        this.users.set(users.map((u) => this.toRow(u)));
+        this.users.set(users.map((u) => this.toRow(u)).filter((u) => this.isCustomerAccount(u)));
         this.loading.set(false);
       },
       error: () => {
@@ -64,6 +64,14 @@ export class AdminUsersPage {
         this.loading.set(false);
       },
     });
+  }
+
+  /**
+   * Customers hold no staff role. Mirrors AuthService.isStaff exactly: any
+   * non-Customer role makes the account staff. Role-based, never name-based.
+   */
+  private isCustomerAccount(u: User): boolean {
+    return !u.roles.some((role) => role !== 'Customer');
   }
 
   private toRow(u: ApiUser): User {

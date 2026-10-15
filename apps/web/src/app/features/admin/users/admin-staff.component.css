@@ -129,3 +129,9 @@ td {
     color: var(--na-ink-500);
   }
 }
+
+.row-actions {
+  display: flex;
+  gap: var(--na-space-2);
+  flex-wrap: wrap;
+}

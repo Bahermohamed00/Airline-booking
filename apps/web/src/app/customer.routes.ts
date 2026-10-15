@@ -34,5 +34,7 @@ export const CUSTOMER_ROUTES: Routes = [
   { path: 'profile', loadComponent: () => import('./features/customer/profile/profile.component').then((m) => m.ProfilePage), canActivate: [authGuard] },
   { path: 'profile/:section', loadComponent: () => import('./features/customer/profile/profile.component').then((m) => m.ProfilePage), canActivate: [authGuard] },
   { path: 'help', loadComponent: () => import('./features/customer/help/help.component').then((m) => m.HelpPage) },
+  // Customer Support (Developer B): complaint/request form. Authenticated customers only.
+  { path: 'support', loadComponent: () => import('./features/customer/support/support.component').then((m) => m.CustomerSupportPage), canActivate: [authGuard] },
   { path: '', pathMatch: 'full', redirectTo: 'search' },
 ];

@@ -129,4 +129,52 @@ describe('LoginPage', () => {
     expect(el.textContent).toContain('Invalid email or password.');
     expect(auth.logout).not.toHaveBeenCalled();
   });
+
+  it('shows the security-code step on an MFA challenge and completes login with the code', async () => {
+    const auth: AuthMock = {
+      login: vi
+        .fn()
+        .mockReturnValueOnce(of({ mfaRequired: true as const }))
+        .mockReturnValueOnce(of({ user: makeUser(['Customer']), accessToken: 't' })),
+      setSession: vi.fn(),
+      isStaff: () => false,
+      logout: vi.fn(),
+    };
+    await setup(null, auth);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+
+    const fixture = TestBed.createComponent(LoginPage);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    // Step 1: credentials → MFA challenge, code step appears, no session yet.
+    const email = el.querySelector<HTMLInputElement>('#email')!;
+    const password = el.querySelector<HTMLInputElement>('#password')!;
+    email.value = 'user@example.com';
+    password.value = 'Password123!';
+    email.dispatchEvent(new Event('input'));
+    password.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(auth.login).toHaveBeenCalledWith('user@example.com', 'Password123!', undefined);
+    expect(el.textContent).toContain('security code');
+    expect(el.querySelector<HTMLInputElement>('#mfaCode')).not.toBeNull();
+    expect(auth.setSession).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+
+    // Step 2: emailed code → login completes and navigates.
+    const code = el.querySelector<HTMLInputElement>('#mfaCode')!;
+    code.value = '482910';
+    code.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await fixture.whenStable();
+
+    expect(auth.login).toHaveBeenNthCalledWith(2, 'user@example.com', 'Password123!', '482910');
+    expect(auth.setSession).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/bookings');
+  });
 });

@@ -29,6 +29,8 @@ function flight(overrides: Partial<Flight> = {}): Flight {
   return {
     id: 'f1',
     flightNumber: 'NA100',
+    publicNumber: 100,
+    tripType: 'ONE_WAY',
     routeId: 'r1',
     route: {
       id: 'r1',
@@ -84,6 +86,7 @@ const PARAMS: Record<string, string> = {
 
 interface SetupOptions {
   searchFlights?: ReturnType<typeof vi.fn>;
+  findAlternatives?: ReturnType<typeof vi.fn>;
   params?: Record<string, string>;
 }
 
@@ -92,6 +95,7 @@ async function setup(opts: SetupOptions = {}) {
   const flightsApi = {
     searchFlights: opts.searchFlights ?? vi.fn(() => of([flight()])),
     adjacentDateAvailability: vi.fn(() => of([{ date: '2026-10-01', minPrice: 475 }])),
+    findAlternatives: opts.findAlternatives ?? vi.fn(() => of([])),
   };
 
   await TestBed.configureTestingModule({
@@ -133,7 +137,7 @@ describe('ResultsPage', () => {
 
     const card = el.querySelector('.cards .card');
     expect(card).not.toBeNull();
-    expect(card!.textContent).toContain('NA100');
+    expect(card!.textContent).toContain('FL-1100'); // public flight ID, not the UUID
     expect(card!.textContent).toContain('A350-900');
     expect(card!.textContent).toContain('FRA');
     expect(card!.textContent).toContain('JFK');
@@ -143,6 +147,45 @@ describe('ResultsPage', () => {
     // rules is null from the real API — no baggage/rule claims may be rendered
     expect(card!.textContent).not.toContain('checked bag');
     expect(card!.textContent).not.toContain('Refundable');
+  });
+
+  it('shows the friendly no-match page with same-route alternatives when the exact date has no flights', async () => {
+    const alternative = flight({
+      id: 'alt-1',
+      flightNumber: 'NA101',
+      publicNumber: 101,
+      operatingDate: '2026-10-02',
+      departureTime: '2026-10-02T16:30:00Z',
+      arrivalTime: '2026-10-02T20:30:00Z',
+    });
+    const { el, flightsApi } = await setup({
+      searchFlights: vi.fn(() => of([])),
+      findAlternatives: vi.fn(() => of([alternative])),
+    });
+
+    expect(el.textContent).toContain('No flights at this time');
+    expect(el.textContent).toContain("We couldn't find a flight from FRA to JFK");
+    expect(el.textContent).toContain('nearby alternatives');
+    expect(el.textContent).toContain('View alternative flights');
+    expect(el.textContent).toContain('Modify search');
+
+    const alt = el.querySelector('#alternatives .card')!;
+    expect(alt.textContent).toContain('FL-1101'); // 1000 + publicNumber(101)
+    expect(alt.querySelector('.card__price')?.textContent).toContain('475'); // 400+60+15
+    expect(alt.textContent).toContain('per passenger');
+    expect(alt.textContent).toContain('Select Flight');
+    expect(flightsApi.findAlternatives).toHaveBeenCalledOnce();
+    expect(el.querySelector('na-empty-state')).toBeNull();
+  });
+
+  it('shows the no-match page without an alternatives section when nothing nearby exists', async () => {
+    const { el } = await setup({ searchFlights: vi.fn(() => of([])) });
+
+    expect(el.textContent).toContain('No flights at this time');
+    expect(el.textContent).toContain('Modify search');
+    expect(el.textContent).not.toContain('View alternative flights');
+    expect(el.querySelector('#alternatives')).toBeNull();
+    expect(el.querySelector('.cards .card')).toBeNull();
   });
 
   it('shows a retryable error state when the flight search fails', async () => {
@@ -163,11 +206,10 @@ describe('ResultsPage', () => {
     expect(el.querySelector('.cards .card')).not.toBeNull();
   });
 
-  it('shows an empty state when no flights match', async () => {
+  it('shows the no-match page (not a bare empty state) when no flights match', async () => {
     const { el } = await setup({ searchFlights: vi.fn(() => of([])) });
 
-    expect(el.textContent).toContain('No flights match your search');
-    expect(el.querySelector('na-empty-state')).not.toBeNull();
+    expect(el.textContent).toContain('No flights at this time');
     expect(el.querySelector('.cards .card')).toBeNull();
   });
 

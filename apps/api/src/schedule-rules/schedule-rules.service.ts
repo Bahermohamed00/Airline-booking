@@ -1,6 +1,10 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { DashboardEventsService } from '../dashboard-events/dashboard-events.service.js';
+import { changedFieldsOf } from '../audit/changed-fields.js';
+import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { CreateScheduleRuleDto } from './dto/create-schedule-rule.dto.js';
 import { UpdateScheduleRuleDto } from './dto/update-schedule-rule.dto.js';
 
@@ -14,7 +18,11 @@ const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
 
 @Injectable()
 export class ScheduleRulesService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(DashboardEventsService) private readonly dashboardEvents: DashboardEventsService,
+  ) {}
 
   findAll() {
     return this.prisma.scheduleRule.findMany({ include: RULE_INCLUDE, orderBy: { flightNumber: 'asc' } });
@@ -28,12 +36,13 @@ export class ScheduleRulesService {
     return rule;
   }
 
-  async create(dto: CreateScheduleRuleDto) {
+  async create(dto: CreateScheduleRuleDto, actor: AuthUser) {
     await this.assertReferencesExist(dto.routeId, dto.aircraftId);
     this.assertValidRange(dto.effectiveFrom, dto.effectiveTo);
     await this.assertFlightNumberAvailable(dto.flightNumber);
+    let rule;
     try {
-      return await this.prisma.scheduleRule.create({
+      rule = await this.prisma.scheduleRule.create({
         data: {
           routeId: dto.routeId,
           aircraftId: dto.aircraftId,
@@ -50,9 +59,19 @@ export class ScheduleRulesService {
       this.rethrowUnique(error, dto.flightNumber);
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'SCHEDULE_RULE_CREATED',
+      targetType: 'ScheduleRule',
+      targetId: rule.id,
+      metadata: { flightNumber: rule.flightNumber },
+    });
+    await this.dashboardEvents.publish('schedule-rule.created');
+    return rule;
   }
 
-  async update(id: string, dto: UpdateScheduleRuleDto) {
+  async update(id: string, dto: UpdateScheduleRuleDto, actor: AuthUser) {
     const existing = await this.prisma.scheduleRule.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Schedule rule not found');
@@ -73,8 +92,9 @@ export class ScheduleRulesService {
       await this.assertFlightNumberAvailable(flightNumber);
     }
 
+    let rule;
     try {
-      return await this.prisma.scheduleRule.update({
+      rule = await this.prisma.scheduleRule.update({
         where: { id },
         data: {
           routeId,
@@ -92,6 +112,19 @@ export class ScheduleRulesService {
       this.rethrowUnique(error, flightNumber);
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'SCHEDULE_RULE_UPDATED',
+      targetType: 'ScheduleRule',
+      targetId: rule.id,
+      metadata: { flightNumber: rule.flightNumber, changedFields: changedFieldsOf(dto) },
+    });
+    await this.dashboardEvents.publish('schedule-rule.updated');
+    if (dto.status !== undefined) {
+      await this.dashboardEvents.publish('schedule-rule.status.changed');
+    }
+    return rule;
   }
 
   private async assertReferencesExist(routeId: string, aircraftId: string): Promise<void> {

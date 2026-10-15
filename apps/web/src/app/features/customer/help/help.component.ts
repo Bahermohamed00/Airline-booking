@@ -57,6 +57,16 @@ import { RouterLink } from '@angular/router';
           <p class="na-text-muted">Live schedule, delay, and gate information.</p>
           <a routerLink="/status">Check status</a>
         </section>
+        <section class="na-card help__card">
+          <span class="help__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+              <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+            </svg>
+          </span>
+          <h2>Contact support</h2>
+          <p class="na-text-muted">Submit a complaint or question and get a ticket number to reference.</p>
+          <a routerLink="/support">Submit a request</a>
+        </section>
       </div>
       <p class="help__note na-text-muted">NovaAir is an educational demo. No real flights, payments, or personal data are involved. Demo data is stored only in this browser session.</p>
     </div>

@@ -19,6 +19,8 @@ const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>
   { resource: 'payments', action: 'refund', description: 'Process refunds' },
   { resource: 'baggage', action: 'manage', description: 'Manage baggage records' },
   { resource: 'checkin', action: 'manage', description: 'Manage check-in and boarding' },
+  { resource: 'support', action: 'read', description: 'View support tickets' },
+  { resource: 'support', action: 'manage', description: 'Handle support tickets (claim/resolve/close/reopen)' },
   { resource: 'loyalty', action: 'manage', description: 'Manage loyalty accounts' },
   { resource: 'notifications', action: 'manage', description: 'Manage notifications' },
   { resource: 'reports', action: 'read', description: 'View and export reports' },
@@ -90,13 +92,10 @@ const ROLE_DEFS: Array<{
   },
   {
     name: 'Support Staff',
-    description: 'Customer and booking support',
+    description: 'Customer support',
     permissions: [
-      { resource: 'users', action: 'read' },
-      { resource: 'bookings', action: 'read' },
-      { resource: 'baggage', action: 'manage' },
-      { resource: 'checkin', action: 'manage' },
-      { resource: 'dashboard', action: 'read' },
+      { resource: 'support', action: 'read' },
+      { resource: 'support', action: 'manage' },
     ],
   },
 ];

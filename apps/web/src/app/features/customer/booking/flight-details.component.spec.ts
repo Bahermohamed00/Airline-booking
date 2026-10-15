@@ -33,6 +33,8 @@ function flight(rules: FareRule | null): Flight {
   return {
     id: 'f1',
     flightNumber: 'NA100',
+    publicNumber: 100,
+    tripType: 'ONE_WAY',
     routeId: 'r1',
     route: {
       id: 'r1', originAirportId: FRA.id, destinationAirportId: JFK.id,

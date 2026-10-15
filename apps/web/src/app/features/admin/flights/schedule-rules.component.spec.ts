@@ -345,6 +345,50 @@ describe('ScheduleRulesPage', () => {
     expect(m.toast.success).toHaveBeenCalledWith('Rule NV720 deactivated.');
     const row = el.querySelector('tbody tr')!;
     expect(row.textContent).toContain('INACTIVE');
-    expect(row.textContent).toContain('Activate');
+    expect(row.textContent).toContain('Reactivate');
+  });
+
+  it('reactivates an inactive rule via PATCH {status} after confirmation', async () => {
+    const m = mocks([rule({ status: 'INACTIVE' })]);
+    m.rules.updateRule.mockReturnValue(of(rule({ status: 'ACTIVE' })));
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    const buttons = [...el.querySelectorAll<HTMLElement>('.row-actions na-button button')];
+    buttons.find((b) => b.textContent!.trim() === 'Reactivate')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(el.textContent).toContain('Reactivate this rule?');
+
+    el.querySelector<HTMLElement>('na-dialog .btn--primary')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(m.rules.updateRule).toHaveBeenCalledWith('sr-1', { status: 'ACTIVE' });
+    expect(m.toast.success).toHaveBeenCalledWith('Rule NV720 reactivated.');
+  });
+
+  it('filters rules by status', async () => {
+    const m = mocks([rule(), rule({ id: 'sr-2', flightNumber: 'NV721', status: 'INACTIVE' })]);
+    const fixture = await setup(m);
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelectorAll('tbody tr').length).toBe(2);
+
+    const select = el.querySelector<HTMLSelectElement>('#rule-status-filter')!;
+    select.value = 'INACTIVE';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    const rows = el.querySelectorAll('tbody tr');
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.textContent).toContain('NV721');
+
+    select.value = 'ALL';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(el.querySelectorAll('tbody tr').length).toBe(2);
   });
 });

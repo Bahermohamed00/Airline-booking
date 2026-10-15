@@ -18,4 +18,13 @@ export const AUTH_THROTTLE = {
   emailVerification: { limit: 10, ttl: 60_000 },
   /** Online password guessing on the authenticated account. */
   changePassword: { limit: 5, ttl: 60_000 },
+  /** TOTP-code guessing when disabling MFA. */
+  mfaDisable: { limit: 5, ttl: 60_000 },
+  /** Account-creation flood; each call sends a verification email. */
+  register: { limit: 5, ttl: 60_000 },
+  /** Refresh-token churn; normal clients refresh once per access-token lifetime. */
+  refresh: { limit: 10, ttl: 60_000 },
+  /** TOTP setup/verification abuse (code guessing, secret churn). */
+  mfaSetup: { limit: 5, ttl: 60_000 },
+  mfaVerify: { limit: 5, ttl: 60_000 },
 } as const;

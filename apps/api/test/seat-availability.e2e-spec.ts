@@ -79,6 +79,8 @@ describe('Flight seat availability (e2e)', () => {
         cabinClass: 'ECONOMY',
         seatIds: [seatId],
         passengers: [{ firstName: 'Seat', lastName: 'Tester' }],
+        // Required by CreateBookingDto since the booking-idempotency contract.
+        idempotencyKey: randomUUID(),
       });
     expect(res.status).toBe(201);
     return { token, booking: res.body as { id: string } };

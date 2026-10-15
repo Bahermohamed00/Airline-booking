@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { debounceTime } from 'rxjs';
 import {
   DashboardService,
   type DashboardData,
@@ -6,6 +8,7 @@ import {
   type DashboardBooking,
   type DashboardRange,
 } from './dashboard.service';
+import { DashboardRealtimeService } from './dashboard-realtime.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
@@ -55,6 +58,8 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-d
 export class DashboardPage {
   private readonly dashboard = inject(DashboardService);
   private readonly auth = inject(AuthService);
+  private readonly realtime = inject(DashboardRealtimeService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly rangeOptions: SegmentOption[] = [
     { value: '7d', label: '7 days' },
@@ -116,6 +121,22 @@ export class DashboardPage {
 
   constructor() {
     this.load();
+    // Real-time invalidation: any flight/schedule-rule mutation nudges the
+    // dashboard to re-fetch authoritative stats via REST. Debounced so bursts
+    // of events coalesce into one request. 'sync' (post-reconnect) does one
+    // resync. If the socket never connects, the page simply stays REST-only.
+    this.realtime.connect();
+    this.realtime.invalidate$
+      .pipe(debounceTime(400), takeUntilDestroyed())
+      .subscribe(() => this.load());
+    // Angular destroys this component on navigation; drop the socket with it.
+    // (Constructor scope — takeUntilDestroyed covers the subscription.)
+    this.realtimeCleanup();
+  }
+
+  private realtimeCleanup(): void {
+    // Registered once; invoked by the DestroyRef on component teardown.
+    this.destroyRef.onDestroy(() => this.realtime.disconnect());
   }
 
   readonly kpiCards = computed<KpiCard[]>(() => {
@@ -126,7 +147,7 @@ export class DashboardPage {
         key: 'flights',
         label: 'Total flights',
         value: String(k.totalFlights),
-        hint: 'Next 7 days scheduled',
+        hint: 'All flights in the system',
       },
       {
         key: 'bookings',

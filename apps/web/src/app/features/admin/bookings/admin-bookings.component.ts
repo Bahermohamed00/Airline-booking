@@ -1,5 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
 import { AdminPaymentsService } from '../payments/admin-payments.service';
 import { AuditService, type AuditLogItem } from '../audit/audit.service';
@@ -170,20 +172,42 @@ export class AdminBookingsPage {
     })),
   );
 
+  private readonly route = inject(ActivatedRoute);
+
   constructor() {
-    this.load({});
+    // Deep link from Users & Passengers: /admin/bookings?email=<customer email>
+    // opens the list already filtered to that customer. A subscription (not a
+    // snapshot) re-fires when the param changes while already on the page, so
+    // picking a different customer always reloads — stale rows from a previous
+    // customer are never shown for a new selection.
+    let first = true;
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const email = params.get('email')?.trim() ?? '';
+      const changed = email !== this.emailInput().trim();
+      if (!first && !changed) return;
+      first = false;
+      if (changed) this.emailInput.set(email);
+      this.load(this.currentQuery());
+    });
   }
 
+  private loadEpoch = 0;
+
   load(query: AdminBookingQuery): void {
+    // Latest-request-wins: a slower response for a previous filter (e.g. an
+    // earlier customer deep link) must never overwrite newer results.
+    const epoch = ++this.loadEpoch;
     this.activeQuery.set(query);
     this.loading.set(true);
     this.loadError.set(null);
     this.bookingsService.listAdmin(query).subscribe({
       next: (list) => {
+        if (epoch !== this.loadEpoch) return;
         this.bookings.set(list);
         this.loading.set(false);
       },
       error: (err: unknown) => {
+        if (epoch !== this.loadEpoch) return;
         this.loadError.set(toErrorMessage(err, 'Could not load bookings. Please try again.'));
         this.loading.set(false);
       },

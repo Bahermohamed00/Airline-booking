@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
 import { Public } from '../auth/decorators/public.decorator.js';
 import { Permissions } from '../auth/decorators/permissions.decorator.js';
+import { CurrentUser, type AuthUser } from '../auth/decorators/current-user.decorator.js';
 
 @Controller('aircraft')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -34,13 +35,17 @@ export class AircraftController {
 
   @Post()
   @Permissions({ resource: 'aircraft', action: 'manage' })
-  create(@Body() dto: CreateAircraftDto): Promise<AircraftView> {
-    return this.aircraft.create(dto);
+  create(@Body() dto: CreateAircraftDto, @CurrentUser() actor: AuthUser): Promise<AircraftView> {
+    return this.aircraft.create(dto, actor);
   }
 
   @Patch(':id')
   @Permissions({ resource: 'aircraft', action: 'manage' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAircraftDto): Promise<AircraftView> {
-    return this.aircraft.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAircraftDto,
+    @CurrentUser() actor: AuthUser,
+  ): Promise<AircraftView> {
+    return this.aircraft.update(id, dto, actor);
   }
 }

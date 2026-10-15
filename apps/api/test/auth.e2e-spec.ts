@@ -5,7 +5,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { prismaTestClient, registerVerifiedUser, resetDatabase } from './test-utils.js';
+import { prismaTestClient, registerVerifiedUser, resetDatabase, generateTestNationalId } from './test-utils.js';
 
 describe('AuthController (e2e)', () => {
   let app: INestApplication<App>;
@@ -41,6 +41,9 @@ describe('AuthController (e2e)', () => {
         firstName: 'Test',
         lastName: 'Customer',
         dateOfBirth: '1990-01-01',
+        phone: '+49 170 1234567',
+        streetAddress: 'Hauptstraße 12',
+        nationalId: generateTestNationalId(),
       })
       .expect(201);
 

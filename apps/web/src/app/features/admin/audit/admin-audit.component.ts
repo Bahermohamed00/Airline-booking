@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { AUDIT_EVENTS, AuditService, type AuditLogItem } from './audit.service';
+import { AUDIT_EVENTS, AuditService, auditEventLabel, targetTypeLabel, type AuditLogItem } from './audit.service';
+import { FLIGHT_STATUS_MAP, statusLabel } from '../../../core/status-maps';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
@@ -9,6 +10,43 @@ import { NaButton } from '../../../shared/ui/button.component';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 const ACTOR_TYPES = ['User', 'Staff', 'Guest', 'System'];
+
+/** Friendly labels for the server-whitelisted audit metadata keys (scalars only). */
+const METADATA_KEY_LABELS: Record<string, string> = {
+  changedFields: 'Changed fields',
+  roleIds: 'Role IDs',
+  reason: 'Reason',
+  operation: 'Operation',
+  otherSessionsRevoked: 'Other sessions revoked',
+  email: 'Email',
+  bookingReference: 'Booking reference',
+  flightNumber: 'Flight number',
+  seatNumbers: 'Seats',
+  holdCount: 'Held seats',
+  paymentId: 'Payment ID',
+  refundId: 'Refund ID',
+  amount: 'Amount',
+  currency: 'Currency',
+  providerReference: 'Provider reference',
+  title: 'Title',
+  iataCode: 'IATA code',
+  registration: 'Registration',
+  flightsCreated: 'Flights created',
+  flightsUpdated: 'Flights updated',
+  previousStatus: 'Previous status',
+  newStatus: 'New status',
+  ticketNumber: 'Ticket number',
+  purpose: 'Purpose',
+};
+
+/** Formats a sanitized metadata value for display; status enums get readable labels. */
+function metadataValue(key: string, value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ');
+  if (key === 'previousStatus' || key === 'newStatus') {
+    return statusLabel(FLIGHT_STATUS_MAP, String(value)).label;
+  }
+  return String(value);
+}
 
 @Component({
   selector: 'na-admin-audit',
@@ -23,6 +61,9 @@ export class AdminAuditPage implements OnInit {
 
   readonly events = AUDIT_EVENTS;
   readonly actorTypes = ACTOR_TYPES;
+  /** Display-only mappings; raw values stay the API/filter contract. */
+  readonly eventLabel = auditEventLabel;
+  readonly recordTypeLabel = targetTypeLabel;
   readonly limit = 20;
 
   readonly logs = signal<AuditLogItem[]>([]);
@@ -122,8 +163,20 @@ export class AdminAuditPage implements OnInit {
     return Object.keys(log.metadata).length > 0;
   }
 
-  metadataJson(log: AuditLogItem): string {
-    return JSON.stringify(log.metadata, null, 2);
+  /** Actor display name; never falls back to showing an ID as if it were a name. */
+  actorDisplayName(log: AuditLogItem): string {
+    if (log.actorName) return log.actorName;
+    if (log.actorType === 'Guest') return 'Guest';
+    if (log.actorType === 'System') return 'System';
+    return 'Unknown user';
+  }
+
+  /** Metadata as friendly label/value rows. The API only sends whitelisted scalars. */
+  metadataEntries(log: AuditLogItem): { label: string; value: string }[] {
+    return Object.entries(log.metadata).map(([key, value]) => ({
+      label: METADATA_KEY_LABELS[key] ?? key,
+      value: metadataValue(key, value),
+    }));
   }
 
   toggle(id: string): void {

@@ -5,11 +5,17 @@ model User {
   firstName      String    @map("first_name") @db.VarChar(100)
   lastName       String    @map("last_name") @db.VarChar(100)
   phone          String?   @db.VarChar(50)
+  // Nullable at the DB level (legacy rows + admin-created staff may lack one);
+  // required at registration via RegisterDto.
+  streetAddress  String?   @map("street_address") @db.VarChar(255)
+  // Egyptian national ID: 14 digits. Nullable (legacy rows + admin-created staff);
+  // required at customer registration via RegisterDto. Unique, owner-only exposure.
+  nationalId     String?   @unique @map("national_id") @db.VarChar(14)
   dateOfBirth    DateTime? @map("date_of_birth") @db.Date
   emailVerified  Boolean   @default(false) @map("email_verified")
-  mfaSecret      String?   @map("mfa_secret") @db.VarChar(255)
+  // Email-OTP MFA only (TOTP removed — see migration 20261015_email_otp_mfa):
+  // enabled means every login requires an emailed 6-digit code.
   mfaEnabled     Boolean   @default(false) @map("mfa_enabled")
-  mfaBackupCodes String?   @map("mfa_backup_codes") @db.Text
   status         UserStatus @default(ACTIVE)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -24,6 +30,10 @@ model User {
   sessions       Session[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
+  mfaEmailTokens          MfaEmailToken[]
+  supportTickets          SupportTicket[]        @relation("CustomerTickets")
+  assignedTickets         SupportTicket[]        @relation("TicketAssignee")
+  supportMessages         SupportMessage[]
 
   @@map("users")
 }

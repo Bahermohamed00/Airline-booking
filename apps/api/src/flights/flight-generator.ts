@@ -33,21 +33,32 @@ export interface FareDraft {
  * equal to the aircraft's cabin seat counts. No randomness anywhere.
  */
 export function computeFareDrafts(distanceKm: number, capacity: number): FareDraft[] {
+  const economyBase = Math.round(ECONOMY_BASE_FLAT + distanceKm * ECONOMY_BASE_PER_KM);
+  return computeFareDraftsFromBase(economyBase, capacity);
+}
+
+/**
+ * Fare drafts from an explicit economy base price (e.g. entered by the Flight
+ * Manager): same 16% tax / 4% fee convention and cabin multipliers as the
+ * distance-based generator, so manually created flights price identically in
+ * structure to generated ones.
+ */
+export function computeFareDraftsFromBase(economyBase: number, capacity: number): FareDraft[] {
   const cabinSeats = new Map<CabinClass, number>();
   for (const seat of generateSeatMap(capacity)) {
     cabinSeats.set(seat.cabinClass, (cabinSeats.get(seat.cabinClass) ?? 0) + 1);
   }
-  const economyBase = Math.round(ECONOMY_BASE_FLAT + distanceKm * ECONOMY_BASE_PER_KM);
+  const base = Math.round(economyBase * 100) / 100;
   const draft = (cabinClass: CabinClass, basePrice: number): FareDraft => ({
     cabinClass,
-    basePrice,
+    basePrice: Math.round(basePrice),
     taxAmount: Math.round(basePrice * TAX_RATE),
     feeAmount: Math.round(basePrice * FEE_RATE),
     availableCount: cabinSeats.get(cabinClass) ?? 0,
   });
-  const fares = [draft(CabinClass.ECONOMY, economyBase)];
-  if (cabinSeats.has(CabinClass.BUSINESS)) fares.push(draft(CabinClass.BUSINESS, Math.round(economyBase * BUSINESS_MULTIPLIER)));
-  if (cabinSeats.has(CabinClass.FIRST)) fares.push(draft(CabinClass.FIRST, Math.round(economyBase * FIRST_MULTIPLIER)));
+  const fares = [draft(CabinClass.ECONOMY, base)];
+  if (cabinSeats.has(CabinClass.BUSINESS)) fares.push(draft(CabinClass.BUSINESS, Math.round(base * BUSINESS_MULTIPLIER)));
+  if (cabinSeats.has(CabinClass.FIRST)) fares.push(draft(CabinClass.FIRST, Math.round(base * FIRST_MULTIPLIER)));
   return fares;
 }
 
@@ -98,7 +109,6 @@ export interface GenerationSummary {
 export async function generateFlights(db: GeneratorDb, from: string, to: string): Promise<GenerationSummary> {
   const rules = await db.scheduleRule.findMany({
     where: {
-      status: 'ACTIVE',
       effectiveFrom: { lte: new Date(`${to}T00:00:00Z`) },
       effectiveTo: { gte: new Date(`${from}T00:00:00Z`) },
     },
@@ -119,6 +129,12 @@ export async function generateFlights(db: GeneratorDb, from: string, to: string)
   };
 
   for (const rule of rules) {
+    // Deactivated rules never generate — the run rejects them explicitly so
+    // the operator sees why, and existing flights stay untouched.
+    if (rule.status !== 'ACTIVE') {
+      summary.skippedRules.push({ flightNumber: rule.flightNumber, reason: 'rule is deactivated' });
+      continue;
+    }
     const durationMinutes = rule.route.durationMinutes;
     if (!durationMinutes || durationMinutes <= 0) {
       summary.skippedRules.push({ flightNumber: rule.flightNumber, reason: 'route has no durationMinutes' });
@@ -136,21 +152,30 @@ export async function generateFlights(db: GeneratorDb, from: string, to: string)
       const operatingDate = new Date(`${date}T00:00:00Z`);
 
       await db.$transaction(async (tx) => {
+        // status/scheduleStatus are lifecycle-owned: set them only when the
+        // flight is first created. Regeneration must never reset a manually
+        // or automatically advanced (or cancelled) flight.
         const flightData = {
           flightNumber: rule.flightNumber,
           routeId: rule.routeId,
           aircraftId: rule.aircraftId,
           departureTime,
           arrivalTime,
-          status: FlightStatus.SCHEDULED,
-          scheduleStatus: FlightScheduleStatus.ONTIME,
         };
         const existingFlight = await tx.flight.findUnique({
           where: { scheduleRuleId_operatingDate: { scheduleRuleId: rule.id, operatingDate } },
         });
         const flight = existingFlight
           ? await tx.flight.update({ where: { id: existingFlight.id }, data: flightData })
-          : await tx.flight.create({ data: { ...flightData, scheduleRuleId: rule.id, operatingDate } });
+          : await tx.flight.create({
+              data: {
+                ...flightData,
+                status: FlightStatus.SCHEDULED,
+                scheduleStatus: FlightScheduleStatus.ONTIME,
+                scheduleRuleId: rule.id,
+                operatingDate,
+              },
+            });
         if (existingFlight) summary.flightsUpdated++;
         else summary.flightsCreated++;
 

@@ -1,26 +1,21 @@
 import { Injectable, Inject, NotFoundException, ConflictException } from '@nestjs/common';
 import { Airport, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { DashboardEventsService } from '../dashboard-events/dashboard-events.service.js';
+import { changedFieldsOf } from '../audit/changed-fields.js';
+import type { AuthUser } from '../auth/decorators/current-user.decorator.js';
 import { CreateAirportDto } from './dto/create-airport.dto.js';
 import { UpdateAirportDto } from './dto/update-airport.dto.js';
-
-export type AirportView = Omit<Airport, 'latitude' | 'longitude'> & {
-  latitude: number | null;
-  longitude: number | null;
-};
-
-/** Serializes Prisma Decimal coordinates to plain numbers for API responses. */
-export function toAirportView(airport: Airport): AirportView {
-  return {
-    ...airport,
-    latitude: airport.latitude === null ? null : Number(airport.latitude),
-    longitude: airport.longitude === null ? null : Number(airport.longitude),
-  };
-}
+import { toAirportView, type AirportView } from './airport-view.js';
 
 @Injectable()
 export class AirportsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(AuditService) private readonly auditService: AuditService,
+    @Inject(DashboardEventsService) private readonly dashboardEvents: DashboardEventsService,
+  ) {}
 
   async findAll(): Promise<AirportView[]> {
     const airports = await this.prisma.airport.findMany({ orderBy: { iataCode: 'asc' } });
@@ -35,18 +30,28 @@ export class AirportsService {
     return this.toView(airport);
   }
 
-  async create(dto: CreateAirportDto): Promise<AirportView> {
+  async create(dto: CreateAirportDto, actor: AuthUser): Promise<AirportView> {
     await this.assertIataAvailable(dto.iataCode);
+    let airport: Airport;
     try {
-      const airport = await this.prisma.airport.create({ data: dto });
-      return this.toView(airport);
+      airport = await this.prisma.airport.create({ data: dto });
     } catch (error) {
       this.rethrowUnique(error, `An airport with IATA code ${dto.iataCode} already exists`);
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'AIRPORT_CREATED',
+      targetType: 'Airport',
+      targetId: airport.id,
+      metadata: { iataCode: airport.iataCode },
+    });
+    await this.dashboardEvents.publish('airport.created');
+    return this.toView(airport);
   }
 
-  async update(id: string, dto: UpdateAirportDto): Promise<AirportView> {
+  async update(id: string, dto: UpdateAirportDto, actor: AuthUser): Promise<AirportView> {
     const existing = await this.prisma.airport.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Airport not found');
@@ -54,13 +59,23 @@ export class AirportsService {
     if (dto.iataCode && dto.iataCode !== existing.iataCode) {
       await this.assertIataAvailable(dto.iataCode);
     }
+    let airport: Airport;
     try {
-      const airport = await this.prisma.airport.update({ where: { id }, data: dto });
-      return this.toView(airport);
+      airport = await this.prisma.airport.update({ where: { id }, data: dto });
     } catch (error) {
       this.rethrowUnique(error, `An airport with IATA code ${dto.iataCode} already exists`);
       throw error;
     }
+    await this.auditService.log({
+      actorId: actor.userId,
+      actorType: 'Staff',
+      action: 'AIRPORT_UPDATED',
+      targetType: 'Airport',
+      targetId: airport.id,
+      metadata: { changedFields: changedFieldsOf(dto) },
+    });
+    await this.dashboardEvents.publish('airport.updated');
+    return this.toView(airport);
   }
 
   private async assertIataAvailable(iataCode: string): Promise<void> {
