@@ -41,7 +41,13 @@
                 <td data-label="Tag number" class="na-text-mono">{{ bag.tagNumber ?? '—' }}</td>
                 <td data-label="Type">{{ bag.type }}</td>
                 <td data-label="Weight">
-                  {{ bag.weightKg != null ? bag.weightKg + ' kg' : '—' }}
+                  <!-- weightKg is optional in the schema and never captured at
+                       issuance — show an honest empty state, never a fake number. -->
+                  @if (bag.weightKg != null) {
+                    {{ bag.weightKg }} kg
+                  } @else {
+                    <span class="na-text-muted">Not recorded</span>
+                  }
                 </td>
                 <td data-label="Pieces">{{ bag.pieces }}</td>
                 <td data-label="Status">

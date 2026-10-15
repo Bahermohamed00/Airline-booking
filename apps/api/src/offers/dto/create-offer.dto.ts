@@ -1,5 +1,5 @@
-import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
-import { OfferStatus } from '@prisma/client';
+import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
+import { CabinClass, DiscountType, OfferStatus } from '@prisma/client';
 import { TrimString } from '../../auth/dto/transforms.js';
 import { ISO_DATE_PATTERN } from '../../schedule-rules/dto/create-schedule-rule.dto.js';
 
@@ -56,4 +56,20 @@ export class CreateOfferDto {
 
   @Matches(ISO_DATE_PATTERN, { message: 'validUntil must be a yyyy-mm-dd date' })
   validUntil!: string;
+
+  @IsOptional()
+  @IsEnum(DiscountType)
+  discountType?: DiscountType;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  discountValue?: number;
+
+  @IsOptional()
+  @IsUUID('4')
+  routeId?: string;
+
+  @IsOptional()
+  @IsEnum(CabinClass)
+  cabinClass?: CabinClass;
 }

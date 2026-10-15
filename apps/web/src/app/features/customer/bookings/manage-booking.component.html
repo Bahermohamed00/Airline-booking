@@ -24,9 +24,17 @@
         </h1>
         <p class="na-text-muted">Booked {{ fmt(b.bookedAt) }}</p>
       </div>
-      <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, b.status).tone">
-        {{ statusLabel(BOOKING_STATUS_MAP, b.status).label }}
-      </na-badge>
+      <div class="head__badges">
+        <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, b.status).tone">
+          {{ statusLabel(BOOKING_STATUS_MAP, b.status).label }}
+        </na-badge>
+        @if (b.cancellationRequest?.status === 'PENDING') {
+          <na-badge tone="warning">Cancellation requested — pending review</na-badge>
+        }
+        @if (b.cancellationRequest?.status === 'APPROVED' && b.status !== 'CANCELLED') {
+          <na-badge tone="info">Cancellation approved</na-badge>
+        }
+      </div>
     </header>
 
     <div class="grid">
@@ -110,16 +118,32 @@
           </na-alert>
         }
 
+        @if (paymentInfo(); as info) {
+          <na-alert tone="info" title="Payment update">{{ info }}</na-alert>
+        }
+
         @if (b.status === 'PENDING') {
-          <div class="pay-due">
-            <p class="pay-due__amount">
-              Payment due: <strong>{{ money(b.totalAmount, b.currency) }}</strong>
-            </p>
-            <p class="na-text-muted na-text-small">
-              Your seats stay held while payment is pending. Pay now to confirm the booking.
-            </p>
-            <na-button variant="primary" (clicked)="startPayment()">Pay now</na-button>
-          </div>
+          @if (resumeAvailable()) {
+            <na-alert tone="info" icon="⏳" title="Payment in progress">
+              You already started a payment for this booking. You can continue the existing
+              payment attempt — no new charge will be created.
+              <div class="pay-resume">
+                <na-button variant="secondary" size="sm" (clicked)="resumePayment()"
+                  >Complete payment</na-button
+                >
+              </div>
+            </na-alert>
+          } @else {
+            <div class="pay-due">
+              <p class="pay-due__amount">
+                Payment due: <strong>{{ money(b.totalAmount, b.currency) }}</strong>
+              </p>
+              <p class="na-text-muted na-text-small">
+                Your seats stay held while payment is pending. Pay now to confirm the booking.
+              </p>
+              <na-button variant="primary" (clicked)="startPayment()">Pay now</na-button>
+            </div>
+          }
         }
 
         @if (paymentsError()) {
@@ -205,17 +229,65 @@
         <p class="total">
           Total: <strong>{{ money(b.totalAmount, b.currency) }}</strong>
         </p>
+        @if (b.extras && b.extras.length > 0) {
+          <ul class="extras-list na-text-small na-text-muted" aria-label="Purchased extras">
+            @for (e of b.extras; track e.id) {
+              <li>
+                {{ e.name }}{{ e.quantity > 1 ? ' ×' + e.quantity : '' }}
+                @if (e.passengerIndex !== null) {
+                  · {{ b.passengers[e.passengerIndex]?.firstName || 'Passenger ' + (e.passengerIndex + 1) }}
+                }
+                — {{ money(e.totalPrice, e.currency) }}
+              </li>
+            }
+          </ul>
+        }
+        @if (offerSavings(b); as savings) {
+          <p class="per-pax na-text-muted na-text-small">{{ savings }}</p>
+        }
         @if (b.perPassengerTotal !== null) {
           <p class="per-pax na-text-muted na-text-small">
             {{ money(b.perPassengerTotal, b.currency) }} per passenger
           </p>
         }
+        @if (requestPending()) {
+          <na-alert tone="warning" icon="⏳" title="Cancellation requested — pending review">
+            Our team is reviewing your cancellation request. Your booking remains active until a
+            decision is made — no further cancellation action is needed.
+          </na-alert>
+        }
+        @if (requestApproved()) {
+          <na-alert tone="info" title="Cancellation approved — refund in progress">
+            Your cancellation was approved and the refund is being processed. This booking will be
+            cancelled once the refund completes.
+          </na-alert>
+        }
+        @if (requestRejected()) {
+          <na-alert tone="danger" icon="✕" title="Cancellation request rejected">
+            @if (b.cancellationRequest?.rejectionReason; as rejection) {
+              {{ rejection }}
+            } @else {
+              Your cancellation request was rejected.
+            }
+            Your booking remains active. You can submit a new request below.
+          </na-alert>
+        }
         <div class="actions">
-          @if (b.status === 'PENDING') {
+          @if (cancelAvailable()) {
             <na-button variant="danger" (clicked)="cancelOpen.set(true)">Cancel booking</na-button>
+          }
+          @if (requestAvailable()) {
+            <na-button variant="danger" (clicked)="openRequestDialog()"
+              >Request cancellation</na-button
+            >
           }
           <a routerLink="/search" class="rebook-link">Rebook / search flights</a>
         </div>
+        @if (cancelUnavailable()) {
+          <p class="na-text-muted na-text-small">
+            Cancellation is no longer available for this booking.
+          </p>
+        }
       </section>
     </div>
 
@@ -225,6 +297,7 @@
       confirmLabel="Cancel booking"
       cancelLabel="Keep booking"
       [confirmDanger]="true"
+      [confirmDisabled]="cancelling()"
       (cancelled)="cancelOpen.set(false)"
       (confirmed)="confirmCancel()"
     >
@@ -236,22 +309,121 @@
     </na-dialog>
 
     <na-dialog
+      [open]="requestOpen()"
+      title="Request cancellation"
+      confirmLabel="Submit request"
+      cancelLabel="Keep booking"
+      [confirmDanger]="true"
+      [confirmDisabled]="requesting() || reasonControl.invalid"
+      (cancelled)="requestOpen.set(false)"
+      (confirmed)="submitCancellationRequest()"
+    >
+      <p>
+        Booking <strong>{{ b.bookingReference }}</strong>
+        @if (b.flight) {
+          · departs {{ fmt(b.flight.departureTime) }}
+        }
+      </p>
+      @if (preview(); as p) {
+        @if (p.refundPercentage === 100) {
+          <p>
+            Estimated refund: if approved, you will receive a full refund of
+            <strong>{{ money(p.refundAmount, p.currency) }}</strong>.
+          </p>
+        } @else if (p.refundPercentage > 0) {
+          <p>
+            Estimated refund: if approved, you will receive
+            <strong>{{ money(p.refundAmount, p.currency) }}</strong> back.
+            {{ money(p.retainedAmount, p.currency) }} will be retained according to the
+            cancellation policy.
+          </p>
+        } @else {
+          <p>
+            This booking is eligible for cancellation, but
+            <strong>no refund will be issued</strong>.
+          </p>
+        }
+        <p class="na-text-muted na-text-small">
+          The exact refund is confirmed when your request is approved and processed.
+        </p>
+      }
+      <p>
+        Your booking will remain active while our team reviews your request. You will be notified
+        of the decision.
+      </p>
+      <div class="na-field">
+        <label class="na-label" for="cancel-reason"
+          >Reason <span class="na-hint">(optional, max 500 characters)</span></label
+        >
+        <textarea
+          id="cancel-reason"
+          class="na-input"
+          rows="3"
+          maxlength="500"
+          [formControl]="reasonControl"
+        ></textarea>
+        @if (reasonControl.hasError('maxlength')) {
+          <p class="na-error">Reason must be at most 500 characters.</p>
+        }
+      </div>
+    </na-dialog>
+
+    <na-dialog
       [open]="payOpen()"
       title="Pay for your booking"
-      [confirmLabel]="processing() ? 'Processing…' : 'Pay ' + money(b.totalAmount, b.currency)"
+      [confirmLabel]="payConfirmLabel()"
       cancelLabel="Not now"
+      [confirmDisabled]="payConfirmDisabled()"
       (cancelled)="onPayDialogCancelled()"
       (confirmed)="confirmPayment()"
     >
-      <p>
-        You are paying <strong>{{ money(b.totalAmount, b.currency) }}</strong> for booking
-        <span class="na-text-mono">{{ b.bookingReference }}</span
-        >.
-      </p>
-      <p class="na-text-muted na-text-small">
-        Payment is handled by a mock provider — no card data is collected or stored here. The
-        booking is confirmed as soon as the payment succeeds.
-      </p>
+      <div class="pay">
+        <p class="pay__lead">Complete your payment</p>
+
+        <dl class="pay__summary">
+          <div class="pay__row">
+            <dt>Booking</dt>
+            <dd class="na-text-mono">{{ b.bookingReference }}</dd>
+          </div>
+          <div class="pay__row pay__row--total">
+            <dt>Amount due</dt>
+            <dd class="pay__amount">{{ money(b.totalAmount, b.currency) }}</dd>
+          </div>
+        </dl>
+
+        @if (stripeFlow()) {
+          <div class="pay__method">
+            <span class="pay__method-label" id="pay-method-label">Payment method</span>
+            @if (payState() === 'creating') {
+              <div class="pay__loading" role="status" aria-live="polite">
+                <na-skeleton [rows]="[1, 1]" height="2.75rem" />
+                <span class="na-text-muted na-text-small">Preparing secure payment…</span>
+              </div>
+            }
+            <!-- The Stripe Payment Element mounts here; card data never touches NovaAir. -->
+            <div
+              #paymentElement
+              class="pay__element"
+              [class.pay__element--hidden]="payState() === 'creating'"
+              aria-labelledby="pay-method-label"
+            ></div>
+          </div>
+
+          @if (paymentNotice(); as note) {
+            <p class="pay__notice" role="status" aria-live="polite">{{ note }}</p>
+          }
+
+          <p class="pay__secure na-text-muted na-text-small">
+            <span aria-hidden="true">🔒</span>
+            Secure payment powered by Stripe. NovaAir never sees or stores your card details.
+          </p>
+        } @else {
+          <p class="na-text-muted na-text-small">
+            This environment uses NovaAir’s simulated payment provider — confirming completes
+            the payment immediately.
+          </p>
+        }
+      </div>
     </na-dialog>
   }
 </div>

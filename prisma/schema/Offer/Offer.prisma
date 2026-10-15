@@ -7,9 +7,17 @@ enum OfferStatus {
   @@map("offer_status")
 }
 
+enum DiscountType {
+  PERCENT
+  FIXED_AMOUNT
+
+  @@map("discount_type")
+}
+
 model Offer {
   id          String      @id @default(uuid()) @db.Uuid
-  // Marketing/catalog data only — deliberately no relation to fares/bookings.
+  // Catalog data + optional bookable discount terms (BR-16). An Offer with
+  // discountType set is bookable; without it the Offer stays marketing-only.
   title       String      @unique @db.VarChar(120)
   description String      @db.VarChar(600)
   badge       String?     @db.VarChar(60)
@@ -20,8 +28,18 @@ model Offer {
   status      OfferStatus @default(DRAFT)
   validFrom   DateTime    @map("valid_from") @db.Date
   validUntil  DateTime    @map("valid_until") @db.Date
+  // Bookable discount terms (nullable: marketing-only offers stay valid).
+  // Discount applies to the fare basePrice only, never to taxes/fees.
+  discountType  DiscountType? @map("discount_type")
+  discountValue Decimal?      @map("discount_value") @db.Decimal(12, 2)
+  // Optional eligibility scope. NULL = unrestricted; both set = AND-combined.
+  routeId       String?       @map("route_id") @db.Uuid
+  cabinClass    CabinClass?   @map("cabin_class")
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  route    Route?    @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  bookings Booking[]
 
   @@index([status, validFrom, validUntil])
   @@map("offers")

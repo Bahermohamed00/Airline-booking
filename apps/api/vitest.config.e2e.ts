@@ -25,6 +25,10 @@ export default defineConfig({
     // Adapter selection itself is unit-tested in src/mail/mail.module.spec.ts.
     env: {
       NOTIFICATION_PROVIDER: 'mock',
+      // The payments e2e specs exercise the deterministic mock provider flow;
+      // never let a developer's PAYMENT_PROVIDER=stripe leak real Stripe calls
+      // into the suite. Stripe itself is covered by unit specs + live tests.
+      PAYMENT_PROVIDER: 'mock',
     },
     // All e2e suites share one test database and truncate it in beforeEach,
     // so files must run one at a time to avoid TRUNCATE lock contention.

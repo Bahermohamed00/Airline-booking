@@ -111,7 +111,7 @@ Canonical vocabulary follows `CONTEXT.md`. The database holds **37 models** in t
 ### 4.6 Loyalty, Offers & Engagement
 
 - **LoyaltyAccount / LoyaltyTransaction** — miles balance and earn/spend history.
-- **Offer** — marketing offer with lifecycle DRAFT / ACTIVE / INACTIVE / EXPIRED and a validity window; public visibility is filtered server-side. Deliberately **not** coupled to pricing.
+- **Offer** — offer with lifecycle DRAFT / ACTIVE / INACTIVE / EXPIRED and a validity window; public visibility is filtered server-side. **Bookable since 2026-10-08 (BR-16):** an offer with `discountType` (PERCENT / FIXED_AMOUNT) discounts the base fare at booking time (server-computed, snapshotted into the booking); `discountType = null` stays marketing-only. Supersedes the Phase ≤5 design where offers were deliberately **not** coupled to pricing — see `docs/adr/0005-bookable-offers.md`.
 - **NotificationTemplate / Notification** — templated customer notifications with delivery status.
 
 ### 4.7 Operations & Governance
@@ -124,7 +124,7 @@ Canonical vocabulary follows `CONTEXT.md`. The database holds **37 models** in t
 
 ---
 
-## 5. Business Rules (BR-01 – BR-15)
+## 5. Business Rules (BR-01 – BR-16)
 
 | Rule  | Statement                                                                           | Enforcement in system                                                                                                                       | Status     |
 | ----- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
@@ -143,6 +143,7 @@ Canonical vocabulary follows `CONTEXT.md`. The database holds **37 models** in t
 | BR-13 | Temporary seat hold during checkout; auto-expiry if unpaid.                         | 15-minute ACTIVE hold, one-active-per-seat DB index, cron expiry every minute + in-transaction self-heal.                                   | Live       |
 | BR-14 | Admin confirmation without payment only via audited exception workflow.             | `POST /api/admin/bookings/:id/confirm-exception` — requires written justification (≥10 chars), always audited, never creates a Payment row. | Live (API) |
 | BR-15 | Cancellation/refund amounts follow fare rules, cancellation fees, original payment. | Admin cancellation auto-computes the fare-policy refund target and marks the payment REFUNDED once reached.                                 | Live (API) |
+| BR-16 | Bookable offers discount the base fare only (PERCENT / FIXED_AMOUNT), one offer per booking, computed server-side and snapshotted. | Optional Offer `routeId`/`cabinClass` eligibility (NULL = unrestricted, both = AND); `POST /api/bookings` accepts `offerId` (idempotency hash includes it); integer-cent discount in the creation transaction; terms snapshot in `fareRulesSnapshot.offer`; `POST /api/bookings/price-preview`; usage-gated permanent delete (409 `OFFER_IN_USE`). | Live |
 
 ---
 
@@ -166,7 +167,7 @@ Canonical vocabulary follows `CONTEXT.md`. The database holds **37 models** in t
 | C12 | Passenger data (FR-C08)                  | Validated passenger forms + contact details (prefilled from account).                                                             | `/booking/passengers`                                                    | Live                                                |
 | C13 | Seat selection with hold (FR-C09, BR-13) | Real seat map per aircraft; occupied/held seats from live availability; 15-min hold placed at booking.                            | `/booking/seats` · `GET /api/flights/:id/seat-availability`              | Live                                                |
 | C14 | Baggage & extras selection (FR-C10/11)   | Extras page exists; controls disabled with an honest demo notice — never sent to the server.                                      | `/booking/extras`                                                        | Deferred                                            |
-| C15 | Fare calculation (FR-C12)                | Server-authoritative totals: (base + tax + fees) × passengers with fare-rules snapshot; client-supplied totals rejected.          | `/booking/review` · `POST /api/bookings`                                 | Live                                                |
+| C15 | Fare calculation (FR-C12)                | Server-authoritative totals: ((base − offer discount, BR-16) + tax + fees) × passengers with fare-rules snapshot (incl. offer terms); client-supplied totals rejected. | `/booking/review` · `POST /api/bookings`                                 | Live                                                |
 | C16 | Payment (FR-C13)                         | Tokenized payment via provider adapter; paying a PENDING booking confirms it, converts holds to seats, records a SUCCESS payment. | `POST /api/bookings/:id/payment`                                         | Live                                                |
 | C17 | Booking confirmation (FR-C14)            | Unique `NVxxxxxx` booking reference; confirmation page with honest PENDING/pay-later state.                                       | `/booking/confirmation` · `GET /api/bookings/:id`                        | Live                                                |
 | C18 | My bookings (FR-C15)                     | List current and historical own bookings.                                                                                         | `/bookings` · `GET /api/bookings`                                        | Live                                                |
@@ -177,7 +178,7 @@ Canonical vocabulary follows `CONTEXT.md`. The database holds **37 models** in t
 | C23 | Baggage tracking (FR-C20)                | Baggage tracking view.                                                                                                            | `/baggage`                                                               | Partial (demo data)                                 |
 | C24 | Notifications (FR-C21)                   | Notification list in profile.                                                                                                     | `/profile/notifications`                                                 | Partial (demo data; email adapter live server-side) |
 | C25 | Loyalty / miles (FR-C22)                 | Balance and transaction history.                                                                                                  | `/loyalty`                                                               | Partial (demo data)                                 |
-| C26 | Offers catalog                           | Public offers filtered server-side to ACTIVE + inside validity window; internals stripped.                                        | `/offers` · `GET /api/offers`                                            | Live                                                |
+| C26 | Offers catalog                           | Public offers filtered server-side to ACTIVE + inside validity window; internals stripped. Offers with a discount (BR-16) are bookable — redeemable at booking creation via `offerId`; read-only quote via price-preview. | `/offers` · `GET /api/offers`, `POST /api/bookings/price-preview`        | Live                                                |
 | C27 | Responsive UI (FR-C23)                   | Desktop/tablet/mobile layouts across the portal.                                                                                  | all pages                                                                | Live                                                |
 | C28 | Help / support page                      | Static help and contact information.                                                                                              | `/help`                                                                  | Live                                                |
 
@@ -203,7 +204,7 @@ All admin routes sit behind the staff guard plus per-page permission guards that
 | A14 | Baggage management (5.10)                        | Baggage records and event management against the live API; events flip status and are audit-logged.                                                                                                  | `/admin/baggage` · `/api/admin/baggage`                                           | Live                                                                  |
 | A15 | Check-in & boarding ops (5.11)                   | Check-in status, seats, boarding-pass views.                                                                                                                                                        | `/admin/checkin`                                                                  | Partial (demo data)                                                   |
 | A16 | Loyalty management (5.12)                        | Loyalty accounts and adjustments.                                                                                                                                                                   | `/admin/loyalty`                                                                  | Partial (demo data)                                                   |
-| A17 | Offer management                                 | Admin CRUD for offers (create/edit/deactivate — no hard delete); duplicate title → 409; all mutations audited.                                                                                      | `/admin/offers` · `/api/admin/offers`                                             | Live                                                                  |
+| A17 | Offer management                                 | Admin CRUD for offers incl. BR-16 bookable fields (discountType/discountValue, route/cabin eligibility); soft deactivate (ACTIVE→INACTIVE, 409 if already INACTIVE) plus usage-gated permanent delete (409 `OFFER_IN_USE` with bookingCount when referenced); duplicate title → 409; all mutations audited. | `/admin/offers` · `/api/admin/offers`, `DELETE /api/admin/offers/:id/permanent` | Live                                                                  |
 | A18 | Notification management (5.13)                   | Templates and operational notifications.                                                                                                                                                            | `/admin/notifications`                                                            | Partial (demo data)                                                   |
 | A19 | Reports (5.14)                                   | Operational/financial report views with CSV export.                                                                                                                                                 | `/admin/reports`                                                                  | Partial (aggregates demo data)                                        |
 | A20 | Audit log (5.15)                                 | Search/filter immutable audit records (actor, action, target, timestamp, metadata); per-booking audit tab in A7.                                                                                    | `/admin/audit` · `GET /api/audit`                                                 | Live                                                                  |
@@ -296,7 +297,7 @@ Holds expire after 15 minutes without payment: a per-minute scheduler marks them
 2. **Settings API** — the settings page is UI-only; `SystemSetting` persistence endpoints are deferred.
 3. **Per-flight status editing** — intentionally not built: no flight-status mutation endpoint exists, and regeneration can overwrite generated statuses. Requires a dedicated backend change.
 4. **Extras/baggage purchase in the booking funnel** — extras page controls are disabled and never transmitted.
-5. **Offer auto-expiry job** — ACTIVE→EXPIRED transition is not scheduled; public visibility is date-filtered so expiry is still enforced.
+5. **Offer auto-expiry job** — ACTIVE→EXPIRED transition is not scheduled; public visibility is date-filtered so expiry is still enforced. Under BR-16 the same ACTIVE + validity-window filter gates bookability, and offer terms already snapshotted into a booking are unaffected by later edits/deactivation/expiry.
 6. **Localization / multi-currency (NFR-13)** — future phase.
 7. **Rebooking/modification flows** (FR-C16 beyond cancellation) — deferred.
 8. **Admin booking action UI** — admin cancel (BR-15) and exception confirm (BR-14) are live in the API; admin bookings page wiring is deferred.
@@ -316,9 +317,9 @@ Holds expire after 15 minutes without payment: a per-minute scheduler marks them
 | `aircraft` / `airports` / `routes` | public reads + permission-guarded create/update (no hard deletes)                                                                                                                       |
 | `schedule-rules`                   | CRUD → flight generation source                                                                                                                                                         |
 | `flights`                          | search, detail, seat availability; `POST /flights/generate`                                                                                                                             |
-| `bookings`                         | create, own reads, own cancel; admin list/detail under `/admin/bookings`                                                                                                                |
+| `bookings`                         | create (optional `offerId`, BR-16), price-preview, own reads, own cancel; admin list/detail under `/admin/bookings`                                                                                 |
 | `payments`                         | customer: pay booking, list own payments; staff: `/admin/payments` (+`/:id/refund`), `/admin/refunds`, admin cancel (BR-15), confirm-exception (BR-14)                                  |
-| `offers`                           | public `GET /offers`; admin CRUD `/admin/offers` (delete = deactivate)                                                                                                                  |
+| `offers`                           | public `GET /offers`; admin CRUD `/admin/offers` (delete = deactivate; `DELETE /admin/offers/:id/permanent` = usage-gated hard delete, BR-16)                                              |
 | `dashboard`                        | `GET /admin/dashboard?range=7d                                                                                                                                                          | 30d | 90d` |
 | `mail`                             | notification adapter (`mock` console or SMTP)                                                                                                                                           |
 
@@ -344,7 +345,7 @@ Governance: `AuditLog`, `SystemSetting`
 
 ### 11.4 Source references
 
-- `docs/SRS_v2.1_extracted.txt` — requirements baseline (FR-C01–C24, UC-01–12, BR-01–15, NFR-01–13, admin sections 5.1–5.16)
+- `docs/SRS_v2.1_extracted.txt` — requirements baseline (FR-C01–C24, UC-01–12, BR-01–16, NFR-01–13, admin sections 5.1–5.16)
 - `TRACEABILITY.md` — requirement → implementation mapping with tests
 - `PROJECT_OVERVIEW.md` — technical living documentation and change log
 - `CONTEXT.md` — canonical domain vocabulary

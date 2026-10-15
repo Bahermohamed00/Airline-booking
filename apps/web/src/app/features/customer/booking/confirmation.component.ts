@@ -85,8 +85,30 @@ function icsDate(iso: string): string {
                 Seats: <span class="na-text-mono">{{ seatNumbers(b) }}</span>
               </p>
             }
+            @if (offerSavings(b); as savings) {
+              <p class="na-text-small na-text-muted">{{ savings }}</p>
+            }
             <p class="panel__total">Total: <strong>{{ money(b.totalAmount, b.currency) }}</strong></p>
           </section>
+
+          @if (b.extras && b.extras.length > 0) {
+            <section class="na-card panel" aria-labelledby="extras-h">
+              <h2 id="extras-h">Extras</h2>
+              <ul class="rows">
+                @for (e of b.extras; track e.id) {
+                  <li>
+                    <span>
+                      {{ e.name }}{{ e.quantity > 1 ? ' ×' + e.quantity : '' }}
+                      @if (e.passengerIndex !== null) {
+                        <span class="na-text-small na-text-muted"> · {{ b.passengers[e.passengerIndex]?.firstName || 'Passenger ' + (e.passengerIndex + 1) }}</span>
+                      }
+                    </span>
+                    <span class="na-text-small">{{ money(e.totalPrice, e.currency) }}</span>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
         </div>
 
         <section class="actions" aria-label="Booking actions">
@@ -204,6 +226,15 @@ export class ConfirmationPage {
 
   protected seatNumbers(b: CustomerBooking): string {
     return b.seats.map((s) => s.seatNumber).join(' · ');
+  }
+
+  /** BR-16: "Offer: {title} (−amount)" line when a bookable offer was applied. */
+  protected offerSavings(b: CustomerBooking): string | null {
+    const o = b.offer;
+    if (!o) return null;
+    const perPassenger = b.perPassengerDiscountAmount ?? o.discountAmountPerPassenger;
+    const total = perPassenger * Math.max(b.passengers.length, 1);
+    return `Offer: ${o.title} (−${formatMoney(total, o.currency)})`;
   }
 
   protected holdUntil(b: CustomerBooking): string | null {

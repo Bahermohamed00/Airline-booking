@@ -2,11 +2,12 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { RouterLink, RouterLinkActive, RouterOutlet, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
+import { NotificationBellComponent } from './notifications/notification-bell.component';
 
 @Component({
   selector: 'app-customer-shell',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet, NaThemeToggle],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, NaThemeToggle, NotificationBellComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="topbar">
@@ -27,6 +28,7 @@ import { NaThemeToggle } from '../../shared/ui/theme-toggle.component';
         <na-theme-toggle />
         <a routerLink="/help" class="nav__link">Help</a>
         @if (auth.isLoggedIn()) {
+          <app-notification-bell />
           <div class="account">
             <button type="button" class="account__btn" (click)="accountOpen.set(!accountOpen())" [attr.aria-expanded]="accountOpen()">
               {{ auth.user()?.firstName }} {{ auth.user()?.lastName }}

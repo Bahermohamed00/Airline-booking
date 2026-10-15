@@ -1,0 +1,33 @@
+// Stripe (and future provider) webhook deliveries. The database is the
+// deduplication authority — NOT process memory — so duplicate deliveries are
+// harmless across API restarts and multiple API instances.
+//
+// Lifecycle: a row is inserted (unique(provider, eventId)) the moment a
+// signature-verified event is accepted, then processed transactionally and
+// marked PROCESSED with processedAt. A crash between insert and processing
+// leaves the row RECEIVED/unprocessed, so the Stripe retry (or any repeated
+// delivery) reprocesses safely. FAILED rows are permanent invariant failures
+// (e.g. amount/currency mismatch) recorded for reconciliation — Stripe is
+// answered 200 for those because retrying can never repair them.
+model PaymentWebhookEvent {
+  id              String                     @id @default(uuid()) @db.Uuid
+  provider        String                     @db.VarChar(50)
+  eventId         String                     @map("event_id") @db.VarChar(255)
+  eventType       String                     @map("event_type") @db.VarChar(255)
+  status          PaymentWebhookEventStatus  @default(RECEIVED)
+  processingError String?                    @map("processing_error") @db.Text
+  receivedAt      DateTime                   @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt     DateTime?                  @map("processed_at") @db.Timestamptz(6)
+
+  @@unique([provider, eventId])
+  @@map("payment_webhook_events")
+}
+
+enum PaymentWebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  IGNORED
+
+  @@map("payment_webhook_event_status")
+}

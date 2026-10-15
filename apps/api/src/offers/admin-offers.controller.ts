@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Inject, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Offer } from '@prisma/client';
-import { OffersService } from './offers.service.js';
+import { OffersService, type OfferAdminView } from './offers.service.js';
 import { CreateOfferDto } from './dto/create-offer.dto.js';
 import { UpdateOfferDto } from './dto/update-offer.dto.js';
 import { AdminOfferQueryDto } from './dto/admin-offer-query.dto.js';
@@ -17,7 +17,7 @@ export class AdminOffersController {
 
   @Get()
   @Permissions({ resource: 'offers', action: 'read' })
-  findAll(@Query() query: AdminOfferQueryDto): Promise<Offer[]> {
+  findAll(@Query() query: AdminOfferQueryDto): Promise<OfferAdminView[]> {
     return this.offers.findAllAdmin(query);
   }
 
@@ -44,5 +44,12 @@ export class AdminOffersController {
   @Permissions({ resource: 'offers', action: 'manage' })
   deactivate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser): Promise<Offer> {
     return this.offers.deactivate(id, actor);
+  }
+
+  /** Hard delete — allowed only while no booking references the offer. */
+  @Delete(':id/permanent')
+  @Permissions({ resource: 'offers', action: 'manage' })
+  deletePermanent(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthUser): Promise<Offer> {
+    return this.offers.deletePermanent(id, actor);
   }
 }

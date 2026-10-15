@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
-import { BaggageService } from '../../../core/services/domain-services';
+import { BaggageTrackingService, type TrackedBaggage, type TrackedBaggageEvent } from '../../../core/services/baggage-tracking.service';
+import { environment } from '../../../../environments/environment';
 import { BAGGAGE_STATUS_MAP, statusLabel } from '../../../core/status-maps';
 import type { StatusTone } from '../../../core/status-maps';
-import type { Baggage, BaggageEvent } from '../../../core/models/domain.model';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
@@ -32,8 +32,8 @@ interface JourneyEvent extends TimelineEvent {
         <form [formGroup]="form" (ngSubmit)="search()" class="search__row">
           <div class="na-field">
             <label class="na-label" for="tag">Baggage tag number</label>
-            <input id="tag" class="na-input na-text-mono" type="text" formControlName="tag" placeholder="e.g. NV400123456" autocomplete="off" aria-describedby="tag-hint" [attr.aria-invalid]="form.controls.tag.invalid && form.controls.tag.touched" />
-            <span id="tag-hint" class="na-hint">Find it on your bag receipt — demo tag: NV400123456</span>
+            <input id="tag" class="na-input na-text-mono" type="text" formControlName="tag" placeholder="e.g. NV12345678" autocomplete="off" aria-describedby="tag-hint" [attr.aria-invalid]="form.controls.tag.invalid && form.controls.tag.touched" />
+            <span id="tag-hint" class="na-hint">Find it on your bag receipt@if (demoTag) { — demo tag: {{ demoTag }} }</span>
             @if (form.controls.tag.touched && form.controls.tag.errors?.['required']) { <span class="na-error">Tag number is required.</span> }
           </div>
           <na-button variant="cta" size="lg" type="submit" [loading]="loading()" [disabled]="form.invalid">Track</na-button>
@@ -174,16 +174,19 @@ interface JourneyEvent extends TimelineEvent {
 })
 export class BaggagePage {
   private readonly fb = inject(FormBuilder);
-  private readonly baggageService = inject(BaggageService);
+  private readonly baggageService = inject(BaggageTrackingService);
   readonly router = inject(Router);
 
   readonly BAGGAGE_STATUS_MAP = BAGGAGE_STATUS_MAP;
   readonly statusLabel = statusLabel;
 
+  /** Seeded demo tag, shown only outside production builds. */
+  readonly demoTag = environment.demoBaggageTag;
+
   readonly loading = signal(false);
   readonly error = signal(false);
   readonly searched = signal(false);
-  readonly bag = signal<Baggage | undefined>(undefined);
+  readonly bag = signal<TrackedBaggage | undefined>(undefined);
 
   private readonly dtFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -209,7 +212,7 @@ export class BaggagePage {
       });
   });
 
-  readonly lastEvent = computed<BaggageEvent | null>(() => {
+  readonly lastEvent = computed<TrackedBaggageEvent | null>(() => {
     const b = this.bag();
     if (!b || b.events.length === 0) return null;
     return [...b.events].sort((a, c) => a.occurredAt.localeCompare(c.occurredAt)).at(-1) ?? null;
@@ -232,11 +235,11 @@ export class BaggagePage {
     });
   }
 
-  isException(b: Baggage): boolean {
+  isException(b: TrackedBaggage): boolean {
     return b.status === 'LOST' || b.status === 'DELAYED';
   }
 
-  typeLabel(b: Baggage): string {
+  typeLabel(b: TrackedBaggage): string {
     return b.type === 'CHECKED' ? 'Checked bag' : b.type === 'CARRY_ON' ? 'Carry-on' : 'Special baggage';
   }
 

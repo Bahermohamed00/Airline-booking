@@ -1,9 +1,11 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { CheckInService } from '../../../core/services/domain-services';
-import { BookingService } from '../../../core/services/booking.service';
+import { Component, inject, signal } from '@angular/core';
+import {
+  AdminCheckinService,
+  type AdminCheckInBooking,
+  type CheckinWindowState,
+} from './admin-checkin.service';
 import { ToastService } from '../../../shared/ui/toast.service';
-import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel } from '../../../core/status-maps';
-import type { Booking } from '../../../core/models/domain.model';
+import { FLIGHT_STATUS_MAP, BOOKING_STATUS_MAP, statusLabel, type StatusPresentation } from '../../../core/status-maps';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
@@ -14,11 +16,21 @@ import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
+const WINDOW_STATE_MAP: Record<CheckinWindowState, StatusPresentation> = {
+  NOT_OPEN: { label: 'Opens 24h before', tone: 'neutral' },
+  OPEN: { label: 'Open', tone: 'success' },
+  CLOSED: { label: 'Closed', tone: 'warning' },
+};
+
+/**
+ * Staff check-in operations console. All data comes from the API
+ * (GET /admin/checkin, PostgreSQL-backed); invalidation is persisted
+ * server-side with audit. There is deliberately no local/demo fallback —
+ * a load failure is shown as a retryable error.
+ */
 @Component({
   selector: 'na-admin-checkin',
-  standalone: true,
   imports: [NaBreadcrumbs, NaButton, NaBadge, NaAlert, NaDialog, NaSkeleton, NaEmptyState],
-  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="page">
       <na-breadcrumbs [items]="crumbs" />
@@ -34,6 +46,8 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
 
       @if (loading()) {
         <na-skeleton [rows]="[1, 2, 3]" height="2.5rem" />
+      } @else if (loadError(); as err) {
+        <na-alert tone="danger" title="Could not load check-in data" retryable (retry)="load()">{{ err }}</na-alert>
       } @else if (bookings().length === 0) {
         <na-empty-state icon="✓" title="No bookings" message="There are no bookings to review for check-in." />
       } @else {
@@ -45,6 +59,7 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
                 <th>Flight</th>
                 <th>Departure</th>
                 <th>Booking status</th>
+                <th>Check-in window</th>
                 <th>Checked in</th>
                 <th>Flight status</th>
                 <th><span class="na-visually-hidden">Actions</span></th>
@@ -55,31 +70,48 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
                 <tr>
                   <td data-label="Reference" class="na-text-mono">{{ booking.bookingReference }}</td>
                   <td data-label="Flight">
-                    {{ booking.flight.flightNumber }}
-                    <span class="na-text-muted">{{ booking.flight.route.origin.iataCode }}→{{ booking.flight.route.destination.iataCode }}</span>
+                    @if (booking.flight; as flight) {
+                      {{ flight.flightNumber }}
+                      <span class="na-text-muted">{{ flight.route.originIata }}→{{ flight.route.destinationIata }}</span>
+                    } @else {
+                      —
+                    }
                   </td>
-                  <td data-label="Departure">{{ fmtDate(booking.flight.departureTime) }}</td>
+                  <td data-label="Departure">{{ booking.flight ? fmtDate(booking.flight.departureTime) : '—' }}</td>
                   <td data-label="Booking status">
                     <na-badge [tone]="statusLabel(BOOKING_STATUS_MAP, booking.status).tone">
                       {{ statusLabel(BOOKING_STATUS_MAP, booking.status).label }}
                     </na-badge>
                   </td>
+                  <td data-label="Check-in window">
+                    @if (booking.windowState; as windowState) {
+                      <na-badge [tone]="statusLabel(WINDOW_STATE_MAP, windowState).tone">
+                        {{ statusLabel(WINDOW_STATE_MAP, windowState).label }}
+                      </na-badge>
+                    } @else {
+                      —
+                    }
+                  </td>
                   <td data-label="Checked in">
-                    {{ checkedInCount(booking) }}/{{ booking.passengers.length }}
-                    @if (invalidated().has(booking.id)) {
-                      <na-badge tone="warning">Passes invalidated</na-badge>
+                    {{ booking.checkedInCount }}/{{ booking.passengersTotal }}
+                    @if (booking.invalidatedCount > 0) {
+                      <na-badge tone="warning">Passes invalidated ({{ booking.invalidatedCount }})</na-badge>
                     }
                   </td>
                   <td data-label="Flight status">
-                    <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, booking.flight.status).tone">
-                      {{ statusLabel(FLIGHT_STATUS_MAP, booking.flight.status).label }}
-                    </na-badge>
+                    @if (booking.flight; as flight) {
+                      <na-badge [tone]="statusLabel(FLIGHT_STATUS_MAP, flight.status).tone">
+                        {{ statusLabel(FLIGHT_STATUS_MAP, flight.status).label }}
+                      </na-badge>
+                    } @else {
+                      —
+                    }
                   </td>
                   <td data-label="Actions">
                     <na-button
                       variant="secondary"
                       size="sm"
-                      [disabled]="invalidated().has(booking.id)"
+                      [disabled]="booking.checkedInCount === 0 || invalidating()"
                       (clicked)="pendingInvalidate.set(booking)"
                     >
                       Invalidate passes
@@ -97,6 +129,7 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
         title="Invalidate boarding passes"
         confirmLabel="Invalidate"
         [confirmDanger]="true"
+        [confirmDisabled]="invalidating()"
         (confirmed)="confirmInvalidate()"
         (cancelled)="pendingInvalidate.set(null)"
       >
@@ -132,12 +165,12 @@ const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeSt
   `,
 })
 export class AdminCheckInPage {
-  private readonly checkInService = inject(CheckInService);
-  private readonly bookingService = inject(BookingService);
+  private readonly api = inject(AdminCheckinService);
   private readonly toast = inject(ToastService);
 
   readonly FLIGHT_STATUS_MAP = FLIGHT_STATUS_MAP;
   readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
+  readonly WINDOW_STATE_MAP = WINDOW_STATE_MAP;
   readonly statusLabel = statusLabel;
 
   readonly crumbs = [
@@ -146,14 +179,28 @@ export class AdminCheckInPage {
   ];
 
   readonly loading = signal(true);
-  readonly bookings = signal<Booking[]>([]);
-  readonly invalidated = signal<Set<string>>(new Set());
-  readonly pendingInvalidate = signal<Booking | null>(null);
+  readonly loadError = signal<string | null>(null);
+  readonly bookings = signal<AdminCheckInBooking[]>([]);
+  readonly pendingInvalidate = signal<AdminCheckInBooking | null>(null);
+  readonly invalidating = signal(false);
 
   constructor() {
-    this.bookingService.adminBookings().subscribe((list) => {
-      this.bookings.set(list);
-      this.loading.set(false);
+    this.load();
+  }
+
+  load(): void {
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.api.operationalList().subscribe({
+      next: (list) => {
+        this.bookings.set(list);
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+        // No demo fallback: the error is explicit and retryable.
+        this.loadError.set('Could not load check-in data. Please try again.');
+      },
     });
   }
 
@@ -161,16 +208,32 @@ export class AdminCheckInPage {
     return DATE_TIME.format(new Date(iso));
   }
 
-  checkedInCount(booking: Booking): number {
-    if (this.invalidated().has(booking.id)) return 0;
-    return this.checkInService.alreadyCheckedIn(booking.id).filter((c) => c.status === 'COMPLETED').length;
-  }
-
   confirmInvalidate(): void {
     const booking = this.pendingInvalidate();
-    if (!booking) return;
-    this.invalidated.update((set) => new Set(set).add(booking.id));
-    this.toast.success(`Boarding passes for ${booking.bookingReference} invalidated — passengers must check in again.`);
-    this.pendingInvalidate.set(null);
+    if (!booking || this.invalidating()) return;
+    this.invalidating.set(true);
+    this.api.invalidatePasses(booking.id).subscribe({
+      next: (result) => {
+        this.invalidating.set(false);
+        this.pendingInvalidate.set(null);
+        this.toast.success(
+          `${result.invalidatedCount} boarding pass record(s) invalidated for ${booking.bookingReference} — passengers must check in again.`,
+        );
+        // The server is the source of truth for the resulting state.
+        this.load();
+      },
+      error: (err: unknown) => {
+        this.invalidating.set(false);
+        this.pendingInvalidate.set(null);
+        const serverMessage = (
+          err as { error?: { message?: string | string[] } } | null
+        )?.error?.message;
+        this.toast.error(
+          typeof serverMessage === 'string' && serverMessage.length > 0
+            ? serverMessage
+            : 'Could not invalidate the boarding passes. Please try again.',
+        );
+      },
+    });
   }
 }

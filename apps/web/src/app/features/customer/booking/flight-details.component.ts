@@ -189,7 +189,8 @@ export class FlightDetailsPage {
             returnDate: null,
             passengers: { adults: 1, children: 0, infants: 0 },
             cabinClass: fare.cabinClass,
-            promoCode: null,
+            // A carried offer survives even when the criteria are rebuilt.
+            offerId: this.draft.offerId(),
           };
     this.draft.start(criteria, flight, fare);
     this.router.navigate(['/booking/passengers']);
@@ -208,7 +209,7 @@ export class FlightDetailsPage {
       children: c.passengers.children,
       infants: c.passengers.infants,
       cabin: c.cabinClass,
-      promo: c.promoCode ?? null,
+      offerId: this.draft.offerId(),
     };
   }
 

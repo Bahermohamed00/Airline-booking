@@ -136,20 +136,6 @@
       }
 
       <div class="search-card__footer">
-        <div class="na-field search-card__promo">
-          <label class="na-label" for="promo"
-            >Promo code <span class="na-hint">(optional)</span></label
-          >
-          <input
-            id="promo"
-            class="na-input"
-            type="text"
-            autocomplete="off"
-            placeholder="e.g. NOVA10"
-            [value]="promoCode()"
-            (input)="promoCode.set($any($event.target).value)"
-          />
-        </div>
         <na-button variant="cta" size="lg" (clicked)="submit()">Search flights</na-button>
       </div>
     </div>

@@ -1,17 +1,20 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { ToastService } from '../../../shared/ui/toast.service';
 import { NOTIFICATION_STATUS_MAP, statusLabel, StatusTone } from '../../../core/status-maps';
-import { NOTIFICATIONS } from '../../../core/mock/mock-data';
-import type { NotificationChannel, NotificationItem } from '../../../core/models/domain.model';
+import type { NotificationChannel, NotificationStatus } from '../../../core/models/domain.model';
 import { NaBreadcrumbs } from '../../../shared/ui/breadcrumbs.component';
-import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
+import { NaButton } from '../../../shared/ui/button.component';
+import {
+  AdminNotificationsService,
+  type AdminNotificationItem,
+  type AdminNotificationReadFilter,
+} from './admin-notifications.service';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+const PAGE_SIZE = 20;
 
 const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
   EMAIL: 'info',
@@ -20,10 +23,14 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
   IN_APP: 'neutral',
 };
 
+type ChannelFilter = '' | NotificationChannel;
+type StatusFilter = '' | NotificationStatus;
+type ReadFilter = '' | AdminNotificationReadFilter;
+
 @Component({
   selector: 'na-admin-notifications',
   standalone: true,
-  imports: [FormsModule, NaBreadcrumbs, NaButton, NaBadge, NaAlert, NaSkeleton, NaEmptyState],
+  imports: [NaBreadcrumbs, NaBadge, NaAlert, NaSkeleton, NaEmptyState, NaButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="page">
@@ -33,108 +40,81 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
           <h1>Notifications</h1>
           <p class="page__sub">Outbound customer communications across all channels.</p>
         </div>
-        <na-button variant="cta" (clicked)="drawerOpen.set(true)">Send notification</na-button>
       </header>
 
-      <na-alert tone="info" icon="✉">
-        Delivery status reflects the provider callback: queued notifications start as
-        <strong>Pending</strong>, then move to <strong>Sent</strong> and <strong>Delivered</strong> — or
-        <strong>Failed</strong> with automatic retries.
-      </na-alert>
+      <div class="filters" role="group" aria-label="Filter notifications">
+        <select class="na-select" [value]="channel()" (change)="setChannel($event)" aria-label="Channel">
+          <option value="">All channels</option>
+          @for (c of channels; track c) {
+            <option [value]="c" [selected]="channel() === c">{{ c }}</option>
+          }
+        </select>
+        <select class="na-select" [value]="status()" (change)="setStatus($event)" aria-label="Delivery status">
+          <option value="">All statuses</option>
+          @for (s of statuses; track s) {
+            <option [value]="s" [selected]="status() === s">{{ s }}</option>
+          }
+        </select>
+        <select class="na-select" [value]="read()" (change)="setRead($event)" aria-label="Read state">
+          <option value="">Read + unread</option>
+          <option value="unread" [selected]="read() === 'unread'">Unread</option>
+          <option value="read" [selected]="read() === 'read'">Read</option>
+        </select>
+      </div>
 
       @if (loading()) {
         <na-skeleton [rows]="[1, 2, 3]" height="2.5rem" />
+      } @else if (loadError(); as error) {
+        <na-alert tone="danger" icon="!" role="alert">
+          {{ error }}
+          <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+        </na-alert>
       } @else if (items().length === 0) {
-        <na-empty-state icon="✉" title="No notifications" message="Nothing has been sent yet." />
+        <na-empty-state icon="✉" title="No notifications" message="No notification records match the current filters." />
       } @else {
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Subject</th>
+                <th>Title</th>
                 <th>Channel</th>
                 <th>Status</th>
+                <th>Attempts</th>
+                <th>Read at</th>
                 <th>Sent at</th>
               </tr>
             </thead>
             <tbody>
               @for (n of items(); track n.id) {
                 <tr>
-                  <td data-label="Subject">{{ n.subject ?? '—' }}</td>
+                  <td data-label="Title">
+                    <div>{{ n.title }}</div>
+                    @if (n.error) {
+                      <div class="row-error" [title]="n.error">{{ n.error }}</div>
+                    }
+                  </td>
                   <td data-label="Channel"><na-badge [tone]="channelTone(n.channel)">{{ n.channel }}</na-badge></td>
                   <td data-label="Status">
                     <na-badge [tone]="statusLabel(NOTIFICATION_STATUS_MAP, n.status).tone">
                       {{ statusLabel(NOTIFICATION_STATUS_MAP, n.status).label }}
                     </na-badge>
                   </td>
+                  <td data-label="Attempts">{{ n.attempts }}</td>
+                  <td data-label="Read at">{{ n.readAt ? fmtDate(n.readAt) : '—' }}</td>
                   <td data-label="Sent at">{{ n.sentAt ? fmtDate(n.sentAt) : 'Queued' }}</td>
                 </tr>
               }
             </tbody>
           </table>
         </div>
-      }
 
-      @if (drawerOpen()) {
-        <div class="backdrop" (click)="drawerOpen.set(false)" role="presentation"></div>
-        <aside
-          class="drawer"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Send notification"
-          tabindex="-1"
-          (keydown.escape)="drawerOpen.set(false)"
-        >
-          <header class="drawer__head">
-            <h2>Send notification</h2>
-            <button type="button" class="drawer__close" aria-label="Close" (click)="drawerOpen.set(false)">×</button>
-          </header>
-          <form (ngSubmit)="send()">
-            <div class="na-field">
-              <label class="na-label" for="notif-target">Audience</label>
-              <select id="notif-target" class="na-select" [ngModel]="target()" (ngModelChange)="target.set($event)" name="target">
-                <option value="ALL">All customers</option>
-                <option value="BOOKING">Specific booking</option>
-              </select>
-            </div>
-            @if (target() === 'BOOKING') {
-              <div class="na-field">
-                <label class="na-label" for="notif-reference">Booking reference</label>
-                <input
-                  id="notif-reference"
-                  class="na-input na-text-mono"
-                  placeholder="e.g. NVA7K2"
-                  [ngModel]="bookingReference()"
-                  (ngModelChange)="bookingReference.set($event)"
-                  name="bookingReference"
-                />
-              </div>
-            }
-            <div class="na-field">
-              <label class="na-label" for="notif-channel">Channel</label>
-              <select id="notif-channel" class="na-select" [ngModel]="channel()" (ngModelChange)="channel.set($event)" name="channel">
-                @for (c of channels; track c) {
-                  <option [value]="c">{{ c }}</option>
-                }
-              </select>
-            </div>
-            <div class="na-field">
-              <label class="na-label" for="notif-subject">Subject</label>
-              <input id="notif-subject" class="na-input" required [ngModel]="subject()" (ngModelChange)="subject.set($event)" name="subject" />
-            </div>
-            <div class="na-field">
-              <label class="na-label" for="notif-body">Message</label>
-              <textarea id="notif-body" class="na-input" rows="5" required [ngModel]="body()" (ngModelChange)="body.set($event)" name="body"></textarea>
-            </div>
-            @if (formError()) {
-              <p class="na-error" role="alert">{{ formError() }}</p>
-            }
-            <div class="drawer__actions">
-              <na-button variant="secondary" (clicked)="drawerOpen.set(false)">Cancel</na-button>
-              <na-button variant="primary" type="submit">Queue notification</na-button>
-            </div>
-          </form>
-        </aside>
+        @if (totalPages() > 1) {
+          <nav class="pagination" aria-label="Notification pages">
+            <na-button variant="secondary" [disabled]="page() <= 1" (clicked)="goToPage(page() - 1)">Previous</na-button>
+            <span class="pagination__info">Page {{ page() }} of {{ totalPages() }} · {{ total() }} notifications</span>
+            <na-button variant="secondary" [disabled]="page() >= totalPages()" (clicked)="goToPage(page() + 1)">Next</na-button>
+          </nav>
+        }
       }
     </section>
   `,
@@ -143,24 +123,18 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
     .page { max-width: var(--na-admin-max); }
     .page__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--na-space-4); flex-wrap: wrap; margin-bottom: var(--na-space-6); }
     .page__sub { color: var(--na-ink-500); margin-top: var(--na-space-1); }
+    .filters { display: flex; gap: var(--na-space-3); flex-wrap: wrap; margin-bottom: var(--na-space-4); }
+    .filters .na-select { min-height: 40px; }
     na-alert { display: block; margin-bottom: var(--na-space-4); }
+    na-alert na-button { margin-left: var(--na-space-3); }
     .table-wrap { overflow-x: auto; border: 1px solid var(--na-border); border-radius: var(--na-radius-lg); background: var(--na-surface-raised); }
     table { width: 100%; border-collapse: collapse; font-size: var(--na-text-sm); }
     th { text-align: left; padding: var(--na-space-3) var(--na-space-4); font-size: var(--na-text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--na-ink-500); border-bottom: 1px solid var(--na-border); background: var(--na-surface-sunken); white-space: nowrap; }
     td { padding: var(--na-space-3) var(--na-space-4); border-bottom: 1px solid var(--na-border); }
-    .backdrop { position: fixed; inset: 0; background: var(--na-overlay); z-index: 99; }
-    .drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
-      width: min(480px, 100vw); background: var(--na-surface-raised);
-      border-left: 1px solid var(--na-border);
-      box-shadow: var(--na-shadow-lg); padding: var(--na-space-6); overflow-y: auto;
-    }
-    .drawer__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--na-space-5); }
-    .drawer__close { background: none; border: none; font-size: 1.5rem; color: var(--na-ink-500); min-width: 44px; min-height: 44px; border-radius: var(--na-radius-md); }
-    .drawer__close:hover { background: var(--na-surface-sunken); color: var(--na-ink-900); }
-    .drawer__actions { display: flex; justify-content: flex-end; gap: var(--na-space-3); margin-top: var(--na-space-5); }
+    .row-error { color: var(--na-danger); font-size: var(--na-text-xs); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--na-space-3); margin-top: var(--na-space-4); }
+    .pagination__info { font-size: var(--na-text-sm); color: var(--na-ink-500); }
     @media (max-width: 639px) {
-      .drawer { width: 100vw; padding: var(--na-space-4); }
       table, thead, tbody, tr, td { display: block; }
       thead { display: none; }
       tr { border-bottom: 1px solid var(--na-border); padding: var(--na-space-2) 0; }
@@ -170,7 +144,7 @@ const CHANNEL_TONES: Record<NotificationChannel, StatusTone> = {
   `,
 })
 export class AdminNotificationsPage {
-  private readonly toast = inject(ToastService);
+  private readonly api = inject(AdminNotificationsService);
 
   readonly NOTIFICATION_STATUS_MAP = NOTIFICATION_STATUS_MAP;
   readonly statusLabel = statusLabel;
@@ -181,23 +155,24 @@ export class AdminNotificationsPage {
   ];
 
   readonly channels: NotificationChannel[] = ['EMAIL', 'SMS', 'PUSH', 'IN_APP'];
+  readonly statuses: NotificationStatus[] = ['PENDING', 'SENT', 'DELIVERED', 'FAILED', 'RETRYING'];
 
   readonly loading = signal(true);
-  readonly items = signal<NotificationItem[]>([]);
+  readonly loadError = signal<string | null>(null);
+  readonly items = signal<AdminNotificationItem[]>([]);
+  readonly page = signal(1);
+  readonly totalPages = signal(1);
+  readonly total = signal(0);
+  readonly channel = signal<ChannelFilter>('');
+  readonly status = signal<StatusFilter>('');
+  readonly read = signal<ReadFilter>('');
 
-  readonly drawerOpen = signal(false);
-  readonly target = signal<'ALL' | 'BOOKING'>('ALL');
-  readonly bookingReference = signal('');
-  readonly channel = signal<NotificationChannel>('EMAIL');
-  readonly subject = signal('');
-  readonly body = signal('');
-  readonly formError = signal<string | null>(null);
+  /** Incremented per request; a late response from a superseded request
+   *  (filter/page changed meanwhile) is discarded instead of racing the UI. */
+  private requestGeneration = 0;
 
   constructor() {
-    setTimeout(() => {
-      this.items.set([...NOTIFICATIONS].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-      this.loading.set(false);
-    }, 300);
+    this.load();
   }
 
   channelTone(channel: NotificationChannel): StatusTone {
@@ -208,34 +183,61 @@ export class AdminNotificationsPage {
     return DATE_TIME.format(new Date(iso));
   }
 
-  send(): void {
-    if (!this.subject().trim() || !this.body().trim()) {
-      this.formError.set('Subject and message are required.');
-      return;
-    }
-    if (this.target() === 'BOOKING' && !this.bookingReference().trim()) {
-      this.formError.set('Enter a booking reference for a targeted notification.');
-      return;
-    }
-    const queued: NotificationItem = {
-      id: crypto.randomUUID(),
-      channel: this.channel(),
-      status: 'PENDING',
-      subject: this.subject().trim(),
-      content: this.body().trim(),
-      sentAt: null,
-      createdAt: new Date().toISOString(),
-    };
-    this.items.update((list) => [queued, ...list]);
-    this.toast.success(
-      this.target() === 'ALL'
-        ? `Notification queued for all customers via ${this.channel()}.`
-        : `Notification queued for booking ${this.bookingReference().trim().toUpperCase()} via ${this.channel()}.`,
-    );
-    this.drawerOpen.set(false);
-    this.subject.set('');
-    this.body.set('');
-    this.bookingReference.set('');
-    this.formError.set(null);
+  setChannel(event: Event): void {
+    this.channel.set((event.target as HTMLSelectElement).value as ChannelFilter);
+    this.page.set(1);
+    this.load();
+  }
+
+  setStatus(event: Event): void {
+    this.status.set((event.target as HTMLSelectElement).value as StatusFilter);
+    this.page.set(1);
+    this.load();
+  }
+
+  setRead(event: Event): void {
+    this.read.set((event.target as HTMLSelectElement).value as ReadFilter);
+    this.page.set(1);
+    this.load();
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.totalPages() || page === this.page()) return;
+    this.page.set(page);
+    this.load();
+  }
+
+  load(): void {
+    const generation = ++this.requestGeneration;
+    this.loading.set(true);
+    this.loadError.set(null);
+    this.api
+      .list({
+        page: this.page(),
+        limit: PAGE_SIZE,
+        channel: this.channel() || undefined,
+        status: this.status() || undefined,
+        read: this.read() || undefined,
+      })
+      .subscribe({
+        next: (res) => {
+          if (generation !== this.requestGeneration) return;
+          this.items.set(res.data);
+          this.total.set(res.total);
+          this.totalPages.set(Math.max(1, res.totalPages));
+          this.loading.set(false);
+        },
+        error: (err: { status?: number }) => {
+          if (generation !== this.requestGeneration) return;
+          this.loading.set(false);
+          if (err?.status === 403) {
+            this.loadError.set('You do not have permission to view notification records.');
+          } else if (err?.status === 401) {
+            this.loadError.set('Your session has expired — please sign in again.');
+          } else {
+            this.loadError.set('Could not load notifications. Please try again.');
+          }
+        },
+      });
   }
 }

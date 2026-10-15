@@ -239,18 +239,109 @@
               }
             }
             @case ('payments') {
-              <na-empty-state
-                icon="◈"
-                title="Payments & refunds are not available yet"
-                message="Payments and refunds will be available in a future phase. No payment data exists for bookings yet — bookings remain pending until payments are implemented."
-              />
+              @if (!canReadPayments() || paymentsForbidden()) {
+                <na-empty-state
+                  icon="🔒"
+                  title="No payments access"
+                  message="You don't have permission to view payments and refunds."
+                />
+              } @else if (paymentsLoading()) {
+                <na-skeleton [rows]="[1, 2]" height="1.2rem" />
+              } @else if (paymentsError(); as err) {
+                <div class="list-error" role="alert">
+                  <p>{{ err }}</p>
+                  <na-button variant="secondary" size="sm" (clicked)="retryPayments()">Retry</na-button>
+                </div>
+              } @else if (payments().length === 0) {
+                <na-empty-state
+                  icon="◈"
+                  title="No payments yet"
+                  message="This booking has no payment records. A booking stays pending until the customer pays."
+                />
+              } @else {
+                <ul class="plain-list pay-list">
+                  @for (p of payments(); track p.id) {
+                    <li class="pay-item">
+                      <div class="pay-item__head">
+                        <strong>{{ money(p.amount, p.currency) }}</strong>
+                        <na-badge [tone]="statusLabel(PAYMENT_STATUS_MAP, p.status).tone">
+                          {{ statusLabel(PAYMENT_STATUS_MAP, p.status).label }}
+                        </na-badge>
+                      </div>
+                      <p class="na-text-small na-text-muted">
+                        {{ p.provider }}@if (p.providerReference) { ·
+                          <span class="na-text-mono">{{ p.providerReference }}</span>
+                        }
+                        <br />
+                        Created {{ fmt(p.createdAt) }}
+                        @if (p.paidAt) { · Paid {{ fmt(p.paidAt) }} }
+                        @if (p.failedAt) { · Failed {{ fmt(p.failedAt) }} }
+                      </p>
+                      @if (p.refunds.length) {
+                        <ul class="plain-list pay-refunds">
+                          @for (r of p.refunds; track r.id) {
+                            <li>
+                              <span>Refund {{ money(r.amount, r.currency) }}</span>
+                              <na-badge [tone]="statusLabel(REFUND_STATUS_MAP, r.status).tone">
+                                {{ statusLabel(REFUND_STATUS_MAP, r.status).label }}
+                              </na-badge>
+                              @if (r.reason) {
+                                <span class="na-text-muted na-text-small">· {{ r.reason }}</span>
+                              }
+                              @if (r.processedAt) {
+                                <span class="na-text-muted na-text-small">· {{ fmt(r.processedAt) }}</span>
+                              }
+                            </li>
+                          }
+                        </ul>
+                      }
+                      @if (canRefund() && refundable(p)) {
+                        <na-button variant="secondary" size="sm" (clicked)="openRefund(p)">
+                          Issue refund
+                        </na-button>
+                      }
+                    </li>
+                  }
+                </ul>
+              }
             }
             @case ('notifications') {
-              <na-empty-state
-                icon="✉"
-                title="Notifications are not available yet"
-                message="Notifications will be available in a future phase."
-              />
+              @if (!canReadNotifications() || notificationsForbidden()) {
+                <na-empty-state
+                  icon="🔒"
+                  title="No notifications access"
+                  message="You don't have permission to view notification records."
+                />
+              } @else if (notificationsLoading()) {
+                <na-skeleton [rows]="[1, 2]" height="1.2rem" />
+              } @else if (notificationsError(); as err) {
+                <div class="list-error" role="alert">
+                  <p>{{ err }}</p>
+                  <na-button variant="secondary" size="sm" (clicked)="retryNotifications()">Retry</na-button>
+                </div>
+              } @else if (bookingNotifications().length === 0) {
+                <na-empty-state
+                  icon="✉"
+                  title="No notifications for this booking"
+                  message="No booking lifecycle notifications (confirmation, payment, cancellation, refund) have been recorded for this booking."
+                />
+              } @else {
+                <ul class="plain-list">
+                  @for (n of bookingNotifications(); track n.id) {
+                    <li>
+                      <div class="pay-item__head">
+                        <strong>{{ n.title || (n.type ?? 'Notification') }}</strong>
+                        <na-badge tone="neutral">{{ n.channel }}</na-badge>
+                      </div>
+                      <p class="na-text-small na-text-muted">
+                        {{ n.type ?? 'legacy' }} · {{ n.status }}@if (n.readAt) { · read }
+                        <br />
+                        Created {{ fmt(n.createdAt) }}@if (n.sentAt) { · Sent {{ fmt(n.sentAt) }} }
+                      </p>
+                    </li>
+                  }
+                </ul>
+              }
             }
             @case ('audit') {
               <span *naHasPermission="'audit:read'">
@@ -295,10 +386,17 @@
 
       <footer class="drawer__actions">
         <span class="future-hint" *naHasPermission="'bookings:manage'">
-          <na-badge tone="info">Future phase</na-badge>
-          Admin cancellation and payment exception workflows arrive in a future backend phase.
+          Manage money on the <a routerLink="/admin/payments">Payments</a> screen and paid
+          cancellations on the <a routerLink="/admin/cancellation-requests">Cancellation requests</a> screen.
         </span>
       </footer>
     </aside>
+
+    <na-refund-dialog
+      [open]="refundOpen()"
+      [payment]="refundTarget()"
+      (submitted)="onRefund($event)"
+      (cancelled)="onRefundCancelled()"
+    />
   }
 </section>

@@ -41,9 +41,13 @@ function refundResult(): RefundPaymentResult {
       reason: null,
       processedAt: '2026-01-12T10:00:00Z',
       createdAt: '2026-01-12T10:00:00Z',
+      updatedAt: '2026-01-12T10:00:00Z',
       paymentProviderReference: 'mp_abc123',
       paymentStatus: 'REFUNDED',
       contactEmail: 'lena@example.com',
+      pendingAgeMinutes: null,
+      pendingRecovery: false,
+      recoveryKey: 'refund-r1',
     },
     payment: payment({ status: 'REFUNDED' }),
   };
@@ -190,6 +194,7 @@ describe('AdminPaymentsPage', () => {
           reason: 'Schedule change',
           processedAt: '2026-01-11T09:00:00Z',
           createdAt: '2026-01-11T08:55:00Z',
+          updatedAt: '2026-01-11T09:00:00Z',
         },
       ],
     });

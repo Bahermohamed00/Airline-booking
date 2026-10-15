@@ -75,6 +75,7 @@ describe('Flight seat availability (e2e)', () => {
       .post('/api/bookings')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        idempotencyKey: randomUUID(),
         flightId,
         cabinClass: 'ECONOMY',
         seatIds: [seatId],

@@ -57,6 +57,11 @@ const SAFE_METADATA_KEYS = [
   'amount',
   'currency',
   'providerReference',
+  // Refund recovery/orphan operations (Phase 3.4).
+  'via',
+  'outcome',
+  'providerRefundReference',
+  'paymentProviderReference',
   // Offer metadata.
   'title',
 ] as const;

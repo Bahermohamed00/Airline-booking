@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import { provideRouter, ActivatedRoute, convertToParamMap, type ParamMap } from '@angular/router';
+import { provideRouter, ActivatedRoute, Router, convertToParamMap, type ParamMap } from '@angular/router';
 import { of } from 'rxjs';
 import { FlightDetailsPage } from './flight-details.component';
 import { FlightService } from '../../../core/services/flight.service';
+import { BookingDraftService } from './booking-draft.service';
 import type { Airport, FareRule, Flight } from '../../../core/models/domain.model';
 
 const FRA: Airport = {
@@ -127,5 +128,58 @@ describe('FlightDetailsPage', () => {
     expect(empty).not.toBeNull();
     expect(empty!.textContent).toContain('Back to search');
     expect(el.querySelector('.fare')).toBeNull();
+  });
+
+  it('preserves a carried offerId when continueWith rebuilds the criteria from scratch (BR-16)', async () => {
+    const { fixture, el } = await setup();
+    const draftApi = TestBed.inject(BookingDraftService);
+    draftApi.clear();
+    // Existing draft for a different origin — continueWith must rebuild the
+    // criteria yet keep the offer.
+    draftApi.start(
+      {
+        tripType: 'ONE_WAY',
+        originCode: 'MUC',
+        destinationCode: 'LHR',
+        departureDate: '2026-10-02',
+        returnDate: null,
+        passengers: { adults: 1, children: 0, infants: 0 },
+        cabinClass: 'ECONOMY',
+        offerId: 'offer-9',
+      },
+      flight(null),
+      flight(null).fares[0],
+    );
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    el.querySelector<HTMLElement>('.fare na-button button')!.click();
+    await fixture.whenStable();
+
+    expect(draftApi.criteria()?.originCode).toBe('FRA'); // rebuilt from the flight
+    expect(draftApi.offerId()).toBe('offer-9'); // offer survived the rebuild
+  });
+
+  it('carries the offerId into back-to-results params', async () => {
+    const { fixture, el } = await setup();
+    const draftApi = TestBed.inject(BookingDraftService);
+    draftApi.clear();
+    draftApi.start(
+      {
+        tripType: 'ONE_WAY',
+        originCode: 'FRA',
+        destinationCode: 'JFK',
+        departureDate: '2026-10-01',
+        returnDate: null,
+        passengers: { adults: 1, children: 0, infants: 0 },
+        cabinClass: 'ECONOMY',
+        offerId: 'offer-9',
+      },
+      flight(null),
+      flight(null).fares[0],
+    );
+    fixture.detectChanges();
+
+    const back = el.querySelector<HTMLAnchorElement>('.back a')!;
+    expect(back.getAttribute('href')).toContain('offerId=offer-9');
   });
 });

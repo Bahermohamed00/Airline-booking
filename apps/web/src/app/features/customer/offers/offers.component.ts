@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, NgOptimizedImage } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { Title } from '@angular/platform-browser';
 import { OffersService, type OfferView } from '../../../core/services/offers.service';
 import { NaAlert } from '../../../shared/ui/alert.component';
@@ -16,18 +16,29 @@ import { scrollToSection } from '../../../shared/utils/scroll-to-section';
 })
 export class OffersPage {
   private readonly offersService = inject(OffersService);
-  private readonly router = inject(Router);
 
   protected readonly offers = signal<OfferView[]>([]);
   protected readonly loading = signal(true);
   protected readonly error = signal(false);
 
-  protected readonly featured = computed(() => this.offers()[0] ?? null);
-  protected readonly regular = computed(() => this.offers().slice(1));
+  /**
+   * Customer-facing listing shows bookable offers only. `bookable` is the
+   * API-authoritative flag (an offer carries discount terms that checkout
+   * honours) — marketing-only offers have no booking path, so they are not
+   * listed at all. Derived from the response on every load, so admin
+   * create/edit/activate/deactivate changes are reflected automatically.
+   * Order is preserved from the API response (validFrom desc, title asc).
+   */
+  protected readonly bookableOffers = computed(() =>
+    this.offers().filter((o) => o.bookable === true),
+  );
+
+  protected readonly featured = computed(() => this.bookableOffers()[0] ?? null);
+  protected readonly regular = computed(() => this.bookableOffers().slice(1));
   protected readonly destinationCount = computed(
     () =>
       new Set(
-        this.offers()
+        this.bookableOffers()
           .map((o) => o.destination)
           .filter((d): d is string => !!d),
       ).size,
@@ -55,9 +66,5 @@ export class OffersPage {
 
   protected go(target: string, event: Event): void {
     scrollToSection(target, event);
-  }
-
-  protected go2search(): void {
-    this.router.navigateByUrl('/search');
   }
 }

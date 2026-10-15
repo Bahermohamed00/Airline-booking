@@ -94,6 +94,30 @@ describe('Offers (e2e)', () => {
     return prismaTestClient.offer.create({ data: { title: `Offer ${randomUUID().slice(0, 8)}`, ...base, ...overrides } as never });
   }
 
+  async function seedRoute() {
+    const [fra, dxb] = await Promise.all([
+      prismaTestClient.airport.upsert({
+        where: { iataCode: 'FRA' },
+        update: {},
+        create: { iataCode: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'Germany', timezone: 'Europe/Berlin' },
+      }),
+      prismaTestClient.airport.upsert({
+        where: { iataCode: 'DXB' },
+        update: {},
+        create: { iataCode: 'DXB', name: 'Dubai International', city: 'Dubai', country: 'United Arab Emirates', timezone: 'Asia/Dubai' },
+      }),
+    ]);
+    const existing = await prismaTestClient.route.findFirst({
+      where: { originAirportId: fra.id, destinationAirportId: dxb.id },
+    });
+    return (
+      existing ??
+      (await prismaTestClient.route.create({
+        data: { originAirportId: fra.id, destinationAirportId: dxb.id, distanceKm: 4842, durationMinutes: 375 },
+      }))
+    );
+  }
+
   // ---------- Admin CRUD ----------
 
   it('Super Admin performs full CRUD against PostgreSQL with audit events', async () => {
@@ -160,10 +184,182 @@ describe('Offers (e2e)', () => {
     await adminReq('get', '/not-a-uuid', token).expect(400);
   });
 
+  // ---------- Bookable offers (BR-16) ----------
+
+  it('admin creates a bookable offer and the discount terms are persisted', async () => {
+    const token = await loginAs('offers-admin4@test.dev', true);
+    const route = await seedRoute();
+
+    const created = (
+      await adminReq(
+        'post',
+        '',
+        token,
+        offerBody({ status: 'ACTIVE', discountType: 'PERCENT', discountValue: 15, routeId: route.id, cabinClass: 'ECONOMY' }),
+      ).expect(201)
+    ).body;
+    expect(created.discountType).toBe('PERCENT');
+    expect(Number(created.discountValue)).toBe(15);
+    expect(created.routeId).toBe(route.id);
+    expect(created.cabinClass).toBe('ECONOMY');
+
+    const persisted = await prismaTestClient.offer.findUniqueOrThrow({ where: { id: created.id } });
+    expect(persisted.discountType).toBe('PERCENT');
+    expect(Number(persisted.discountValue)).toBe(15);
+    expect(persisted.routeId).toBe(route.id);
+    expect(persisted.cabinClass).toBe('ECONOMY');
+  });
+
+  it('rejects invalid bookable terms with 400', async () => {
+    const token = await loginAs('offers-admin5@test.dev', true);
+    const route = await seedRoute();
+
+    await adminReq('post', '', token, offerBody({ discountType: 'PERCENT', discountValue: 0 })).expect(400);
+    await adminReq('post', '', token, offerBody({ discountType: 'PERCENT', discountValue: 100.5 })).expect(400);
+    await adminReq('post', '', token, offerBody({ discountType: 'PERCENT', discountValue: -5 })).expect(400);
+    await adminReq('post', '', token, offerBody({ discountType: 'FIXED_AMOUNT', discountValue: 0 })).expect(400);
+    await adminReq('post', '', token, offerBody({ discountType: 'PERCENT' })).expect(400); // type without value
+    await adminReq('post', '', token, offerBody({ discountValue: 20 })).expect(400); // value without type
+    await adminReq('post', '', token, offerBody({ discountType: 'PERCENT', discountValue: 10, routeId: randomUUID() })).expect(400);
+    await adminReq('post', '', token, offerBody({ discountType: 'HALF_OFF', discountValue: 10 })).expect(400);
+    await adminReq('post', '', token, offerBody({ cabinClass: 'SUITE' })).expect(400);
+    await adminReq('post', '', token, offerBody({ discountType: 'PERCENT', discountValue: 10, routeId: 'not-a-uuid' })).expect(400);
+
+    const created = (
+      await adminReq('post', '', token, offerBody({ discountType: 'PERCENT', discountValue: 10, routeId: route.id })).expect(201)
+    ).body;
+    // Merged update semantics: existing PERCENT 10 + new value 150 is out of range.
+    await adminReq('patch', `/${created.id}`, token, { discountValue: 150 }).expect(400);
+    const updated = (await adminReq('patch', `/${created.id}`, token, { discountType: 'FIXED_AMOUNT' }).expect(200)).body;
+    expect(updated.discountType).toBe('FIXED_AMOUNT');
+    expect(Number(updated.discountValue)).toBe(10);
+  });
+
+  it('PATCH with explicit null clears discount, route and cabin scope; omitted fields are preserved', async () => {
+    const token = await loginAs('offers-admin8@test.dev', true);
+    const route = await seedRoute();
+
+    const created = (
+      await adminReq(
+        'post',
+        '',
+        token,
+        offerBody({ status: 'ACTIVE', discountType: 'PERCENT', discountValue: 15, routeId: route.id, cabinClass: 'ECONOMY' }),
+      ).expect(201)
+    ).body;
+
+    // Clearing the route scope makes the offer route-unrestricted.
+    const unscoped = (await adminReq('patch', `/${created.id}`, token, { routeId: null }).expect(200)).body;
+    expect(unscoped.routeId).toBeNull();
+    expect(unscoped.cabinClass).toBe('ECONOMY');
+
+    // Omitted fields keep their existing values.
+    const patched = (await adminReq('patch', `/${created.id}`, token, { badge: 'Flash sale' }).expect(200)).body;
+    expect(patched.discountType).toBe('PERCENT');
+    expect(Number(patched.discountValue)).toBe(15);
+    expect(patched.cabinClass).toBe('ECONOMY');
+
+    // Contradictory null + value on the discount pair is rejected.
+    await adminReq('patch', `/${created.id}`, token, { discountType: null, discountValue: 10 }).expect(400);
+    await adminReq('patch', `/${created.id}`, token, { discountType: 'PERCENT', discountValue: null }).expect(400);
+
+    // Null on either discount member clears the pair → marketing-only.
+    const cleared = (await adminReq('patch', `/${created.id}`, token, { discountType: null, cabinClass: null }).expect(200)).body;
+    expect(cleared.discountType).toBeNull();
+    expect(cleared.discountValue).toBeNull();
+    expect(cleared.cabinClass).toBeNull();
+
+    const detail = (await adminReq('get', `/${created.id}`, token).expect(200)).body;
+    expect(detail.discountType).toBeNull();
+    expect(detail.discountValue).toBeNull();
+    expect(detail.routeId).toBeNull();
+    expect(detail.cabinClass).toBeNull();
+
+    const publicList = await request(app.getHttpServer()).get('/api/offers').expect(200);
+    const view = publicList.body.find((o: { id: string }) => o.id === created.id);
+    expect(view.bookable).toBe(false);
+    expect(view.discount).toBeNull();
+    expect(view.eligibility).toBeNull();
+
+    // Clearing an already marketing-only offer is a harmless no-op.
+    await adminReq('patch', `/${created.id}`, token, { discountValue: null }).expect(200);
+  });
+
+  it('permanent delete removes an unused offer and audits OFFER_HARD_DELETED', async () => {
+    const token = await loginAs('offers-admin6@test.dev', true);
+    const offer = await seedOffer({ discountType: 'FIXED_AMOUNT', discountValue: 25 });
+
+    const removed = (await adminReq('delete', `/${offer.id}/permanent`, token).expect(200)).body;
+    expect(removed.id).toBe(offer.id);
+    expect(await prismaTestClient.offer.findUnique({ where: { id: offer.id } })).toBeNull();
+
+    const audit = await prismaTestClient.auditLog.findMany({ where: { action: 'OFFER_HARD_DELETED', targetId: offer.id } });
+    expect(audit).toHaveLength(1);
+
+    await adminReq('delete', `/${offer.id}/permanent`, token).expect(404);
+    await adminReq('delete', `/${randomUUID()}/permanent`, token).expect(404);
+  });
+
+  it('permanent delete 409s with OFFER_IN_USE when a booking references the offer', async () => {
+    const token = await loginAs('offers-admin7@test.dev', true);
+    const offer = await seedOffer({ discountType: 'PERCENT', discountValue: 10 });
+    const user = await prismaTestClient.user.findUniqueOrThrow({ where: { email: 'offers-admin7@test.dev' } });
+    await prismaTestClient.booking.create({
+      data: {
+        bookingReference: 'BR16USED01',
+        userId: user.id,
+        totalAmount: 421,
+        currency: 'EUR',
+        contactEmail: 'offers-admin7@test.dev',
+        offerId: offer.id,
+      },
+    });
+
+    const res = await adminReq('delete', `/${offer.id}/permanent`, token).expect(409);
+    expect(res.body.code).toBe('OFFER_IN_USE');
+    expect(res.body.bookingCount).toBe(1);
+    expect(await prismaTestClient.offer.findUnique({ where: { id: offer.id } })).not.toBeNull();
+
+    // Lifecycle deactivate still works on a referenced offer.
+    await adminReq('delete', `/${offer.id}`, token).expect(200);
+  });
+
+  it('public view exposes bookable/discount/eligibility and still hides internals', async () => {
+    const route = await seedRoute();
+    await seedOffer({
+      title: 'Bookable Dubai',
+      discountType: 'PERCENT',
+      discountValue: 15,
+      routeId: route.id,
+      cabinClass: 'ECONOMY',
+    });
+    await seedOffer({ title: 'Marketing Only' });
+
+    const res = await request(app.getHttpServer()).get('/api/offers').expect(200);
+    const bookable = res.body.find((o: { title: string }) => o.title === 'Bookable Dubai');
+    expect(bookable.bookable).toBe(true);
+    expect(bookable.discount).toEqual({ type: 'PERCENT', value: 15 });
+    expect(bookable.eligibility).toEqual({ routeId: route.id, originIata: 'FRA', destinationIata: 'DXB', cabinClass: 'ECONOMY' });
+    expect(bookable).not.toHaveProperty('status');
+    expect(bookable).not.toHaveProperty('createdAt');
+    expect(bookable).not.toHaveProperty('updatedAt');
+
+    const marketing = res.body.find((o: { title: string }) => o.title === 'Marketing Only');
+    expect(marketing.bookable).toBe(false);
+    expect(marketing.discount).toBeNull();
+    expect(marketing.eligibility).toBeNull();
+  });
+
   // ---------- Customer visibility ----------
 
   it('customer sees only ACTIVE, currently valid offers — draft/inactive/expired/future hidden', async () => {
+    const now = new Date();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const active = await seedOffer({ title: 'Active Now', status: 'ACTIVE' });
+    // Boundary: an offer stays visible through its whole final day.
+    await seedOffer({ title: 'Last Day', status: 'ACTIVE', validUntil: todayStart });
+    // Boundary: an offer becomes visible on its first day.
+    await seedOffer({ title: 'First Day', status: 'ACTIVE', validFrom: todayStart });
     await seedOffer({ title: 'Draft One', status: 'DRAFT' });
     await seedOffer({ title: 'Inactive One', status: 'INACTIVE' });
     await seedOffer({ title: 'Expired One', status: 'ACTIVE', validUntil: new Date(Date.now() - 86_400_000) });
@@ -171,10 +367,10 @@ describe('Offers (e2e)', () => {
     await seedOffer({ title: 'Marked Expired', status: 'EXPIRED' });
 
     const res = await request(app.getHttpServer()).get('/api/offers').expect(200);
-    expect(res.body.map((o: { title: string }) => o.title)).toEqual(['Active Now']);
+    expect(res.body.map((o: { title: string }) => o.title).sort()).toEqual(['Active Now', 'First Day', 'Last Day']);
 
-    const view = res.body[0];
-    expect(view.title).toBe('Active Now');
+    const view = res.body.find((o: { title: string }) => o.title === 'Active Now');
+    expect(view).toBeTruthy();
     expect(view).not.toHaveProperty('status');
     expect(view).not.toHaveProperty('createdAt');
     expect(view).not.toHaveProperty('updatedAt');

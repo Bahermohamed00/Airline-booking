@@ -41,7 +41,49 @@ describe('hashCreateBookingRequest', () => {
     ['different seats', { seatIds: ['seat-2'] }],
     ['different passenger', { passengers: [{ firstName: 'Jonas', lastName: 'Hoffmann' }] }],
     ['different contact', { contactEmail: 'other@example.com' }],
+    ['different offer', { offerId: 'b2f6a6c0-3f8d-4a0e-9d1c-7c2f0a1b2c3d' }],
   ])('changes for a materially different request: %s', (_label, override) => {
     expect(hashCreateBookingRequest(dto(override as Record<string, unknown>))).not.toBe(hashCreateBookingRequest(dto()));
+  });
+
+  // ---------- BR-16: offerId in the hash ----------
+
+  it('backward-compat: a request without offerId hashes identically to before the offer field existed', () => {
+    // Golden hash of the legacy canonical shape (no offerId key at all).
+    const legacy = hashCreateBookingRequest(dto());
+    expect(legacy).toBe(hashCreateBookingRequest(dto({ offerId: undefined })));
+    expect(legacy).toBe(hashCreateBookingRequest(dto({ offerId: null })));
+  });
+
+  it('includes offerId when present — the same key with a different offer conflicts', () => {
+    const offerA = dto({ offerId: 'b2f6a6c0-3f8d-4a0e-9d1c-7c2f0a1b2c3d' });
+    const offerARepeat = dto({ offerId: 'b2f6a6c0-3f8d-4a0e-9d1c-7c2f0a1b2c3d' });
+    const offerB = dto({ offerId: 'c3a7b7d1-4a9e-5b1f-8e2d-8d3a1b2c3d4e' });
+    expect(hashCreateBookingRequest(offerA)).toBe(hashCreateBookingRequest(offerARepeat));
+    expect(hashCreateBookingRequest(offerA)).not.toBe(hashCreateBookingRequest(offerB));
+    expect(hashCreateBookingRequest(offerA)).not.toBe(hashCreateBookingRequest(dto()));
+  });
+
+  // ---------- extras in the hash ----------
+
+  it('backward-compat: a request without extras hashes identically to an empty extras array', () => {
+    expect(hashCreateBookingRequest(dto())).toBe(hashCreateBookingRequest(dto({ extras: [] })));
+    expect(hashCreateBookingRequest(dto())).toBe(hashCreateBookingRequest(dto({ extras: undefined })));
+  });
+
+  it('includes extras when present — a retry with a changed selection conflicts', () => {
+    const bag = { serviceId: 'b2f6a6c0-3f8d-4a0e-9d1c-7c2f0a1b2c3d', quantity: 1, passengerIndex: 0 };
+    const withBag = dto({ extras: [bag] });
+    expect(hashCreateBookingRequest(withBag)).toBe(hashCreateBookingRequest(dto({ extras: [bag] })));
+    expect(hashCreateBookingRequest(withBag)).not.toBe(hashCreateBookingRequest(dto()));
+    expect(hashCreateBookingRequest(withBag)).not.toBe(
+      hashCreateBookingRequest(dto({ extras: [{ ...bag, quantity: 2 }] })),
+    );
+  });
+
+  it('extras order alone never changes the fingerprint', () => {
+    const a = { serviceId: 'b2f6a6c0-3f8d-4a0e-9d1c-7c2f0a1b2c3d', quantity: 1, passengerIndex: 0 };
+    const b = { serviceId: 'c3a7b7d1-4a9e-5b1f-8e2d-8d3a1b2c3d4e', quantity: 1 };
+    expect(hashCreateBookingRequest(dto({ extras: [a, b] }))).toBe(hashCreateBookingRequest(dto({ extras: [b, a] })));
   });
 });

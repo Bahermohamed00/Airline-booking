@@ -7,6 +7,7 @@ import type { CreateBookingPayload } from '../models/customer-booking.model';
 import { API_CONFIG } from '../config/api-config';
 
 const PAYLOAD: CreateBookingPayload = {
+  idempotencyKey: 'b1c2d3e4-1111-4222-8333-944455556666',
   flightId: 'f1',
   cabinClass: 'ECONOMY',
   seatIds: ['s1', 's2'],
@@ -89,6 +90,30 @@ describe('CustomerBookingService', () => {
     req.flush({});
   });
 
+  it('requestCancellation POSTs to /bookings/:id/cancellation-request with an empty body when no reason', () => {
+    let response: { id?: string; status?: string } | undefined;
+    service.requestCancellation('b1').subscribe((r) => (response = r));
+    const req = http.expectOne('http://api.test/api/bookings/b1/cancellation-request');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    req.flush({
+      id: 'cr-1',
+      bookingId: 'b1',
+      status: 'PENDING',
+      reason: null,
+      requestedAt: '2026-10-01T09:00:00Z',
+    });
+    expect(response?.status).toBe('PENDING');
+  });
+
+  it('requestCancellation sends the reason when provided', () => {
+    service.requestCancellation('b1', 'Plans changed').subscribe();
+    const req = http.expectOne('http://api.test/api/bookings/b1/cancellation-request');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ reason: 'Plans changed' });
+    req.flush({});
+  });
+
   it('listAdmin GETs /admin/bookings with no params when the query is empty', () => {
     service.listAdmin().subscribe();
     const req = http.expectOne('http://api.test/api/admin/bookings');
@@ -122,6 +147,38 @@ describe('CustomerBookingService', () => {
     service.getAdmin('b1').subscribe();
     const req = http.expectOne('http://api.test/api/admin/bookings/b1');
     expect(req.request.method).toBe('GET');
+    req.flush({});
+  });
+
+  it('pricePreview POSTs the request to /bookings/price-preview', () => {
+    let response: unknown;
+    service
+      .pricePreview({ flightId: 'f1', cabinClass: 'ECONOMY', passengerCount: 2, offerId: 'offer-9' })
+      .subscribe((r) => (response = r));
+
+    const req = http.expectOne('http://api.test/api/bookings/price-preview');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      flightId: 'f1',
+      cabinClass: 'ECONOMY',
+      passengerCount: 2,
+      offerId: 'offer-9',
+    });
+    req.flush({
+      currency: 'EUR',
+      perPassenger: { basePrice: 100, discountAmount: 10, taxAmount: 20, feeAmount: 5, total: 115 },
+      passengerCount: 2,
+      totalAmount: 230,
+      offer: null,
+    });
+    expect((response as { totalAmount: number }).totalAmount).toBe(230);
+  });
+
+  it('pricePreview omits offerId when not provided', () => {
+    service.pricePreview({ flightId: 'f1', cabinClass: 'BUSINESS', passengerCount: 1 }).subscribe();
+
+    const req = http.expectOne('http://api.test/api/bookings/price-preview');
+    expect(req.request.body).not.toHaveProperty('offerId');
     req.flush({});
   });
 

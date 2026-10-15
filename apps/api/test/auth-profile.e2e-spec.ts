@@ -53,6 +53,7 @@ describe('Profile & change password (e2e)', () => {
       const res = await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
 
       expect(Object.keys(res.body).sort()).toEqual([
+        'dateOfBirth',
         'email',
         'emailVerified',
         'firstName',

@@ -5,6 +5,7 @@ import { seedCatalog } from './seed/catalog.seed.js';
 import { seedFlights } from './seed/flights.seed.js';
 import { seedBookings } from './seed/booking.seed.js';
 import { seedOffers } from './seed/offers.seed.js';
+import { seedExtras } from './seed/extras.seed.js';
 import { seedOperations } from './seed/operations.seed.js';
 
 // Re-export the public constants/helpers that tests and other tooling import
@@ -15,9 +16,9 @@ export { SCHEDULE_RULE_DEFS } from './seed/flights.seed.js';
 
 /**
  * Root seed orchestrator. Runs the domain seeds in dependency order:
- *   identity → catalog → flights → booking → offers → operations
+ *   identity → catalog → flights → booking → offers → extras → operations
  * (identity gives users/roles; catalog gives airports/aircraft/routes; flights
- * needs catalog; booking needs flights + the customer; offers/operations are
+ * needs catalog; booking needs flights + the customer; offers/extras/operations are
  * independent). Behavior and console output are unchanged from the single-file
  * seed; only the internal organization changed.
  */
@@ -27,11 +28,12 @@ async function main(): Promise<void> {
   const { scheduleRules, adopted } = await seedFlights(routes, aircraft, airports);
   await seedBookings(customer);
   const offers = await seedOffers();
+  const extras = await seedExtras();
   await seedOperations(customer);
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded: ${permissions.length} permissions, ${roles.length} roles, ${airports.length} airports, ${aircraft.length} aircraft, ${routes.length} routes, ${scheduleRules.length} schedule rules (${adopted} flights adopted), ${offers} offers`,
+    `Seeded: ${permissions.length} permissions, ${roles.length} roles, ${airports.length} airports, ${aircraft.length} aircraft, ${routes.length} routes, ${scheduleRules.length} schedule rules (${adopted} flights adopted), ${offers} offers, ${extras} extras`,
   );
   // eslint-disable-next-line no-console
   console.log(`Users: admin=${admin.email} / customer=${customer.email}`);

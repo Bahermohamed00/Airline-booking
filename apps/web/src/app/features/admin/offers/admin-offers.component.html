@@ -4,7 +4,9 @@
     <div>
       <h1>Offers</h1>
       <p class="page__sub">
-        Marketing offers shown on the public /offers page. Deletion deactivates an offer.
+        Every offer is listed here, including expired and future-dated ones — nothing is removed
+        automatically. An offer reaches the customer offers page only while it is Active and carries
+        bookable discount terms.
       </p>
     </div>
     @if (canManage() && !loading()) {
@@ -27,20 +29,23 @@
     </div>
   } @else {
     <div class="filters">
-      <label class="na-label" for="status-filter">Status</label>
-      <select id="status-filter" class="na-select" (change)="setFilter($any($event.target).value)">
-        <option value="">All statuses</option>
-        @for (s of statuses; track s) {
-          <option [value]="s" [selected]="filter() === s">{{ s }}</option>
-        }
-      </select>
+      <div>
+        <label class="na-label" for="status-filter">Stored status</label>
+        <select id="status-filter" class="na-select" (change)="setFilter($any($event.target).value)">
+          <option value="">All statuses</option>
+          @for (s of statuses; track s) {
+            <option [value]="s" [selected]="filter() === s">{{ s }}</option>
+          }
+        </select>
+        <p class="filter-hint">{{ filterHint }}</p>
+      </div>
     </div>
 
     @if (offers().length === 0) {
       <na-empty-state
         icon="✈"
         title="No offers"
-        message="Create the first marketing offer for the /offers page."
+        message="No offers match this filter. Try 'All statuses' to include expired offers."
       />
     } @else {
       <div class="table-wrap">
@@ -51,6 +56,7 @@
               <th>Destination</th>
               <th>Value</th>
               <th>Status</th>
+              <th>Bookability</th>
               <th>Validity</th>
               <th>Actions</th>
             </tr>
@@ -69,7 +75,16 @@
                 <td data-label="Destination">{{ o.destination ?? '—' }}</td>
                 <td data-label="Value">{{ o.offerValue ?? '—' }}</td>
                 <td data-label="Status">
-                  <na-badge [tone]="toneOf(o.status)">{{ o.status }}</na-badge>
+                  <na-badge [tone]="lifecycleTone(o)">{{ lifecycleLabel(o) }}</na-badge>
+                  @if (o.lifecycleStatus !== o.status) {
+                    <small class="status-note">stored: {{ o.status }}</small>
+                  }
+                </td>
+                <td data-label="Bookability">
+                  <na-badge [tone]="bookabilityTone(o)">{{ bookabilityLabel(o) }}</na-badge>
+                  @if (bookabilityNote(o); as note) {
+                    <small class="status-note">{{ note }}</small>
+                  }
                 </td>
                 <td data-label="Validity">
                   {{ dateOf(o.validFrom) }} → {{ dateOf(o.validUntil) }}
@@ -81,9 +96,16 @@
                     >
                     @if (o.status !== 'INACTIVE') {
                       <na-button variant="danger" size="sm" (clicked)="askDelete(o)"
-                        >Delete</na-button
+                        >Deactivate</na-button
                       >
                     }
+                    <na-button
+                      variant="secondary"
+                      size="sm"
+                      class="permanent-delete"
+                      (clicked)="askPermanentDelete(o)"
+                      >Delete permanently</na-button
+                    >
                   </div>
                 </td>
               </tr>
@@ -180,6 +202,100 @@
           >
           <textarea id="of-terms" class="na-input" rows="2" formControlName="terms"></textarea>
         </div>
+        <fieldset class="bookable">
+          <legend class="na-label">Offer type</legend>
+          <div class="mode-options" role="radiogroup" aria-label="Offer type">
+            <label class="mode-option" for="of-mode-bookable">
+              <input
+                type="radio"
+                id="of-mode-bookable"
+                name="mode"
+                value="bookable"
+                formControlName="mode"
+                class="mode-option__input"
+              />
+              <span class="mode-option__text">
+                <strong>Bookable</strong>
+                <small>Customers can redeem this offer while it is active.</small>
+              </span>
+            </label>
+            <label class="mode-option" for="of-mode-marketing">
+              <input
+                type="radio"
+                id="of-mode-marketing"
+                name="mode"
+                value="marketing"
+                formControlName="mode"
+                class="mode-option__input"
+              />
+              <span class="mode-option__text">
+                <strong>Marketing-only</strong>
+                <small
+                  >Promotional content only — this offer cannot be booked and does not appear in
+                  customer offers.</small
+                >
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        @if (mode === 'bookable') {
+          <fieldset class="bookable">
+            <legend class="na-label">Bookable discount</legend>
+            <p class="na-hint">
+              Required for a bookable offer. The discount applies to the base fare when the customer
+              books.
+            </p>
+            <div class="form-grid">
+              <div class="na-field">
+                <label class="na-label" for="of-discount-type">Discount type</label>
+                <select id="of-discount-type" class="na-select" formControlName="discountType">
+                  <option value="">None</option>
+                  <option value="PERCENT">Percentage</option>
+                  <option value="FIXED_AMOUNT">Fixed amount</option>
+                </select>
+              </div>
+              @if (discountTypeSel(); as dtype) {
+                <div class="na-field">
+                  <label class="na-label" for="of-discount-value">
+                    {{ dtype === 'PERCENT' ? 'Percentage (0–100)' : 'Amount (EUR)' }}
+                  </label>
+                  <input
+                    id="of-discount-value"
+                    class="na-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    formControlName="discountValue"
+                  />
+                  @if (discountValueError(); as derr) {
+                  <p class="na-error">{{ derr }}</p>
+                }
+              </div>
+            }
+          </div>
+          <div class="form-grid">
+            <div class="na-field">
+              <label class="na-label" for="of-route">Eligible route</label>
+              <select id="of-route" class="na-select" formControlName="routeId">
+                <option value="">All routes</option>
+                @for (r of routes(); track r.id) {
+                  <option [value]="r.id">{{ routeOptionLabel(r) }}</option>
+                }
+              </select>
+            </div>
+            <div class="na-field">
+              <label class="na-label" for="of-cabin">Eligible cabin</label>
+              <select id="of-cabin" class="na-select" formControlName="cabinClass">
+                <option value="">All cabins</option>
+                @for (c of cabins; track c) {
+                  <option [value]="c">{{ cabinName(c) }}</option>
+                }
+              </select>
+            </div>
+          </div>
+          </fieldset>
+        }
         <div class="form-grid">
           <div class="na-field">
             <label class="na-label" for="of-from">Valid from</label>
@@ -220,15 +336,51 @@
 </section>
 
 <na-dialog
+  [open]="clearingTerms()"
+  title="Clear the bookable terms?"
+  confirmLabel="Clear terms"
+  [confirmDanger]="true"
+  (confirmed)="confirmClearTerms()"
+  (cancelled)="cancelClearTerms()"
+>
+  Switching to <strong>Marketing-only</strong> will clear the configured discount
+  @if (editing()?.discount; as d) {
+    (<strong>{{ d.type === 'PERCENT' ? d.value + '%' : '€' + d.value.toFixed(2) }}</strong>)
+  }
+  and any eligibility scope
+  @if (editing()?.eligibility?.routeId || editing()?.eligibility?.cabinClass) {
+    for this offer.
+  } @else {
+    on this offer.
+  }
+  This offer will no longer be bookable and will not appear in customer offers. Existing bookings
+  keep their snapshotted terms.
+</na-dialog>
+
+<na-dialog
   [open]="deleting() !== null"
-  title="Delete offer?"
-  confirmLabel="Delete offer"
+  title="Deactivate offer?"
+  confirmLabel="Deactivate offer"
   [confirmDanger]="true"
   (confirmed)="confirmDelete()"
   (cancelled)="deleting.set(null)"
 >
   @if (deleting(); as o) {
-    Deleting <strong>{{ o.title }}</strong> deactivates it immediately — it disappears from the
-    public /offers page but stays in the catalog history. This action is audit-logged.
+    Deactivate: <strong>{{ o.title }}</strong> will no longer be available to customers, but
+    historical records remain. This action is audit-logged.
+  }
+</na-dialog>
+
+<na-dialog
+  [open]="deletingPermanently() !== null"
+  title="Delete offer permanently?"
+  confirmLabel="Delete permanently"
+  [confirmDanger]="true"
+  (confirmed)="confirmPermanentDelete()"
+  (cancelled)="deletingPermanently.set(null)"
+>
+  @if (deletingPermanently(); as o) {
+    Delete permanently: <strong>{{ o.title }}</strong> will be permanently removed. This is only
+    possible if no booking references it. This action is audit-logged and cannot be undone.
   }
 </na-dialog>

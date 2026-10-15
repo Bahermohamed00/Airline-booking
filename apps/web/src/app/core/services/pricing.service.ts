@@ -56,7 +56,7 @@ export class PricingService {
       input.seats.reduce((sum, s) => sum + this.seatFee(s.seat), 0) +
       (input.returnSeats ?? []).reduce((sum, s) => sum + this.seatFee(s.seat), 0);
 
-    const extras = input.extras.reduce((sum, e) => sum + e.extra.price * e.quantity, 0);
+    const extras = input.extras.reduce((sum, e) => sum + e.service.price * e.quantity, 0);
     const baggage = input.extraBags * EXTRA_BAG_PRICE;
 
     const discount = input.promoCode ? Math.round(baseFare * PROMO_DISCOUNT_RATE * 100) / 100 : 0;

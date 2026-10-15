@@ -17,7 +17,7 @@ import { NaButton } from './button.component';
         <div class="dialog__body"><ng-content /></div>
         <div class="dialog__actions">
           <na-button variant="secondary" (clicked)="cancelled.emit()">{{ cancelLabel() }}</na-button>
-          <na-button [variant]="confirmDanger() ? 'danger' : 'primary'" (clicked)="confirmed.emit()">{{ confirmLabel() }}</na-button>
+          <na-button [variant]="confirmDanger() ? 'danger' : 'primary'" [disabled]="confirmDisabled()" (clicked)="confirmed.emit()">{{ confirmLabel() }}</na-button>
         </div>
       </div>
     }
@@ -41,6 +41,8 @@ export class NaDialog {
   readonly confirmLabel = input('Confirm');
   readonly cancelLabel = input('Cancel');
   readonly confirmDanger = input(false);
+  /** Disables both dialog actions (e.g. while a payment confirmation runs). */
+  readonly confirmDisabled = input(false);
   readonly confirmed = output<void>();
   readonly cancelled = output<void>();
 

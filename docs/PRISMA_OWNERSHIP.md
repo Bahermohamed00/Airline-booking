@@ -2,7 +2,7 @@
 
 NovaAir uses a **multi-file Prisma schema**: `prisma/schema/<Model>/<Model>.prisma`
 with `prisma/schema/schema.prisma` as the generator/datasource entrypoint.
-There are **37 models** and **23 enums**. Each model has exactly one canonical
+There are **38 models** and **26 enums**. Each model has exactly one canonical
 file; no model or enum is defined twice.
 
 This document assigns every model file a single owner so that two developers
@@ -19,7 +19,7 @@ can work in parallel without colliding on the schema. It complements
 
 ## 1. Model ownership map
 
-### Developer A — Customer & Revenue (12 models)
+### Developer A — Customer & Revenue (13 models)
 
 | Model file | Notes |
 | ---------- | ----- |
@@ -30,6 +30,7 @@ can work in parallel without colliding on the schema. It complements
 | `SeatHold/SeatHold.prisma` | References B `Flight`, `Seat`. |
 | `Payment/Payment.prisma` | References A `Booking`. |
 | `Refund/Refund.prisma` | References A `Payment`/`Booking`. |
+| `CancellationRequest/CancellationRequest.prisma` | Customer cancellation-request workflow. References A `Booking`/`Refund`, B `User`. |
 | `Offer/Offer.prisma` | Standalone catalog. |
 | `ExtraService/ExtraService.prisma` | Extra-services catalog. |
 | `BookingExtra/BookingExtra.prisma` | Join (Booking ↔ ExtraService). |
@@ -88,8 +89,9 @@ consumer, including across the ownership boundary.
 ### Single-owner enums (owner reviews; additive values still preferred)
 
 - **A-owned:** `BookingStatus`, `PassengerType`, `PaymentStatus`, `RefundStatus`,
-  `SeatHoldStatus`, `OfferStatus`, `ExtraServiceStatus`,
-  `NotificationChannel`, `NotificationStatus`.
+  `SeatHoldStatus`, `OfferStatus`, `ExtraServiceStatus`, `ExtraServiceCategory`,
+  `ExtraPricingUnit`,
+  `NotificationChannel`, `NotificationStatus`, `CancellationRequestStatus`.
 - **B-owned:** `UserStatus`, `AircraftStatus`, `AirportStatus`, `RouteStatus`,
   `CabinClass`, `FlightStatus`, `FlightScheduleStatus`, `Weekday`,
   `ScheduleRuleStatus`, `CheckInStatus`, `BaggageType`, `BaggageStatus`,

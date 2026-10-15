@@ -1,0 +1,198 @@
+<section class="page">
+  <na-breadcrumbs [items]="crumbs" />
+  <header class="page__head">
+    <div>
+      <h1>Cancellation requests</h1>
+      <p class="page__sub">
+        Customer cancellation requests for confirmed bookings. Approving refunds per the fare
+        policy and cancels the booking once the refund completes.
+      </p>
+    </div>
+  </header>
+
+  @if (!canManage()) {
+    <na-empty-state
+      icon="🔒"
+      title="Access restricted"
+      message="You need the bookings:manage permission to review cancellation requests. Contact a Super Admin."
+    />
+  } @else if (loading()) {
+    <na-skeleton [rows]="[1, 2, 3]" height="2.5rem" />
+  } @else if (loadError()) {
+    <div class="list-error" role="alert">
+      <p>{{ loadError() }}</p>
+      <na-button variant="secondary" (clicked)="load()">Retry</na-button>
+    </div>
+  } @else {
+    <div class="filters">
+      <label class="na-label" for="status-filter">Status</label>
+      <select id="status-filter" class="na-select" (change)="setFilter($any($event.target).value)">
+        <option value="" [selected]="filter() === ''">All statuses</option>
+        @for (s of statuses; track s) {
+          <option [value]="s" [selected]="filter() === s">{{ s }}</option>
+        }
+      </select>
+    </div>
+
+    @if (requests().length === 0) {
+      <na-empty-state
+        icon="✓"
+        title="No cancellation requests"
+        message="There are no cancellation requests for the selected status."
+      />
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Booking</th>
+              <th>Customer</th>
+              <th>Flight</th>
+              <th>Booked</th>
+              <th>Requested</th>
+              <th>Reason</th>
+              <th>Policy</th>
+              <th>Refund</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of requests(); track r.id) {
+              <tr>
+                <td data-label="Booking">
+                  <span class="na-text-mono">{{ r.booking.bookingReference }}</span>
+                </td>
+                <td data-label="Customer">
+                  <div class="title-cell">
+                    <strong>{{ r.customer.firstName }} {{ r.customer.lastName }}</strong>
+                    <small>{{ r.customer.email }}</small>
+                  </div>
+                </td>
+                <td data-label="Flight">
+                  <div class="title-cell">
+                    <strong>
+                      {{ r.flight.originIata }} → {{ r.flight.destinationIata }}
+                    </strong>
+                    <small>
+                      {{ r.flight.flightNumber }} · departs {{ fmt(r.flight.departureTime) }}
+                    </small>
+                  </div>
+                </td>
+                <td data-label="Booked">{{ fmt(r.booking.bookedAt) }}</td>
+                <td data-label="Requested">{{ fmt(r.requestedAt) }}</td>
+                <td data-label="Reason">{{ r.reason ?? '—' }}</td>
+                <td data-label="Policy">
+                  @if (r.policy; as policy) {
+                    <div class="title-cell">
+                      <strong>{{ policy.refundPercentage }}%</strong>
+                      <small>{{ money(policy.refundableAmount, policy.currency) }}</small>
+                    </div>
+                  } @else {
+                    —
+                  }
+                </td>
+                <td data-label="Refund">
+                  @if (r.refund; as refund) {
+                    <div class="title-cell">
+                      <na-badge [tone]="refundTone(refund.status)">
+                        {{ refundLabel(refund.status) }}
+                      </na-badge>
+                      @if (refundRetryable(r)) {
+                        <small class="refund-retry">Refund rejected — approve again to retry.</small>
+                      }
+                    </div>
+                  } @else {
+                    —
+                  }
+                </td>
+                <td data-label="Status">
+                  <na-badge [tone]="toneOf(r.status)">{{ r.status }}</na-badge>
+                </td>
+                <td data-label="Actions">
+                  <div class="row-actions">
+                    @if (r.status === 'PENDING') {
+                      <na-button variant="cta" size="sm" (clicked)="askApprove(r)"
+                        >Approve</na-button
+                      >
+                      <na-button variant="danger" size="sm" (clicked)="askReject(r)"
+                        >Reject</na-button
+                      >
+                    }
+                    @if (refundRetryable(r)) {
+                      <na-button variant="secondary" size="sm" (clicked)="askApprove(r)"
+                        >Approve again</na-button
+                      >
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</section>
+
+<na-dialog
+  [open]="approving() !== null"
+  title="Approve cancellation request?"
+  confirmLabel="Approve request"
+  [confirmDisabled]="saving()"
+  (confirmed)="confirmApprove()"
+  (cancelled)="approving.set(null)"
+>
+  @if (approving(); as r) {
+    @if (r.policy; as policy) {
+      <p>
+        Approving will refund
+        <strong>{{ money(policy.refundableAmount, policy.currency) }}</strong>
+        ({{ policy.refundPercentage }}% of the paid amount) and cancel booking
+        <strong class="na-text-mono">{{ r.booking.bookingReference }}</strong>
+        once the refund completes.
+      </p>
+    } @else {
+      <p>
+        Approving will cancel booking
+        <strong class="na-text-mono">{{ r.booking.bookingReference }}</strong>
+        once the refund completes. No refundable amount was calculated for this booking.
+      </p>
+    }
+    <p class="na-text-muted na-text-small">This action is audit-logged.</p>
+  }
+</na-dialog>
+
+<na-dialog
+  [open]="rejecting() !== null"
+  title="Reject cancellation request?"
+  confirmLabel="Reject request"
+  [confirmDanger]="true"
+  [confirmDisabled]="saving() || rejectForm.invalid"
+  (confirmed)="confirmReject()"
+  (cancelled)="rejecting.set(null)"
+>
+  @if (rejecting(); as r) {
+    <p>
+      Booking <strong class="na-text-mono">{{ r.booking.bookingReference }}</strong> remains
+      active and no refund will be issued. The customer is notified of the decision.
+    </p>
+    <form [formGroup]="rejectForm">
+      <div class="na-field">
+        <label class="na-label" for="reject-reason"
+          >Rejection reason <span class="na-hint">(optional, shown to the customer)</span></label
+        >
+        <textarea
+          id="reject-reason"
+          class="na-input"
+          rows="3"
+          maxlength="500"
+          formControlName="rejectionReason"
+        ></textarea>
+        @if (rejectForm.controls.rejectionReason.hasError('maxlength')) {
+          <p class="na-error">Reason must be at most 500 characters.</p>
+        }
+      </div>
+    </form>
+  }
+</na-dialog>

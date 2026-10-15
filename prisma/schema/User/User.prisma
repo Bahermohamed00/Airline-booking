@@ -22,6 +22,7 @@ model User {
   auditLogs      AuditLog[]
   seatHolds      SeatHold[]
   sessions       Session[]
+  cancellationRequests CancellationRequest[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
 

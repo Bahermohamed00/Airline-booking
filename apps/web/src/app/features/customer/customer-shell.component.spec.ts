@@ -3,6 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CustomerShell } from './customer-shell.component';
 import { AuthService } from '../../core/services/auth.service';
+import { NotificationService } from '../../core/services/notification.service';
 import type { User } from '../../core/models/domain.model';
 
 const customer: User = {
@@ -28,6 +29,19 @@ async function setup(loggedIn: boolean): Promise<ComponentFixture<CustomerShell>
           isLoggedIn: () => loggedIn,
           user: () => (loggedIn ? customer : null),
           logout: vi.fn(),
+        },
+      },
+      {
+        provide: NotificationService,
+        useValue: {
+          unreadCount: () => 0,
+          unreadError: () => false,
+          unreadBadge: () => '0',
+          mutations: () => 0,
+          list: vi.fn(),
+          refreshUnreadCount: vi.fn(),
+          markRead: vi.fn(),
+          markAllRead: vi.fn(),
         },
       },
     ],

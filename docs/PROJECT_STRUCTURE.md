@@ -796,13 +796,19 @@ at the time of writing, kept visible on purpose:
   (`20260923*`–`20260928*`) and `npx prisma migrate status` reports both the
   dev and test databases up to date with them. The `Offer` model in the tree
   (marketing/catalog fields, `DRAFT|ACTIVE|INACTIVE|EXPIRED`) matches the
-  applied `20260928174500_offers` migration.
+  applied `20260928174500_offers` migration. (Superseded in part on
+  2026-10-08: BR-16 Bookable Offers added `discountType`/`discountValue` and
+  optional `routeId`/`cabinClass` to `Offer` via migration
+  `20261008094004_bookable_offers` — see `docs/adr/0005-bookable-offers.md`.)
 - **Current behavior (deliberate):** the home page "Featured offers" section
   renders curated editorial data (`features/home/home.data.ts`), while
-  `/offers` and `/admin/offers` use the real API. This is an explicit
-  decision, not an oversight: the API `Offer` model is marketing/catalog
-  data only (no prices, route codes, or cabins) per the Phase 5 isolation
-  rule, so the landing-page showcase keeps its own presentation data.
+  `/offers` and `/admin/offers` use the real API. This remains an explicit
+  decision, not an oversight: the landing-page showcase keeps its own
+  presentation data. (Original rationale — "the API `Offer` model is
+  marketing/catalog data only (no prices, route codes, or cabins) per the
+  Phase 5 isolation rule" — is **superseded 2026-10-08 by BR-16 Bookable
+  Offers**: the API `Offer` now carries `discountType`/`discountValue` and
+  optional route/cabin eligibility; see `docs/adr/0005-bookable-offers.md`.)
 - **Current behavior:** root `package.json` declares an `eslint` script but
   no eslint config exists; the API is linted with oxlint.
   **Recommended:** align the script with reality.

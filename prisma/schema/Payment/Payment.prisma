@@ -6,6 +6,12 @@ model Payment {
   status           PaymentStatus @default(PENDING)
   provider         String        @db.VarChar(50)
   providerReference String?      @unique @map("provider_reference") @db.VarChar(255)
+  // Fine-grained provider-side status (e.g. Stripe PaymentIntent status:
+  // requires_action/processing/succeeded). Payment.status stays the coarse
+  // internal state machine; this is observability/reconciliation data only.
+  providerStatus   String?       @map("provider_status") @db.VarChar(50)
+  // Legacy tokenized reference used only by the mock provider flow. The Stripe
+  // PaymentIntent flow never writes it (no reusable payment tokens are stored).
   token            String?       @db.VarChar(255)
   idempotencyKey   String?       @map("idempotency_key") @db.VarChar(255)
   paidAt           DateTime?     @map("paid_at") @db.Timestamptz(6)
@@ -16,6 +22,7 @@ model Payment {
   booking  Booking   @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   refunds  Refund[]
 
+  @@unique([bookingId, idempotencyKey])
   @@index([bookingId, status])
   @@map("payments")
 }

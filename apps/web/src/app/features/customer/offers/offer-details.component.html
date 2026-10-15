@@ -1,0 +1,129 @@
+<div class="na-container page">
+  @if (loadError()) {
+    <na-alert
+      tone="warning"
+      icon="⚠"
+      title="Offer unavailable"
+      retryable
+      (retry)="retry()"
+      class="state"
+    >
+      We could not load this offer. Please try again in a moment.
+    </na-alert>
+  } @else if (offer() === undefined) {
+    <div class="state"><na-skeleton [rows]="[1]" height="22rem" /></div>
+    <div class="state"><na-skeleton [rows]="[1, 2]" height="10rem" /></div>
+  } @else if (offer() === null) {
+    <na-empty-state
+      icon="✈"
+      title="Offer not found"
+      message="This offer is no longer available — it may have expired or been withdrawn."
+      actionLabel="Browse all offers"
+      (action)="goOffers()"
+    />
+  } @else if (offer(); as o) {
+    <nav class="back" aria-label="Breadcrumb">
+      <a routerLink="/offers">← All offers</a>
+    </nav>
+
+    <article class="panel" aria-labelledby="offer-title">
+      <div class="panel__media" aria-hidden="true">
+        @if (o.imageUrl; as img) {
+          <img
+            [ngSrc]="img"
+            fill
+            priority
+            sizes="(max-width: 1000px) 100vw, 80vw"
+            [alt]="o.title"
+            class="panel__img"
+          />
+        }
+        <span class="panel__scrim"></span>
+      </div>
+      @if (o.badge || (o.bookable && o.discount)) {
+        <span class="badge">
+          <strong>{{ o.bookable && o.discount ? discountLabel(o) : o.offerValue }}</strong>
+          @if (o.badge) {
+            <small class="caps">{{ o.badge }}</small>
+          }
+        </span>
+      }
+      <div class="panel__body">
+        <p class="caps caps--dim">{{ o.bookable ? 'Bookable offer' : 'Special fare' }}</p>
+        @if (o.destination) {
+          <p class="caps o-route">{{ o.destination }}</p>
+        }
+        <h1 id="offer-title" class="o-title">{{ o.title }}</h1>
+        <p class="soft o-desc">{{ o.description }}</p>
+      </div>
+    </article>
+
+    <div class="details">
+      <section class="na-card card-details" aria-labelledby="terms-h">
+        <h2 id="terms-h">Offer details</h2>
+        <dl class="facts">
+          <div>
+            <dt>Discount</dt>
+            <dd>{{ o.bookable && o.discount ? discountLabel(o) : 'Marketing offer — no booking discount' }}</dd>
+          </div>
+          <div>
+            <dt>Eligible route</dt>
+            <dd>{{ routeLabel(o) }}</dd>
+          </div>
+          <div>
+            <dt>Eligible cabin</dt>
+            <dd>{{ cabinLabelOf(o) }}</dd>
+          </div>
+          <div>
+            <dt>Valid</dt>
+            <dd>{{ o.validFrom | date: 'd MMM y' }} – {{ o.validUntil | date: 'd MMM y' }}</dd>
+          </div>
+        </dl>
+        @if (o.terms) {
+          <p class="terms">{{ o.terms }}</p>
+        }
+        <p class="smallprint">
+          The discount is applied per passenger on the base fare at the time of booking, subject to
+          availability. Eligibility is confirmed during checkout.
+        </p>
+      </section>
+
+      <aside class="na-card card-book" aria-label="Book this offer">
+        @if (o.bookable) {
+          <p class="value value--md">{{ discountLabel(o) }}</p>
+          <p class="na-text-muted na-text-small">
+            @if (o.eligibility?.originIata && o.eligibility?.destinationIata) {
+              {{ o.eligibility?.originIata }} → {{ o.eligibility?.destinationIata }}
+              @if (o.eligibility?.cabinClass) {
+                · {{ cabinLabelOf(o) }}
+              }
+            } @else {
+              Valid across the network{{ o.eligibility?.cabinClass ? ' in ' + cabinLabelOf(o) : '' }}.
+            }
+          </p>
+          <a
+            [routerLink]="bookCommands(o)"
+            [queryParams]="bookParams(o)"
+            class="cta"
+            [attr.aria-label]="'Book offer: ' + o.title"
+          >
+            Book now
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </a>
+        } @else {
+          <p class="na-text-muted na-text-small">
+            This is a marketing offer and is not available to book online.
+          </p>
+        }
+      </aside>
+    </div>
+  }
+</div>

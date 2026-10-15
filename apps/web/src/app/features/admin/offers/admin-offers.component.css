@@ -61,6 +61,54 @@ td {
 .title-cell small {
   color: var(--na-ink-500);
 }
+/* Secondary line under a badge: the stored status when the derived lifecycle
+   differs, and the reason an offer with terms is not bookable right now. */
+.status-note {
+  display: block;
+  margin-top: var(--na-space-1);
+  color: var(--na-ink-500);
+  font-size: var(--na-text-xs);
+}
+/* Offer-type selector: native radios styled as two selectable cards. */
+.mode-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--na-space-3);
+}
+.mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--na-space-3);
+  padding: var(--na-space-3);
+  border: 1px solid var(--na-border-strong);
+  border-radius: var(--na-radius-md);
+  cursor: pointer;
+}
+.mode-option:hover {
+  border-color: var(--na-blue-600);
+}
+.mode-option__input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.mode-option:has(.mode-option__input:checked) {
+  border-color: var(--na-blue-600);
+  background: var(--na-blue-100);
+}
+.mode-option__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mode-option__text small {
+  color: var(--na-ink-500);
+}
+.filter-hint {
+  margin-top: var(--na-space-1);
+  max-width: 42ch;
+  color: var(--na-ink-500);
+  font-size: var(--na-text-xs);
+}
 .row-actions {
   display: flex;
   gap: var(--na-space-2);
@@ -108,6 +156,22 @@ td {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 var(--na-space-4);
+}
+.bookable {
+  border: 1px solid var(--na-border);
+  border-radius: var(--na-radius-md);
+  padding: var(--na-space-3) var(--na-space-4) var(--na-space-2);
+  margin: 0 0 var(--na-space-3);
+}
+.bookable legend {
+  padding: 0 var(--na-space-2);
+}
+.permanent-delete button {
+  color: var(--na-danger);
+  border-color: var(--na-danger);
+}
+.permanent-delete button:hover:not(:disabled) {
+  background: var(--na-danger-bg, rgba(180, 35, 24, 0.08));
 }
 @media (max-width: 900px) {
   table,

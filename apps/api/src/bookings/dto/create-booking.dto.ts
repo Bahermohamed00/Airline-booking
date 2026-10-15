@@ -3,12 +3,11 @@ import { Type } from 'class-transformer';
 import { CabinClass, PassengerType } from '@prisma/client';
 import { NormalizeEmail, TrimString } from '../../auth/dto/transforms.js';
 import { ISO_DATE_PATTERN } from '../../schedule-rules/dto/create-schedule-rule.dto.js';
+import { ExtraSelectionDto, MAX_EXTRA_SELECTIONS } from '../../extras/dto/extra-selection.dto.js';
 
-/**
- * Maximum passengers (and therefore seats) per booking. Matches the standard
- * airline single-PNR limit; larger groups must book in multiple bookings.
- */
-export const MAX_BOOKING_PASSENGERS = 9;
+import { MAX_BOOKING_PASSENGERS } from './booking-limits.js';
+
+export { MAX_BOOKING_PASSENGERS };
 
 export class BookingPassengerDto {
   @IsOptional()
@@ -70,6 +69,28 @@ export class CreateBookingDto {
   @ValidateNested({ each: true })
   @Type(() => BookingPassengerDto)
   passengers!: BookingPassengerDto[];
+
+  /**
+   * BR-16: optional bookable offer (one per booking). The client sends only
+   * the offer id — the server validates eligibility and computes the discount
+   * (fare basePrice only) from the DB offer row.
+   */
+  @IsOptional()
+  @IsUUID('4')
+  offerId?: string;
+
+  /**
+   * Optional purchasable extras. The client sends service ids, quantities and
+   * passenger associations only — eligibility, quantities and prices are
+   * validated and computed server-side from the catalog inside the creation
+   * transaction, and each line is snapshotted onto the booking.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_EXTRA_SELECTIONS)
+  @ValidateNested({ each: true })
+  @Type(() => ExtraSelectionDto)
+  extras?: ExtraSelectionDto[];
 
   @IsOptional()
   @NormalizeEmail()

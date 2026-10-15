@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
@@ -24,5 +24,17 @@ export class CustomerPaymentsController {
   @Get(':id/payments')
   findPayments(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.payments.findOwnPayments(user, id);
+  }
+
+  /**
+   * Owner-scoped, on-demand reconciliation of the booking's EXISTING open
+   * payment (webhook delayed/lost recovery). Retrieval-only server-side; never
+   * creates a payment, intent, or charge. Always answers with the current
+   * authoritative payment list.
+   */
+  @Post(':id/payment/reconcile')
+  @HttpCode(200)
+  reconcilePayment(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.payments.reconcileOwnPayment(user, id);
   }
 }

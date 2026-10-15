@@ -9,6 +9,7 @@ import {
   generateLoyaltyMemberNumber,
   seededFlightNumbers,
 } from '../../prisma/seed';
+import { PERMISSIONS, ROLE_DEFS } from '../../prisma/seed/identity.seed.js';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const seedSource = readFileSync(join(repoRoot, 'prisma', 'seed.ts'), 'utf8');
@@ -73,5 +74,52 @@ describe('seed identity cleanup (Phase 1)', () => {
     }
     expect(sql).toMatch(/UPDATE "flights"[\s\S]*'NV'/);
     expect(sql).toMatch(/UPDATE "loyalty_accounts"[\s\S]*'NV'/);
+  });
+});
+
+
+// Admin notifications (parallel A/B workstream): the identity seed must
+// register the dedicated notifications:read permission, grant it to
+// Administrator and Support Staff per the approved policy, and keep
+// notifications:manage separate and ungranted.
+describe('notifications permission seed', () => {
+  it('registers notifications:read in the permission catalog', () => {
+    expect(PERMISSIONS).toContainEqual({
+      resource: 'notifications',
+      action: 'read',
+      description: 'View notification records',
+    });
+  });
+
+  it('grants notifications:read to Administrator and Support Staff', () => {
+    for (const roleName of ['Administrator', 'Support Staff']) {
+      const role = ROLE_DEFS.find((r) => r.name === roleName);
+      expect(role, `role ${roleName} must exist`).toBeDefined();
+      expect(role!.permissions).toContainEqual({
+        resource: 'notifications',
+        action: 'read',
+      });
+    }
+  });
+
+  it('grants notifications:read to no other role, and notifications:manage to no role', () => {
+    for (const role of ROLE_DEFS) {
+      expect(role.permissions).not.toContainEqual({
+        resource: 'notifications',
+        action: 'manage',
+      });
+      if (role.name !== 'Administrator' && role.name !== 'Support Staff') {
+        expect(role.permissions).not.toContainEqual({
+          resource: 'notifications',
+          action: 'read',
+        });
+      }
+    }
+  });
+
+  it('keeps the Super Admin bypass role grant-free', () => {
+    const superAdmin = ROLE_DEFS.find((r) => r.name === 'Super Admin');
+    expect(superAdmin?.isSuperAdmin).toBe(true);
+    expect(superAdmin?.permissions).toEqual([]);
   });
 });

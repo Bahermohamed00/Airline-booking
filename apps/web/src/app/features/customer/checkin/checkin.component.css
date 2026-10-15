@@ -240,6 +240,16 @@
   align-items: center;
   gap: var(--na-space-3);
 }
+.pax__bagfield {
+  max-width: 160px;
+  margin-bottom: 0;
+}
+.pax__bagfield .na-select {
+  min-height: 40px;
+}
+.pax__bags {
+  margin-top: var(--na-space-2);
+}
 .detail na-alert {
   display: block;
   margin-top: var(--na-space-4);

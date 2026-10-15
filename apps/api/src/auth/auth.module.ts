@@ -55,6 +55,10 @@ import { MailModule } from '../mail/mail.module.js';
     RolesGuard,
     PermissionsGuard,
     OwnershipGuard,
+    // JwtService (token verification) and JwtStrategy (validate() trust rules)
+    // are re-exported for the realtime gateway's WebSocket handshake auth.
+    JwtModule,
+    JwtStrategy,
   ],
 })
 export class AuthModule {}

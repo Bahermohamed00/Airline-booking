@@ -36,21 +36,38 @@ export const AUDIT_EVENTS = [
   'SEAT_HELD',
   'SEAT_HOLD_EXPIRED',
   'SEAT_HOLD_RELEASED',
+  // Customer cancellation-request workflow (staff-reviewed paid cancellations).
+  'CANCELLATION_REQUESTED',
+  'CANCELLATION_REQUEST_APPROVED',
+  'CANCELLATION_REQUEST_REJECTED',
   // Offer catalog (Phase 5).
   'OFFER_CREATED',
   'OFFER_UPDATED',
   'OFFER_DELETED',
+  'OFFER_HARD_DELETED',
+  // Extras catalog (staff-managed, lifecycle-deactivated).
+  'EXTRA_SERVICE_CREATED',
+  'EXTRA_SERVICE_UPDATED',
+  'EXTRA_SERVICE_DEACTIVATED',
   // Payments & paid booking lifecycle (Phase 6F).
   'PAYMENT_SUCCEEDED',
   'PAYMENT_FAILED',
+  'PAYMENT_INTENT_CREATED',
+  'PAYMENT_CANCELED',
   'BOOKING_CONFIRMED',
   'SEAT_HOLD_CONVERTED',
   'REFUND_COMPLETED',
+  'REFUND_RECOVERY_REQUESTED',
+  'REFUND_ORPHAN_DISCOVERED',
+  'REFUND_ORPHAN_RESOLVED',
   'BR14_PAYMENT_EXCEPTION',
   // Platform configuration.
   'SETTING_UPDATED',
   // Baggage operations.
   'BAGGAGE_EVENT_RECORDED',
+  // Check-in operations.
+  'CHECK_IN_COMPLETED',
+  'BOARDING_PASSES_INVALIDATED',
 ] as const;
 
 export type AuditEvent = (typeof AUDIT_EVENTS)[number];

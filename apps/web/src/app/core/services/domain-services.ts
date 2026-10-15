@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core';
 import { Observable, of, delay, throwError } from 'rxjs';
 import {
-  BAGGAGE, CHECK_INS, EXTRAS, LOYALTY, NOTIFICATIONS, BOOKINGS,
+  BAGGAGE, CHECK_INS, EXTRAS, LOYALTY, BOOKINGS,
 } from '../mock/mock-data';
 import type {
-  Baggage, CheckIn, BoardingPass, ExtraService, LoyaltyAccount, NotificationItem,
+  Baggage, CheckIn, BoardingPass, ExtraService, LoyaltyAccount,
   Booking,
 } from '../models/domain.model';
 
@@ -92,12 +92,5 @@ export class BaggageService {
 export class LoyaltyService {
   account(): Observable<LoyaltyAccount> {
     return of(LOYALTY).pipe(delay(250));
-  }
-}
-
-@Injectable({ providedIn: 'root' })
-export class NotificationService {
-  mine(): Observable<NotificationItem[]> {
-    return of(NOTIFICATIONS).pipe(delay(250));
   }
 }

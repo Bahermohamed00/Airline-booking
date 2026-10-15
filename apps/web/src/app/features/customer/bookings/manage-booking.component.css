@@ -12,6 +12,12 @@
 .head h1 {
   font-size: var(--na-text-2xl);
 }
+.head__badges {
+  display: flex;
+  gap: var(--na-space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -74,11 +80,22 @@
 .per-pax {
   margin-bottom: var(--na-space-4);
 }
+.extras-list {
+  list-style: none;
+  margin: 0 0 var(--na-space-2);
+  padding: 0 0 var(--na-space-2);
+  display: grid;
+  gap: var(--na-space-1);
+  border-bottom: 1px solid var(--na-border);
+}
 .actions {
   display: flex;
   align-items: center;
   gap: var(--na-space-4);
   flex-wrap: wrap;
+}
+.section na-alert {
+  margin-bottom: var(--na-space-3);
 }
 .pay-due__amount {
   font-size: var(--na-text-lg);
@@ -105,6 +122,80 @@
   padding: 0.2rem 0.6rem;
   color: var(--na-ink-900);
   font-weight: var(--na-font-semibold);
+}
+
+/* ---------- Stripe payment dialog ---------- */
+/* Scrollable on small screens so the Payment Element never overflows. */
+.pay {
+  display: grid;
+  gap: var(--na-space-4);
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: var(--na-space-1);
+}
+.pay__lead {
+  font-size: var(--na-text-lg);
+  font-weight: var(--na-font-semibold);
+}
+.pay__summary {
+  display: grid;
+  gap: var(--na-space-2);
+  margin: 0;
+  padding: var(--na-space-3) 0;
+  border-top: 1px solid var(--na-border);
+  border-bottom: 1px solid var(--na-border);
+}
+.pay__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--na-space-3);
+}
+.pay__row dt {
+  color: var(--na-ink-500);
+  font-size: var(--na-text-sm);
+}
+.pay__row dd {
+  margin: 0;
+}
+.pay__amount {
+  font-size: var(--na-text-2xl);
+  font-weight: var(--na-font-bold);
+}
+.pay__method {
+  display: grid;
+  gap: var(--na-space-2);
+}
+.pay__method-label {
+  font-size: var(--na-text-sm);
+  font-weight: var(--na-font-medium);
+}
+.pay__loading {
+  display: grid;
+  gap: var(--na-space-2);
+}
+.pay__element {
+  width: 100%;
+  min-height: 1px;
+}
+.pay__element--hidden {
+  display: none;
+}
+.pay__notice {
+  font-size: var(--na-text-sm);
+  color: var(--na-ink-700);
+  background: var(--na-surface-sunken);
+  border: 1px solid var(--na-border);
+  border-radius: var(--na-radius-sm);
+  padding: var(--na-space-2) var(--na-space-3);
+}
+.pay__secure {
+  display: flex;
+  gap: var(--na-space-2);
+  align-items: flex-start;
+}
+.pay-resume {
+  margin-top: var(--na-space-2);
 }
 .pay-card {
   border: 1px solid var(--na-border);

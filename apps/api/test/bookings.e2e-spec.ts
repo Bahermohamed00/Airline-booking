@@ -131,6 +131,7 @@ describe('Bookings (e2e)', () => {
   };
 
   const bodyFor = (flightId: string, seatIds: string[], passengers = 1) => ({
+    idempotencyKey: randomUUID(),
     flightId,
     cabinClass: 'ECONOMY',
     seatIds,
@@ -281,13 +282,45 @@ describe('Bookings (e2e)', () => {
     await createBooking(other, bodyFor(flight.id, [seatsSmall[0]!.id])).expect(201);
   });
 
+  it('customer cancellation with an open mock payment succeeds and leaves the payment untouched (protection is a mock-mode no-op)', async () => {
+    const token = await loginAs('cancel-mockpay@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const created = await createBooking(token, bodyFor(flight.id, [seatsSmall[0]!.id])).expect(201);
+    await prismaTestClient.payment.create({
+      data: {
+        bookingId: created.body.id,
+        amount: 505,
+        currency: 'EUR',
+        status: 'PENDING',
+        provider: 'mock',
+        providerReference: 'mockpay_open_1',
+        idempotencyKey: randomUUID(),
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${created.body.id}/cancel`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    // The booking is cancelled; the mock payment is untouched (no PaymentIntent
+    // exists to cancel under PAYMENT_PROVIDER=mock — Stripe-specific behavior
+    // is covered by the unit suite).
+    expect(
+      (await prismaTestClient.booking.findUniqueOrThrow({ where: { id: created.body.id } })).status,
+    ).toBe('CANCELLED');
+    expect(
+      (await prismaTestClient.payment.findFirstOrThrow({ where: { bookingId: created.body.id } })).status,
+    ).toBe('PENDING');
+  });
+
   // ---------- Hold expiration ----------
 
-  it('expires stale holds via the cleanup service: booking intact, fresh holds kept, repeatable', async () => {
+  it('expires stale holds via the cleanup service: orphaned booking auto-cancelled, fresh holds kept, repeatable', async () => {
     const token = await loginAs('expiry@test.dev');
     const { flight, seatsSmall } = await fixtures();
-    await createBooking(token, bodyFor(flight.id, [seatsSmall[0]!.id])).expect(201);
-    await createBooking(token, bodyFor(flight.id, [seatsSmall[1]!.id])).expect(201);
+    const orphaned = await createBooking(token, bodyFor(flight.id, [seatsSmall[0]!.id])).expect(201);
+    const fresh = await createBooking(token, bodyFor(flight.id, [seatsSmall[1]!.id])).expect(201);
 
     // Force the first hold stale.
     const stale = await prismaTestClient.seatHold.findFirstOrThrow({ where: { seatId: seatsSmall[0]!.id } });
@@ -300,13 +333,533 @@ describe('Bookings (e2e)', () => {
     expect(expiredHold.status).toBe('EXPIRED');
     const freshHold = await prismaTestClient.seatHold.findFirstOrThrow({ where: { seatId: seatsSmall[1]!.id } });
     expect(freshHold.status).toBe('ACTIVE');
-    expect(await prismaTestClient.booking.count({ where: { status: 'PENDING' } })).toBe(2); // bookings preserved
+
+    // The sweep cancels PENDING bookings left without any ACTIVE hold (they can
+    // never be paid); the booking row is preserved, not deleted.
+    const orphanedBooking = await prismaTestClient.booking.findUniqueOrThrow({ where: { id: orphaned.body.id } });
+    expect(orphanedBooking.status).toBe('CANCELLED');
+    const freshBooking = await prismaTestClient.booking.findUniqueOrThrow({ where: { id: fresh.body.id } });
+    expect(freshBooking.status).toBe('PENDING');
+    expect(await prismaTestClient.booking.count({ where: { status: 'PENDING' } })).toBe(1);
+    const cancelAudit = await prismaTestClient.auditLog.findMany({
+      where: { action: 'BOOKING_CANCELLED', bookingId: orphaned.body.id },
+    });
+    expect(cancelAudit).toHaveLength(1);
+    expect(cancelAudit[0]!.actorType).toBe('System');
 
     expect(await seatHolds.expireStaleHolds()).toBe(0); // safe to repeat
 
     // Expired seat can be booked again.
     const other = await loginAs('expiry-b@test.dev');
     await createBooking(other, bodyFor(flight.id, [seatsSmall[0]!.id])).expect(201);
+  });
+
+  // ---------- BR-16: bookable offers ----------
+
+  const makeOffer = (overrides: Record<string, unknown> = {}) =>
+    prismaTestClient.offer.create({
+      data: {
+        title: `Offer-${randomUUID().slice(0, 8)}`,
+        description: 'Bookable test offer',
+        status: 'ACTIVE',
+        validFrom: new Date(Date.now() - 86_400_000),
+        validUntil: new Date(Date.now() + 30 * 86_400_000),
+        discountType: 'PERCENT',
+        discountValue: 10,
+        ...overrides,
+      } as never,
+    });
+
+  function pricePreview(token: string | null, body: unknown) {
+    const req = request(app.getHttpServer()).post('/api/bookings/price-preview');
+    if (token) req.set('Authorization', `Bearer ${token}`);
+    return req.send(body as Record<string, unknown>);
+  }
+
+  it('creates a booking with a bookable offer: 201, discounted total, persisted snapshot, offerId set', async () => {
+    const token = await loginAs('offer-booker@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const offer = await makeOffer();
+    const seatIds = seatsSmall.slice(0, 2).map((s) => s.id);
+
+    const res = await createBooking(token, { ...bodyFor(flight.id, seatIds, 2), offerId: offer.id }).expect(201);
+
+    // 10% of 421.00 = 42.10 off the base only → (421 − 42.10 + 67 + 17) × 2
+    expect(res.body.totalAmount).toBe(925.8);
+    expect(res.body.currency).toBe('EUR');
+    expect(res.body.perPassengerTotal).toBe(462.9);
+    expect(res.body.perPassengerDiscountAmount).toBe(42.1);
+    expect(res.body.offer).toMatchObject({
+      id: offer.id,
+      discountType: 'PERCENT',
+      discountValue: 10,
+      discountAmountPerPassenger: 42.1,
+      currency: 'EUR',
+    });
+
+    const booking = await prismaTestClient.booking.findUniqueOrThrow({ where: { bookingReference: res.body.bookingReference } });
+    expect(booking.offerId).toBe(offer.id);
+    const snapshot = booking.fareRulesSnapshot as {
+      perPassenger: { basePrice: number; discountAmount: number; taxAmount: number; feeAmount: number; total: number };
+      offer: { id: string } | null;
+    };
+    expect(snapshot.perPassenger).toEqual({ basePrice: 421, discountAmount: 42.1, taxAmount: 67, feeAmount: 17, total: 462.9 });
+    expect(snapshot.offer?.id).toBe(offer.id);
+  });
+
+  it('booking without an offer is unchanged: legacy totals, null offer, zero discount', async () => {
+    const token = await loginAs('no-offer@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+
+    const res = await createBooking(token, bodyFor(flight.id, [seatsSmall[0]!.id])).expect(201);
+
+    expect(res.body.totalAmount).toBe(505); // (421+67+17) × 1
+    expect(res.body.perPassengerTotal).toBe(505);
+    expect(res.body.perPassengerDiscountAmount).toBe(0);
+    expect(res.body.offer).toBeNull();
+    const booking = await prismaTestClient.booking.findUniqueOrThrow({ where: { bookingReference: res.body.bookingReference } });
+    expect(booking.offerId).toBeNull();
+  });
+
+  it('rejects an unknown offerId with 404 OFFER_NOT_FOUND', async () => {
+    const token = await loginAs('offer-404@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+
+    const res = await createBooking(token, { ...bodyFor(flight.id, [seatsSmall[0]!.id]), offerId: randomUUID() }).expect(404);
+    expect(res.body.code).toBe('OFFER_NOT_FOUND');
+    expect(await prismaTestClient.booking.count()).toBe(0);
+  });
+
+  it('rejects unavailable offers with 409 OFFER_NOT_AVAILABLE: inactive, expired, wrong route, wrong cabin, marketing-only', async () => {
+    const token = await loginAs('offer-409@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const route = await prismaTestClient.route.findFirstOrThrow();
+    const [fra, jfk] = await Promise.all([
+      prismaTestClient.airport.findUniqueOrThrow({ where: { iataCode: 'FRA' } }),
+      prismaTestClient.airport.findUniqueOrThrow({ where: { iataCode: 'JFK' } }),
+    ]);
+    const otherRoute = await prismaTestClient.route.create({
+      data: { originAirportId: jfk.id, destinationAirportId: fra.id, distanceKm: 6201, durationMinutes: 505 },
+    });
+
+    const cases: Record<string, unknown>[] = [
+      { status: 'INACTIVE' },
+      { validUntil: new Date(Date.now() - 2 * 86_400_000) }, // expired validity window
+      { routeId: otherRoute.id }, // scoped to another route
+      { cabinClass: 'BUSINESS' }, // scoped to another cabin
+      { discountType: null, discountValue: null }, // marketing-only, not bookable
+    ];
+    for (const overrides of cases) {
+      const offer = await makeOffer(overrides);
+      const res = await createBooking(token, {
+        ...bodyFor(flight.id, [seatsSmall[cases.indexOf(overrides)]!.id]),
+        offerId: offer.id,
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('OFFER_NOT_AVAILABLE');
+    }
+    // A route-scoped offer matching the flight's route IS accepted.
+    const scoped = await makeOffer({ routeId: route.id });
+    await createBooking(token, { ...bodyFor(flight.id, [seatsSmall[5]!.id]), offerId: scoped.id }).expect(201);
+    expect(await prismaTestClient.booking.count()).toBe(1);
+  });
+
+  it('rejects a discount that makes the total non-payable with 409 OFFER_TOTAL_NOT_PAYABLE', async () => {
+    const token = await loginAs('offer-unpayable@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const offer = await makeOffer({ discountType: 'FIXED_AMOUNT', discountValue: 505 });
+
+    const res = await createBooking(token, { ...bodyFor(flight.id, [seatsSmall[0]!.id]), offerId: offer.id });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('OFFER_TOTAL_NOT_PAYABLE');
+    expect(await prismaTestClient.booking.count()).toBe(0);
+  });
+
+  it('idempotent replay with an offer: same key + same offer replays, same key + different offer 409s', async () => {
+    const token = await loginAs('offer-idem@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const offerA = await makeOffer();
+    const offerB = await makeOffer();
+    const body = { ...bodyFor(flight.id, [seatsSmall[0]!.id]), offerId: offerA.id };
+
+    const first = await createBooking(token, body).expect(201);
+    const replay = await createBooking(token, body).expect(201);
+    expect(replay.body.id).toBe(first.body.id);
+    expect(await prismaTestClient.booking.count()).toBe(1);
+
+    await createBooking(token, { ...body, offerId: offerB.id }).expect(409);
+    expect(await prismaTestClient.booking.count()).toBe(1);
+  });
+
+  it('idempotent replay with an offer: same key + same offer but different seats 409s', async () => {
+    const token = await loginAs('offer-idem-seats@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const offer = await makeOffer();
+    const key = randomUUID();
+
+    await createBooking(token, { ...bodyFor(flight.id, [seatsSmall[0]!.id]), idempotencyKey: key, offerId: offer.id }).expect(201);
+    // Identical key and offer, but a different seat selection is a DIFFERENT
+    // request — it must conflict, not silently replay.
+    await createBooking(token, { ...bodyFor(flight.id, [seatsSmall[1]!.id]), idempotencyKey: key, offerId: offer.id }).expect(409);
+    expect(await prismaTestClient.booking.count()).toBe(1);
+  });
+
+  it('two customers can book the same offer on different seats (no artificial single-use restriction)', async () => {
+    const [tokenA, tokenB] = await Promise.all([loginAs('offer-multi-a@test.dev'), loginAs('offer-multi-b@test.dev')]);
+    const { flight, seatsSmall } = await fixtures();
+    const offer = await makeOffer();
+
+    const first = await createBooking(tokenA, { ...bodyFor(flight.id, [seatsSmall[0]!.id]), offerId: offer.id }).expect(201);
+    const second = await createBooking(tokenB, { ...bodyFor(flight.id, [seatsSmall[1]!.id]), offerId: offer.id }).expect(201);
+
+    expect(first.body.totalAmount).toBe(462.9);
+    expect(second.body.totalAmount).toBe(462.9);
+    expect(first.body.offer).toMatchObject({ id: offer.id, discountAmountPerPassenger: 42.1 });
+    expect(second.body.offer).toMatchObject({ id: offer.id, discountAmountPerPassenger: 42.1 });
+
+    const bookings = await prismaTestClient.booking.findMany({ where: { offerId: offer.id } });
+    expect(bookings).toHaveLength(2);
+    expect(new Set(bookings.map((b) => b.userId)).size).toBe(2);
+    expect(bookings.every((b) => Number(b.totalAmount) === 462.9)).toBe(true);
+  });
+
+  function pay(token: string | null, bookingId: string, body: unknown) {
+    const req = request(app.getHttpServer()).post(`/api/bookings/${bookingId}/payment`);
+    if (token) req.set('Authorization', `Bearer ${token}`);
+    return req.send(body as Record<string, unknown>);
+  }
+
+  it('an offer-discounted booking flows through the existing payment path unchanged (production-hardening 1)', async () => {
+    const token = await loginAs('offer-pay@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+
+    // PERCENT offer, 2 passengers: (421 − 42.10 + 67 + 17) × 2 = 925.80
+    const percentOffer = await makeOffer();
+    const discounted = await createBooking(token, {
+      ...bodyFor(flight.id, seatsSmall.slice(0, 2).map((s) => s.id), 2),
+      offerId: percentOffer.id,
+    }).expect(201);
+    expect(discounted.body.totalAmount).toBe(925.8);
+
+    const paid = await pay(token, discounted.body.id, { token: 'tok_visa_test', idempotencyKey: randomUUID() }).expect(201);
+    expect(paid.body.payment).toMatchObject({ status: 'SUCCESS', amount: 925.8, currency: 'EUR', provider: 'mock' });
+    expect(paid.body.booking.status).toBe('CONFIRMED');
+    expect(paid.body.booking.totalAmount).toBe(925.8);
+
+    // The persisted Payment row charges the DISCOUNTED total, not the
+    // undiscounted fare math (which would be 1010).
+    const payment = await prismaTestClient.payment.findFirstOrThrow({ where: { bookingId: discounted.body.id } });
+    expect(Number(payment.amount)).toBe(925.8);
+    expect(Number(payment.amount)).not.toBe(1010);
+
+    const confirmed = await prismaTestClient.booking.findUniqueOrThrow({ where: { id: discounted.body.id } });
+    expect(confirmed.status).toBe('CONFIRMED');
+    expect(Number(confirmed.totalAmount)).toBe(925.8);
+    expect(confirmed.offerId).toBe(percentOffer.id);
+
+    // Seat holds convert exactly as for an undiscounted booking.
+    const holds = await prismaTestClient.seatHold.findMany({ where: { bookingId: discounted.body.id } });
+    expect(holds).toHaveLength(2);
+    expect(holds.every((h) => h.status === 'CONVERTED')).toBe(true);
+    expect(
+      await prismaTestClient.bookingSeat.count({ where: { bookingPassenger: { bookingId: discounted.body.id } } }),
+    ).toBe(2);
+
+    // The historical offer snapshot survives the payment flow untouched.
+    const snapshot = confirmed.fareRulesSnapshot as {
+      perPassenger: { basePrice: number; discountAmount: number; total: number };
+      offer: Record<string, unknown> | null;
+    };
+    expect(snapshot.perPassenger).toMatchObject({ basePrice: 421, discountAmount: 42.1, total: 462.9 });
+    expect(snapshot.offer).toMatchObject({
+      id: percentOffer.id,
+      discountType: 'PERCENT',
+      discountValue: 10,
+      discountAmountPerPassenger: 42.1,
+      currency: 'EUR',
+    });
+
+    // FIXED_AMOUNT offer, 1 passenger: 421 − 50 + 67 + 17 = 455
+    const fixedOffer = await makeOffer({ discountType: 'FIXED_AMOUNT', discountValue: 50 });
+    const fixedBooking = await createBooking(token, {
+      ...bodyFor(flight.id, [seatsSmall[2]!.id]),
+      offerId: fixedOffer.id,
+    }).expect(201);
+    expect(fixedBooking.body.totalAmount).toBe(455);
+
+    const fixedPaid = await pay(token, fixedBooking.body.id, { token: 'tok_visa_test', idempotencyKey: randomUUID() }).expect(201);
+    expect(fixedPaid.body.payment).toMatchObject({ status: 'SUCCESS', amount: 455 });
+    expect(fixedPaid.body.booking.status).toBe('CONFIRMED');
+    const fixedPayment = await prismaTestClient.payment.findFirstOrThrow({ where: { bookingId: fixedBooking.body.id } });
+    expect(Number(fixedPayment.amount)).toBe(455);
+    const fixedSnapshot = (
+      await prismaTestClient.booking.findUniqueOrThrow({ where: { id: fixedBooking.body.id } })
+    ).fareRulesSnapshot as { offer: Record<string, unknown> | null };
+    expect(fixedSnapshot.offer).toMatchObject({
+      id: fixedOffer.id,
+      discountType: 'FIXED_AMOUNT',
+      discountValue: 50,
+      discountAmountPerPassenger: 50,
+    });
+  });
+
+  it('mutating the offer after payment does not rewrite history: view, snapshot and payment stay as sold', async () => {
+    const token = await loginAs('offer-mutate@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const offer = await makeOffer();
+
+    const created = await createBooking(token, {
+      ...bodyFor(flight.id, [seatsSmall[0]!.id]),
+      offerId: offer.id,
+    }).expect(201);
+    expect(created.body.totalAmount).toBe(462.9);
+    await pay(token, created.body.id, { token: 'tok_visa_test', idempotencyKey: randomUUID() }).expect(201);
+
+    // Mutate the live offer aggressively after the sale: discount terms,
+    // status and validity window all change.
+    await prismaTestClient.offer.update({
+      where: { id: offer.id },
+      data: {
+        discountType: 'FIXED_AMOUNT',
+        discountValue: 300,
+        status: 'INACTIVE',
+        validFrom: new Date(Date.now() - 10 * 86_400_000),
+        validUntil: new Date(Date.now() - 86_400_000),
+      } as never,
+    });
+
+    const view = await request(app.getHttpServer())
+      .get(`/api/bookings/${created.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(view.body.status).toBe('CONFIRMED');
+    expect(view.body.totalAmount).toBe(462.9);
+    expect(view.body.currency).toBe('EUR');
+    expect(view.body.perPassengerDiscountAmount).toBe(42.1);
+    expect(view.body.offer).toMatchObject({
+      id: offer.id,
+      discountType: 'PERCENT',
+      discountValue: 10,
+      discountAmountPerPassenger: 42.1,
+      currency: 'EUR',
+    });
+
+    const booking = await prismaTestClient.booking.findUniqueOrThrow({ where: { id: created.body.id } });
+    expect(Number(booking.totalAmount)).toBe(462.9);
+    const snapshot = booking.fareRulesSnapshot as { offer: Record<string, unknown> | null };
+    expect(snapshot.offer).toMatchObject({ discountType: 'PERCENT', discountValue: 10, discountAmountPerPassenger: 42.1 });
+    const payment = await prismaTestClient.payment.findFirstOrThrow({ where: { bookingId: booking.id } });
+    expect(Number(payment.amount)).toBe(462.9);
+  });
+
+  it('failed payment on a discounted booking: 402, PENDING, holds ACTIVE, snapshot intact; retry with a new key succeeds at the discounted amount', async () => {
+    const token = await loginAs('offer-pay-fail@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    // FIXED_AMOUNT offer, 1 passenger: 421 − 50 + 67 + 17 = 455
+    const offer = await makeOffer({ discountType: 'FIXED_AMOUNT', discountValue: 50 });
+    const created = await createBooking(token, {
+      ...bodyFor(flight.id, [seatsSmall[0]!.id]),
+      offerId: offer.id,
+    }).expect(201);
+    expect(created.body.totalAmount).toBe(455);
+
+    const failedKey = randomUUID();
+    const declined = await pay(token, created.body.id, { token: 'tok_fail_card', idempotencyKey: failedKey }).expect(402);
+    expect(declined.body.message).toMatch(/declined/i);
+
+    let booking = await prismaTestClient.booking.findUniqueOrThrow({ where: { id: created.body.id } });
+    expect(booking.status).toBe('PENDING');
+    let payments = await prismaTestClient.payment.findMany({ where: { bookingId: booking.id } });
+    expect(payments).toHaveLength(1);
+    expect(payments[0]!.status).toBe('FAILED');
+    expect(Number(payments[0]!.amount)).toBe(455);
+    let holds = await prismaTestClient.seatHold.findMany({ where: { bookingId: booking.id } });
+    expect(holds).toHaveLength(1);
+    expect(holds[0]!.status).toBe('ACTIVE'); // declined money never releases the seat
+    expect(
+      (booking.fareRulesSnapshot as { offer: Record<string, unknown> | null }).offer,
+    ).toMatchObject({ id: offer.id, discountType: 'FIXED_AMOUNT', discountValue: 50, discountAmountPerPassenger: 50 });
+
+    // Replaying the failed key re-reports the failure; a retry needs a NEW key.
+    await pay(token, created.body.id, { token: 'tok_fail_card', idempotencyKey: failedKey }).expect(402);
+
+    const retried = await pay(token, created.body.id, { token: 'tok_visa_test', idempotencyKey: randomUUID() }).expect(201);
+    expect(retried.body.payment).toMatchObject({ status: 'SUCCESS', amount: 455, currency: 'EUR' });
+    expect(retried.body.booking.status).toBe('CONFIRMED');
+
+    booking = await prismaTestClient.booking.findUniqueOrThrow({ where: { id: created.body.id } });
+    expect(booking.status).toBe('CONFIRMED');
+    payments = await prismaTestClient.payment.findMany({ where: { bookingId: booking.id } });
+    expect(payments).toHaveLength(2); // FAILED history preserved, exactly one SUCCESS
+    const successful = payments.filter((p) => p.status === 'SUCCESS');
+    expect(successful).toHaveLength(1);
+    expect(Number(successful[0]!.amount)).toBe(455);
+    holds = await prismaTestClient.seatHold.findMany({ where: { bookingId: booking.id } });
+    expect(holds[0]!.status).toBe('CONVERTED');
+  });
+
+  it('customer cancellation of a paid discounted booking refunds 100% of the DISCOUNTED paid amount; second cancel 409', async () => {
+    const token = await loginAs('offer-cancel@test.dev');
+    const staff = await loginAs('offer-cancel-admin@test.dev', true);
+    const { flight, seatsSmall } = await fixtures();
+    // Make the fare refundable so the policy tiers produce a refund.
+    await prismaTestClient.fare.updateMany({
+      where: { flightId: flight.id },
+      data: { fareRules: { refundable: true, cancellationFeePercent: 0 } },
+    });
+    const offer = await makeOffer();
+    const created = await createBooking(token, {
+      ...bodyFor(flight.id, [seatsSmall[0]!.id]),
+      offerId: offer.id,
+    }).expect(201);
+    await pay(token, created.body.id, { token: 'tok_visa_test', idempotencyKey: randomUUID() }).expect(201);
+    // Push the departure past the 100% tier (> 168h out).
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 8 * 86_400_000) },
+    });
+
+    // Paid bookings cancel through the staff-reviewed cancellation request.
+    const cancellationRequest = await request(app.getHttpServer())
+      .post(`/api/bookings/${created.body.id}/cancellation-request`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(201);
+    const approved = await request(app.getHttpServer())
+      .post(`/api/admin/cancellation-requests/${cancellationRequest.body.id}/approve`)
+      .set('Authorization', `Bearer ${staff}`)
+      .expect(200);
+    expect(approved.body.booking.status).toBe('CANCELLED');
+
+    const payment = await prismaTestClient.payment.findFirstOrThrow({ where: { bookingId: created.body.id } });
+    expect(Number(payment.amount)).toBe(462.9); // the discounted amount actually charged
+    expect(payment.status).toBe('REFUNDED');
+    const refunds = await prismaTestClient.refund.findMany({ where: { paymentId: payment.id } });
+    expect(refunds).toHaveLength(1);
+    // 100% of the discounted paid amount — NOT the undiscounted 505.
+    expect(Number(refunds[0]!.amount)).toBe(462.9);
+    expect(refunds[0]!.status).toBe('PROCESSED');
+    expect(refunds[0]!.providerReference).toMatch(/^mockref_mockpay_/);
+
+    // Inventory freed exactly as for an undiscounted cancellation.
+    expect(
+      await prismaTestClient.bookingSeat.count({ where: { bookingPassenger: { bookingId: created.body.id } } }),
+    ).toBe(0);
+    expect((await prismaTestClient.booking.findUniqueOrThrow({ where: { id: created.body.id } })).status).toBe('CANCELLED');
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${created.body.id}/cancel`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(409);
+    expect(await prismaTestClient.refund.count({ where: { paymentId: payment.id } })).toBe(1);
+  });
+
+  it('cancellation refund is computed from the amount actually paid, not a later-mutated offer', async () => {
+    const token = await loginAs('offer-refund-mutate@test.dev');
+    const staff = await loginAs('offer-refund-mutate-admin@test.dev', true);
+    const { flight, seatsSmall } = await fixtures();
+    await prismaTestClient.fare.updateMany({
+      where: { flightId: flight.id },
+      data: { fareRules: { refundable: true, cancellationFeePercent: 0 } },
+    });
+    const offer = await makeOffer(); // PERCENT 10 → paid 462.9
+    const created = await createBooking(token, {
+      ...bodyFor(flight.id, [seatsSmall[0]!.id]),
+      offerId: offer.id,
+    }).expect(201);
+    await pay(token, created.body.id, { token: 'tok_visa_test', idempotencyKey: randomUUID() }).expect(201);
+
+    // Raise the discount after the sale — the refund must not follow it.
+    await prismaTestClient.offer.update({ where: { id: offer.id }, data: { discountValue: 90 } });
+
+    // Fixture default departure (+2 days) lands in the 50% tier.
+    const cancellationRequest = await request(app.getHttpServer())
+      .post(`/api/bookings/${created.body.id}/cancellation-request`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/admin/cancellation-requests/${cancellationRequest.body.id}/approve`)
+      .set('Authorization', `Bearer ${staff}`)
+      .expect(200);
+
+    const payment = await prismaTestClient.payment.findFirstOrThrow({ where: { bookingId: created.body.id } });
+    const refunds = await prismaTestClient.refund.findMany({ where: { paymentId: payment.id } });
+    expect(refunds).toHaveLength(1);
+    // 50% of the ORIGINAL discounted payment (462.9) = 231.45 — derived from
+    // the paid amount, not from the mutated 90% offer terms.
+    expect(Number(refunds[0]!.amount)).toBe(231.45);
+    expect(refunds[0]!.status).toBe('PROCESSED');
+    // The refund finalizes while the booking is still CONFIRMED (the hook
+    // cancels it afterwards), so a partial-tier refund settles as
+    // PARTIALLY_REFUNDED rather than REFUNDED.
+    expect(payment.status).toBe('PARTIALLY_REFUNDED');
+  });
+
+  it('price-preview: computes server-side totals without writing anything', async () => {
+    const token = await loginAs('preview@test.dev');
+    const { flight } = await fixtures();
+
+    const res = await pricePreview(token, { flightId: flight.id, cabinClass: 'ECONOMY', passengerCount: 2 }).expect(201);
+
+    expect(res.body).toEqual({
+      currency: 'EUR',
+      perPassenger: { basePrice: 421, discountAmount: 0, taxAmount: 67, feeAmount: 17, total: 505 },
+      passengerCount: 2,
+      totalAmount: 1010,
+      offer: null,
+      extras: { total: 0, lines: [] },
+    });
+    expect(await prismaTestClient.booking.count()).toBe(0);
+    expect(await prismaTestClient.seatHold.count()).toBe(0);
+  });
+
+  it('price-preview: applies a bookable offer to the fare base only', async () => {
+    const token = await loginAs('preview-offer@test.dev');
+    const { flight } = await fixtures();
+    const offer = await makeOffer();
+
+    const res = await pricePreview(token, {
+      flightId: flight.id,
+      cabinClass: 'ECONOMY',
+      passengerCount: 2,
+      offerId: offer.id,
+    }).expect(201);
+
+    expect(res.body.perPassenger).toEqual({ basePrice: 421, discountAmount: 42.1, taxAmount: 67, feeAmount: 17, total: 462.9 });
+    expect(res.body.totalAmount).toBe(925.8);
+    expect(res.body.offer).toMatchObject({ id: offer.id, discountAmountPerPassenger: 42.1 });
+    expect(await prismaTestClient.booking.count()).toBe(0);
+  });
+
+  it('price-preview: mirrors creation guards and offer errors', async () => {
+    const token = await loginAs('preview-guards@test.dev');
+    const { flight, cancelledFlight } = await fixtures();
+    const offer = await makeOffer({ cabinClass: 'BUSINESS' });
+
+    await pricePreview(null, { flightId: flight.id, cabinClass: 'ECONOMY', passengerCount: 1 }).expect(401);
+    await pricePreview(token, { flightId: randomUUID(), cabinClass: 'ECONOMY', passengerCount: 1 }).expect(404);
+    await pricePreview(token, { flightId: cancelledFlight.id, cabinClass: 'ECONOMY', passengerCount: 1 }).expect(409);
+    await pricePreview(token, { flightId: flight.id, cabinClass: 'BUSINESS', passengerCount: 1 }).expect(400);
+    await pricePreview(token, { flightId: flight.id, cabinClass: 'ECONOMY', passengerCount: 0 }).expect(400);
+
+    const unavailable = await pricePreview(token, {
+      flightId: flight.id,
+      cabinClass: 'ECONOMY',
+      passengerCount: 1,
+      offerId: offer.id,
+    });
+    expect(unavailable.status).toBe(409);
+    expect(unavailable.body.code).toBe('OFFER_NOT_AVAILABLE');
+
+    const unknown = await pricePreview(token, {
+      flightId: flight.id,
+      cabinClass: 'ECONOMY',
+      passengerCount: 1,
+      offerId: randomUUID(),
+    });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.code).toBe('OFFER_NOT_FOUND');
   });
 
   // ---------- Admin reads ----------
