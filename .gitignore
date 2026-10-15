@@ -58,6 +58,4 @@ prisma/test.db
 *.sqlite3
 
 # environment files
-.env
-.env.*
-.env.example
+
