@@ -11,8 +11,10 @@ import type { BookingDraft } from '../../../core/models/booking-flow.model';
 import type {
   CreateBookingPayload,
   CustomerBooking,
+  PricePreviewResponse,
 } from '../../../core/models/customer-booking.model';
 import type { Fare, Flight, Seat } from '../../../core/models/domain.model';
+import type { ExtraCatalogItem } from '../../../core/models/extras.model';
 
 const SEAT: Seat = {
   id: 's-e-10a',
@@ -112,8 +114,22 @@ function makeDraft(overrides: Partial<BookingDraft> = {}): BookingDraft {
     returnSeats: [],
     extras: [],
     baggagePieces: [0, 0],
+    offerId: null,
     seatHoldExpiresAt: null,
     confirmedBooking: null,
+    ...overrides,
+  };
+}
+
+/** Preview matching the client breakdown of makeDraft: (100+20+5) × 2. */
+function makePreview(overrides: Partial<PricePreviewResponse> = {}): PricePreviewResponse {
+  return {
+    currency: 'EUR',
+    perPassenger: { basePrice: 100, discountAmount: 0, taxAmount: 20, feeAmount: 5, total: 125 },
+    passengerCount: 2,
+    totalAmount: 250,
+    offer: null,
+    extras: { total: 0, lines: [] },
     ...overrides,
   };
 }
@@ -122,17 +138,26 @@ interface SetupOptions {
   draft?: BookingDraft;
   loggedIn?: boolean;
   create?: ReturnType<typeof vi.fn>;
+  pricePreview?: ReturnType<typeof vi.fn>;
 }
 
 async function setup(opts: SetupOptions = {}) {
-  const draftStub = opts.draft ?? makeDraft();
+  const draftSignal = signal<BookingDraft | null>(opts.draft ?? makeDraft());
   const draftService = {
-    draft: signal<BookingDraft | null>(draftStub),
+    draft: draftSignal.asReadonly(),
     isHoldExpired: vi.fn(() => false),
     releaseHold: vi.fn(),
     setConfirmedBooking: vi.fn(),
+    clearOffer: vi.fn(() =>
+      draftSignal.update((d) =>
+        d ? { ...d, offerId: null, criteria: { ...d.criteria, offerId: null } } : d,
+      ),
+    ),
   };
-  const bookingService = { create: opts.create ?? vi.fn().mockReturnValue(of(BOOKING)) };
+  const bookingService = {
+    create: opts.create ?? vi.fn().mockReturnValue(of(BOOKING)),
+    pricePreview: opts.pricePreview ?? vi.fn().mockReturnValue(of(makePreview())),
+  };
   const authService = { isLoggedIn: vi.fn(() => opts.loggedIn ?? true) };
 
   await TestBed.configureTestingModule({
@@ -393,5 +418,247 @@ describe('ReviewPage', () => {
 
     expect(bookingService.create).not.toHaveBeenCalled();
     expect(el.textContent).toContain('Please accept the terms to continue');
+  });
+
+  it('previews the price server-side with flight, cabin, passenger count and offerId', async () => {
+    const { bookingService } = await setup({ draft: makeDraft({ offerId: 'offer-9' }) });
+
+    expect(bookingService.pricePreview).toHaveBeenCalledWith({
+      flightId: 'fl-1',
+      cabinClass: 'ECONOMY',
+      passengerCount: 2,
+      offerId: 'offer-9',
+    });
+  });
+
+  it('renders the server preview including the offer discount line and server total', async () => {
+    const { el } = await setup({
+      draft: makeDraft({ offerId: 'offer-9' }),
+      pricePreview: vi.fn().mockReturnValue(
+        of(
+          makePreview({
+            perPassenger: { basePrice: 100, discountAmount: 10, taxAmount: 20, feeAmount: 5, total: 115 },
+            totalAmount: 230,
+            offer: {
+              id: 'offer-9',
+              title: 'Winter Sun',
+              discountType: 'PERCENT',
+              discountValue: 10,
+              discountAmountPerPassenger: 10,
+              currency: 'EUR',
+            },
+          }),
+        ),
+      ),
+    });
+
+    const table = el.querySelector('.side__table')!.textContent!;
+    expect(table).toContain('Offer discount × 2');
+    expect(table).toContain('−€20.00'); // 10 × 2, shown as negative
+    expect(table).toContain('€230.00'); // server totalAmount
+    expect(el.textContent).toContain('Winter Sun');
+  });
+
+  it('shows the client-computed breakdown only as fallback while the preview is pending', async () => {
+    const pending = new Subject<PricePreviewResponse>();
+    const { el } = await setup({ pricePreview: vi.fn().mockReturnValue(pending.asObservable()) });
+
+    const table = el.querySelector('.side__table')!.textContent!;
+    expect(table).toContain('€250.00');
+    expect(table).not.toContain('Offer discount');
+  });
+
+  it('surfaces a generic preview error and keeps the indicative breakdown', async () => {
+    const { el } = await setup({
+      pricePreview: vi.fn().mockReturnValue(throwError(() => ({ status: 500 }))),
+    });
+
+    expect(el.textContent).toContain('Price could not be confirmed');
+    expect(el.querySelector('.side__table')!.textContent).toContain('€250.00');
+    expect(el.textContent).not.toContain('no longer available');
+  });
+
+  it('includes offerId in the create payload — and still never any totals', async () => {
+    const { fixture, el, bookingService } = await setup({ draft: makeDraft({ offerId: 'offer-9' }) });
+    await consentAndSubmit(fixture, el);
+
+    const payload = bookingService.create.mock.calls[0][0] as CreateBookingPayload;
+    expect(payload.offerId).toBe('offer-9');
+    expect(payload).not.toHaveProperty('totalAmount');
+    expect(payload).not.toHaveProperty('total');
+    expect(payload).not.toHaveProperty('discountAmount');
+  });
+
+  it('409 OFFER_NOT_AVAILABLE on preview shows an explicit continue-without-offer recovery that re-previews', async () => {
+    const pricePreview = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ status: 409, error: { code: 'OFFER_NOT_AVAILABLE' } })))
+      .mockReturnValue(of(makePreview()));
+    const { fixture, el, draftService } = await setup({
+      draft: makeDraft({ offerId: 'offer-9' }),
+      pricePreview,
+    });
+
+    expect(el.textContent).toContain('no longer available');
+    expect(el.textContent).toContain('Continue without this offer');
+
+    el.querySelector<HTMLElement>('.offer-blocked__action button')!.click();
+    await settle(fixture);
+
+    expect(draftService.clearOffer).toHaveBeenCalledOnce();
+    expect(pricePreview).toHaveBeenCalledTimes(2);
+    expect(pricePreview.mock.calls[1][0]).toEqual({
+      flightId: 'fl-1',
+      cabinClass: 'ECONOMY',
+      passengerCount: 2,
+    });
+    expect(el.textContent).not.toContain('Continue without this offer');
+  });
+
+  it('404 OFFER_NOT_FOUND on preview triggers the same recovery', async () => {
+    const { el } = await setup({
+      draft: makeDraft({ offerId: 'offer-9' }),
+      pricePreview: vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ status: 404, error: { code: 'OFFER_NOT_FOUND' } }))),
+    });
+
+    expect(el.textContent).toContain('no longer available');
+    expect(el.textContent).toContain('Continue without this offer');
+  });
+
+  it('409 OFFER_NOT_AVAILABLE on create shows the recovery; continuing without the offer lets the customer resubmit', async () => {
+    const create = vi
+      .fn()
+      .mockReturnValueOnce(
+        throwError(() => ({ status: 409, error: { code: 'OFFER_NOT_AVAILABLE' } })),
+      )
+      .mockReturnValue(of(BOOKING));
+    const { fixture, el, draftService, navigateSpy } = await setup({
+      draft: makeDraft({ offerId: 'offer-9' }),
+      create,
+    });
+    await consentAndSubmit(fixture, el);
+
+    expect(el.textContent).toContain('no longer available');
+    expect(draftService.releaseHold).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalledWith(['/booking/seats'], expect.anything());
+
+    el.querySelector<HTMLElement>('.offer-blocked__action button')!.click();
+    await settle(fixture);
+    expect(draftService.clearOffer).toHaveBeenCalledOnce();
+
+    // Consent is still checked; resubmit directly.
+    confirmButton(el).click();
+    await settle(fixture);
+
+    expect(create).toHaveBeenCalledTimes(2);
+    const first = create.mock.calls[0][0] as CreateBookingPayload;
+    const second = create.mock.calls[1][0] as CreateBookingPayload;
+    expect(first.offerId).toBe('offer-9');
+    expect(second).not.toHaveProperty('offerId');
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(navigateSpy).toHaveBeenCalledWith(['/booking/confirmation'], { queryParams: { id: 'bk-1' } });
+  });
+
+  describe('extras integration', () => {
+    const BAG: ExtraCatalogItem = {
+      id: 'svc-bag',
+      code: 'BAG_23KG',
+      name: 'Extra checked bag (23 kg)',
+      description: null,
+      category: 'BAGGAGE',
+      pricingUnit: 'PER_ITEM',
+      price: 65,
+      currency: 'EUR',
+      maxQuantity: 3,
+      requiresPassenger: true,
+      validFrom: null,
+      validTo: null,
+      bagWeightKg: 23,
+      dietaryTags: [],
+      demonstration: false,
+    };
+
+    const draftWithBag = () =>
+      makeDraft({ extras: [{ service: { ...BAG }, quantity: 1, passengerIndex: 0 }] });
+
+    it('sends extras to the price preview and renders the priced line and total', async () => {
+      const pricePreview = vi.fn().mockReturnValue(
+        of(
+          makePreview({
+            totalAmount: 315,
+            extras: {
+              total: 65,
+              lines: [
+                {
+                  serviceId: 'svc-bag',
+                  code: 'BAG_23KG',
+                  name: 'Extra checked bag (23 kg)',
+                  category: 'BAGGAGE',
+                  pricingUnit: 'PER_ITEM',
+                  quantity: 1,
+                  passengerIndex: 0,
+                  unitPrice: 65,
+                  totalPrice: 65,
+                },
+              ],
+            },
+          }),
+        ),
+      );
+      const { el } = await setup({ draft: draftWithBag(), pricePreview });
+
+      expect(pricePreview).toHaveBeenCalledWith({
+        flightId: 'fl-1',
+        cabinClass: 'ECONOMY',
+        passengerCount: 2,
+        extras: [{ serviceId: 'svc-bag', quantity: 1, passengerIndex: 0 }],
+      });
+      const table = el.querySelector('.side__table')!.textContent!;
+      expect(table).toContain('Extra checked bag (23 kg)');
+      expect(table).toContain('Lena');
+      expect(table).toContain('€315.00');
+      // The extras panel lists the selection instead of the old placeholder.
+      expect(el.textContent).toContain('Baggage & extras');
+      expect(el.textContent).not.toContain('No add-on services were available');
+    });
+
+    it('includes extras in the create payload (ids and quantities only)', async () => {
+      const { fixture, el, bookingService } = await setup({ draft: draftWithBag() });
+      await consentAndSubmit(fixture, el);
+
+      const payload = bookingService.create.mock.calls[0][0] as CreateBookingPayload;
+      expect(payload.extras).toEqual([{ serviceId: 'svc-bag', quantity: 1, passengerIndex: 0 }]);
+      expect(JSON.stringify(payload)).not.toContain('"price"');
+    });
+
+    it('shows the extras-review alert when creation rejects the selection (EXTRAS_INVALID)', async () => {
+      const create = vi
+        .fn()
+        .mockReturnValueOnce(
+          throwError(() => ({
+            status: 400,
+            error: { code: 'EXTRAS_INVALID', message: 'One or more selected extras are not available for this booking' },
+          })),
+        )
+        .mockReturnValue(of(BOOKING));
+      const { fixture, el } = await setup({ draft: draftWithBag(), create });
+      await consentAndSubmit(fixture, el);
+
+      expect(el.textContent).toContain('Some extras need your review');
+      expect(el.textContent).toContain('extras page');
+      // Not a generic submit error, and nothing was charged.
+      expect(el.textContent).not.toContain('Booking could not be created');
+    });
+
+    it('shows the extras-review alert when the preview rejects the selection', async () => {
+      const pricePreview = vi.fn().mockReturnValue(
+        throwError(() => ({ status: 400, error: { code: 'EXTRAS_INVALID', message: 'nope' } })),
+      );
+      const { el } = await setup({ draft: draftWithBag(), pricePreview });
+      expect(el.textContent).toContain('Some extras need your review');
+      expect(el.textContent).not.toContain('Price could not be confirmed');
+    });
   });
 });

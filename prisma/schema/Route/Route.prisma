@@ -10,6 +10,7 @@ model Route {
   destinationAirport Airport   @relation("RouteDestination", fields: [destinationAirportId], references: [id], onDelete: Restrict)
   flights            Flight[]
   scheduleRules      ScheduleRule[]
+  offers             Offer[]
 
   @@unique([originAirportId, destinationAirportId])
   @@map("routes")

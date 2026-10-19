@@ -96,4 +96,12 @@ describe('OffersService', () => {
     expect(req.request.method).toBe('DELETE');
     req.flush({});
   });
+
+  it('deletePermanentAdmin DELETEs /admin/offers/:id/permanent', () => {
+    service.deletePermanentAdmin('offer-1').subscribe();
+
+    const req = http.expectOne('http://api.test/api/admin/offers/offer-1/permanent');
+    expect(req.request.method).toBe('DELETE');
+    req.flush({});
+  });
 });

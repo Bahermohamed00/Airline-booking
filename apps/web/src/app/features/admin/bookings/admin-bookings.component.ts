@@ -1,9 +1,10 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
 import { AdminPaymentsService } from '../payments/admin-payments.service';
+import { AdminNotificationsService, type AdminNotificationItem } from '../notifications/admin-notifications.service';
 import { AuditService, type AuditLogItem } from '../audit/audit.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
@@ -31,7 +32,6 @@ import { NaTabs, type TabItem } from '../../../shared/ui/tabs.component';
 import { NaDataTable, type TableColumn } from '../../../shared/ui/data-table.component';
 import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
-import { NaDialog } from '../../../shared/ui/dialog.component';
 import { NaRefundDialog, type RefundRequest } from '../payments/refund-dialog.component';
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
@@ -72,6 +72,7 @@ interface BookingRow {
   selector: 'na-admin-bookings',
   imports: [
     FormsModule,
+    RouterLink,
     HasPermissionDirective,
     NaBreadcrumbs,
     NaButton,
@@ -80,18 +81,24 @@ interface BookingRow {
     NaDataTable,
     NaEmptyState,
     NaSkeleton,
+    NaRefundDialog,
   ],
   templateUrl: './admin-bookings.component.html',
   styleUrl: './admin-bookings.component.css',
 })
 export class AdminBookingsPage {
   private readonly bookingsService = inject(CustomerBookingService);
+  private readonly paymentsService = inject(AdminPaymentsService);
+  private readonly notificationsService = inject(AdminNotificationsService);
   private readonly auditService = inject(AuditService);
   private readonly auth = inject(AuthService);
+  private readonly toast = inject(ToastService);
 
   readonly BOOKING_STATUS_MAP = BOOKING_STATUS_MAP;
   readonly FLIGHT_STATUS_MAP = FLIGHT_STATUS_MAP;
   readonly SEAT_HOLD_STATUS_MAP = SEAT_HOLD_STATUS_MAP;
+  readonly PAYMENT_STATUS_MAP = PAYMENT_STATUS_MAP;
+  readonly REFUND_STATUS_MAP = REFUND_STATUS_MAP;
   readonly statusLabel = statusLabel;
   readonly fmt = fmtDateTime;
   readonly fmtDay = fmtDate;
@@ -151,6 +158,30 @@ export class AdminBookingsPage {
   readonly auditError = signal<string | null>(null);
   readonly auditForbidden = signal(false);
   private readonly auditLoadedFor = signal<string | null>(null);
+
+  // Payments tab state (per selected booking).
+  readonly payments = signal<AdminPayment[]>([]);
+  readonly paymentsLoading = signal(false);
+  readonly paymentsError = signal<string | null>(null);
+  readonly paymentsForbidden = signal(false);
+  private readonly paymentsLoadedFor = signal<string | null>(null);
+
+  // Refund dialog state (direct mode — the payment is chosen in the list).
+  readonly refundOpen = signal(false);
+  readonly refunding = signal(false);
+  readonly refundTarget = signal<AdminPayment | null>(null);
+
+  // Notifications tab state (per selected booking).
+  readonly bookingNotifications = signal<AdminNotificationItem[]>([]);
+  readonly notificationsLoading = signal(false);
+  readonly notificationsError = signal<string | null>(null);
+  readonly notificationsForbidden = signal(false);
+  private readonly notificationsLoadedFor = signal<string | null>(null);
+
+  /** Existing permissions; the backend remains the enforcement authority. */
+  readonly canReadPayments = computed(() => this.auth.hasPermission('payments:read'));
+  readonly canRefund = computed(() => this.auth.hasPermission('payments:refund'));
+  readonly canReadNotifications = computed(() => this.auth.hasPermission('notifications:read'));
 
   readonly selectedSummary = computed(
     () => this.bookings().find((b) => b.id === this.selectedId()) ?? null,
@@ -239,6 +270,8 @@ export class AdminBookingsPage {
     this.selectedId.set(id);
     this.activeTab.set('itinerary');
     this.resetAudit();
+    this.resetPayments();
+    this.resetNotifications();
     this.loadDetail(id);
   }
 
@@ -248,6 +281,8 @@ export class AdminBookingsPage {
     this.detailLoading.set(false);
     this.detailError.set(null);
     this.resetAudit();
+    this.resetPayments();
+    this.resetNotifications();
   }
 
   retryDetail(): void {
@@ -257,10 +292,145 @@ export class AdminBookingsPage {
 
   onTabChange(tab: string): void {
     this.activeTab.set(tab);
-    if (tab === 'audit') {
-      const id = this.selectedId();
-      if (id && this.auth.hasPermission('audit:read')) this.loadAudit(id);
+    const id = this.selectedId();
+    if (!id) return;
+    if (tab === 'audit' && this.auth.hasPermission('audit:read')) this.loadAudit(id);
+    if (tab === 'payments') this.loadPayments(id);
+    if (tab === 'notifications') this.loadNotifications(id);
+  }
+
+  retryNotifications(): void {
+    const id = this.selectedId();
+    if (id) this.loadNotifications(id, true);
+  }
+
+  retryPayments(): void {
+    const id = this.selectedId();
+    if (id) this.loadPayments(id, true);
+  }
+
+  /** Only a successful (or partially refunded) payment can be refunded further
+   *  — same rule as the payments page; the backend enforces it authoritatively. */
+  refundable(payment: AdminPayment): boolean {
+    return payment.status === 'SUCCESS' || payment.status === 'PARTIALLY_REFUNDED';
+  }
+
+  openRefund(payment: AdminPayment): void {
+    if (!this.canRefund() || !this.refundable(payment)) return;
+    this.refundTarget.set(payment);
+    this.refundOpen.set(true);
+  }
+
+  onRefundCancelled(): void {
+    this.refundOpen.set(false);
+    this.refundTarget.set(null);
+  }
+
+  onRefund(request: RefundRequest): void {
+    if (this.refunding()) return;
+    this.refunding.set(true);
+    const payload: RefundPaymentPayload = {};
+    if (request.amount !== undefined) payload.amount = request.amount;
+    if (request.reason !== undefined) payload.reason = request.reason;
+    this.paymentsService.refund(request.paymentId, payload).subscribe({
+      next: (result) => {
+        this.refunding.set(false);
+        this.onRefundCancelled();
+        this.toast.success(
+          `Refund of ${formatMoney(result.refund.amount, result.refund.currency)} issued for ${result.refund.bookingReference}.`,
+        );
+        // Refresh the booking's payments so the new refund row appears.
+        const id = this.selectedId();
+        if (id) this.loadPayments(id, true);
+      },
+      error: (err: unknown) => {
+        this.refunding.set(false);
+        this.toast.error(
+          toErrorMessage(
+            err,
+            'Could not issue the refund. Please try again.',
+            serverMessage(err) ?? 'This payment is not refundable.',
+          ),
+        );
+      },
+    });
+  }
+
+  private resetNotifications(): void {
+    this.bookingNotifications.set([]);
+    this.notificationsLoading.set(false);
+    this.notificationsError.set(null);
+    this.notificationsForbidden.set(false);
+    this.notificationsLoadedFor.set(null);
+  }
+
+  /** Booking-scoped notification rows — server-filtered by the bookingId FK. */
+  private loadNotifications(bookingId: string, force = false): void {
+    if (!force && this.notificationsLoadedFor() === bookingId) return;
+    if (!this.canReadNotifications()) {
+      this.notificationsForbidden.set(true);
+      return;
     }
+    this.notificationsLoadedFor.set(bookingId);
+    this.notificationsLoading.set(true);
+    this.notificationsError.set(null);
+    this.notificationsForbidden.set(false);
+    this.notificationsService.list({ bookingId, limit: 20 }).subscribe({
+      next: (page) => {
+        // A response for a previously selected booking must never surface.
+        if (this.selectedId() !== bookingId) return;
+        this.bookingNotifications.set(page.data);
+        this.notificationsLoading.set(false);
+      },
+      error: (err: unknown) => {
+        if (this.selectedId() !== bookingId) return;
+        if ((err as { status?: number } | null)?.status === 403) {
+          this.notificationsForbidden.set(true);
+        } else {
+          this.notificationsError.set(toErrorMessage(err, 'Could not load notifications for this booking.'));
+        }
+        this.notificationsLoading.set(false);
+      },
+    });
+  }
+
+  private resetPayments(): void {
+    this.payments.set([]);
+    this.paymentsLoading.set(false);
+    this.paymentsError.set(null);
+    this.paymentsForbidden.set(false);
+    this.paymentsLoadedFor.set(null);
+    this.onRefundCancelled();
+  }
+
+  /** Payments of the selected booking only — server-filtered by bookingId. */
+  private loadPayments(bookingId: string, force = false): void {
+    if (!force && this.paymentsLoadedFor() === bookingId) return;
+    if (!this.canReadPayments()) {
+      this.paymentsForbidden.set(true);
+      return;
+    }
+    this.paymentsLoadedFor.set(bookingId);
+    this.paymentsLoading.set(true);
+    this.paymentsError.set(null);
+    this.paymentsForbidden.set(false);
+    this.paymentsService.listPayments({ bookingId }).subscribe({
+      next: (list) => {
+        // A response for a previously selected booking must never surface.
+        if (this.selectedId() !== bookingId) return;
+        this.payments.set(list);
+        this.paymentsLoading.set(false);
+      },
+      error: (err: unknown) => {
+        if (this.selectedId() !== bookingId) return;
+        if ((err as { status?: number } | null)?.status === 403) {
+          this.paymentsForbidden.set(true);
+        } else {
+          this.paymentsError.set(toErrorMessage(err, 'Could not load payments for this booking.'));
+        }
+        this.paymentsLoading.set(false);
+      },
+    });
   }
 
   retryAudit(): void {

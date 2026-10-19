@@ -1,6 +1,8 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { BookingsService } from './bookings.service.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
+import { PricePreviewDto } from './dto/price-preview.dto.js';
+import { RequestCancellationDto } from './dto/request-cancellation.dto.js';
 import { JwtAuthGuard } from '../auth/auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
@@ -16,9 +18,19 @@ export class BookingsController {
     return this.bookings.create(user, dto);
   }
 
+  @Post('price-preview')
+  pricePreview(@Body() dto: PricePreviewDto) {
+    return this.bookings.pricePreview(dto);
+  }
+
   @Get()
   findMine(@CurrentUser() user: AuthUser) {
     return this.bookings.findMine(user);
+  }
+
+  @Get(':id/cancellation-preview')
+  cancellationPreview(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.bookings.cancellationPreview(user, id);
   }
 
   @Get(':id')
@@ -30,5 +42,14 @@ export class BookingsController {
   @HttpCode(HttpStatus.OK)
   cancelMine(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.bookings.cancelMine(user, id);
+  }
+
+  @Post(':id/cancellation-request')
+  requestCancellation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestCancellationDto,
+  ) {
+    return this.bookings.requestCancellation(user, id, dto);
   }
 }

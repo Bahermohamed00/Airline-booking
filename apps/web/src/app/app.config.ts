@@ -5,12 +5,16 @@ import { firstValueFrom } from 'rxjs';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 import { AuthService } from './core/services/auth.service';
+import { provideRuntimeConfig } from './core/config/runtime-config';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
+    // Loads config.json (deploy-provided API base URL) before anything injects
+    // API_CONFIG. Production bootstrap fails clearly when it is missing/local.
+    provideRuntimeConfig(),
     // Silent refresh on bootstrap: restores the session from the refresh cookie
     // (no-op while environment.useRealApi is false).
     provideAppInitializer(() => firstValueFrom(inject(AuthService).restoreSession())),

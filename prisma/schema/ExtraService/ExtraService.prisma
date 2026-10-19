@@ -3,9 +3,25 @@ model ExtraService {
   code        String  @unique @db.VarChar(50)
   name        String  @db.VarChar(100)
   description String? @db.Text
+  // Server-controlled catalog price (unit price in `currency`). Clients never
+  // submit prices; booking lines snapshot this value at creation time.
   price       Decimal @db.Decimal(12, 2)
   currency    String  @db.VarChar(3)
   status      ExtraServiceStatus @default(ACTIVE)
+  category    ExtraServiceCategory @default(BAGGAGE)
+  // PER_ITEM: quantity counts items (bags, meals). PER_PASSENGER: one per
+  // associated passenger (quantity forced to 1). PER_BOOKING: one per booking.
+  pricingUnit ExtraPricingUnit @default(PER_ITEM) @map("pricing_unit")
+  // Max selectable quantity per booking line (PER_ITEM); ignored otherwise.
+  maxQuantity Int @default(1) @map("max_quantity")
+  // Whether a selection must reference a passenger of the booking.
+  requiresPassenger Boolean @default(false) @map("requires_passenger")
+  // Optional availability window; null bounds mean unbounded.
+  validFrom   DateTime? @map("valid_from") @db.Timestamptz(6)
+  validTo     DateTime? @map("valid_to") @db.Timestamptz(6)
+  // Category-specific, server-validated metadata. Baggage: { bagWeightKg }.
+  // Meal: { dietaryTags[] }. Insurance demo: { demonstration: true }.
+  metadata    Json? @db.JsonB
 
   bookingExtras BookingExtra[]
 
@@ -17,4 +33,21 @@ enum ExtraServiceStatus {
   INACTIVE
 
   @@map("extra_service_status")
+}
+
+enum ExtraServiceCategory {
+  BAGGAGE
+  MEAL
+  PRIORITY
+  INSURANCE
+
+  @@map("extra_service_category")
+}
+
+enum ExtraPricingUnit {
+  PER_ITEM
+  PER_PASSENGER
+  PER_BOOKING
+
+  @@map("extra_pricing_unit")
 }

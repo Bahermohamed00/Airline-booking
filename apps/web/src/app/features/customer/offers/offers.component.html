@@ -24,11 +24,10 @@
             <path d="M12 5v14M6 13l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <a routerLink="/search" class="hero__link">Search flights instead</a>
       </div>
       <ul class="stats">
         <li>
-          <strong>{{ offers().length }}</strong
+          <strong>{{ bookableOffers().length }}</strong
           ><span>live offers</span>
         </li>
         <li>
@@ -59,8 +58,12 @@
       icon="✈"
       title="No offers right now"
       message="There are no active offers at the moment — new fares land every week, so check back soon."
-      actionLabel="Search flights"
-      (action)="go2search()"
+    />
+  } @else if (bookableOffers().length === 0) {
+    <na-empty-state
+      icon="✈"
+      title="No bookable offers are available right now"
+      message="The fares on promotion right now cannot be booked online. New bookable offers land every week, so check back soon."
     />
   } @else {
     @if (featured(); as f) {
@@ -100,22 +103,24 @@
             @if (f.offerValue) {
               <p class="value">{{ f.offerValue }}</p>
             }
-            <a
-              routerLink="/search"
-              class="cta"
-              [attr.aria-label]="'Search flights for offer: ' + f.title"
-            >
-              Search flights
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
+            @if (f.bookable) {
+              <a
+                [routerLink]="['/offers', f.id]"
+                class="cta"
+                [attr.aria-label]="'Book offer: ' + f.title"
               >
-                <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </a>
+                Book now
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </a>
+            }
           </div>
         </div>
       </article>
@@ -164,26 +169,28 @@
                 <p class="card__terms">{{ o.terms }}</p>
               }
               <div class="card__foot">
-                <a
-                  routerLink="/search"
-                  class="cta cta--outline"
-                  [attr.aria-label]="'Search flights for offer: ' + o.title"
-                >
-                  Search flights
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    aria-hidden="true"
+                @if (o.bookable) {
+                  <a
+                    [routerLink]="['/offers', o.id]"
+                    class="cta cta--outline"
+                    [attr.aria-label]="'Book offer: ' + o.title"
                   >
-                    <path
-                      d="M5 12h14M13 6l6 6-6 6"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </a>
+                    Book now
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M5 12h14M13 6l6 6-6 6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </a>
+                }
               </div>
             </div>
           </article>

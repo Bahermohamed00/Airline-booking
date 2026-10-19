@@ -1,4 +1,5 @@
-import type { CabinClass, ExtraService, Fare, Flight, PassengerType, Seat } from './domain.model';
+import type { CabinClass, Fare, Flight, PassengerType, Seat } from './domain.model';
+import type { ExtraCatalogItem } from './extras.model';
 import type { CustomerBooking } from './customer-booking.model';
 
 export type TripType = 'ONE_WAY' | 'ROUND_TRIP' | 'MULTI_CITY';
@@ -17,7 +18,8 @@ export interface SearchCriteria {
   returnDate?: string | null;
   passengers: PassengerCounts;
   cabinClass: CabinClass;
-  promoCode?: string | null;
+  /** BR-16: bookable offer carried from /offers deep links into checkout. */
+  offerId?: string | null;
 }
 
 export interface ResultFilters {
@@ -45,9 +47,15 @@ export interface SeatSelection {
   seat: Seat;
 }
 
+/**
+ * A chosen extra in the draft. `service` is the server-returned catalog item
+ * (unit price included); passengerIndex links passenger-associated services
+ * (meals, bags, per-passenger priority/insurance) to a traveller.
+ */
 export interface ExtraSelection {
-  extra: ExtraService;
+  service: ExtraCatalogItem;
   quantity: number;
+  passengerIndex: number | null;
 }
 
 export interface PriceBreakdown {
@@ -75,6 +83,8 @@ export interface BookingDraft {
   returnSeats: SeatSelection[];
   extras: ExtraSelection[];
   baggagePieces: number[];
+  /** BR-16: offer carried from criteria into the create payload; null when none. */
+  offerId: string | null;
   /** Client-side selection timer only — a real server hold starts at POST /bookings. */
   seatHoldExpiresAt: string | null;
   confirmedBooking: CustomerBooking | null;

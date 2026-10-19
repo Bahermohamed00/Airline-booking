@@ -1,6 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { PricingService, formatMoney } from './pricing.service';
 import type { Fare, Seat } from '../models/domain.model';
+import type { ExtraCatalogItem } from '../models/extras.model';
+
+/** Minimal catalog item for the legacy mock-pricing tests. */
+function extraService(overrides: Partial<ExtraCatalogItem>): ExtraCatalogItem {
+  return {
+    id: 'e1',
+    code: 'XTRA',
+    name: 'Extra',
+    description: null,
+    category: 'MEAL',
+    pricingUnit: 'PER_ITEM',
+    price: 1,
+    currency: 'EUR',
+    maxQuantity: 1,
+    requiresPassenger: false,
+    validFrom: null,
+    validTo: null,
+    bagWeightKg: null,
+    dietaryTags: [],
+    demonstration: false,
+    ...overrides,
+  };
+}
 
 const fare: Fare = {
   id: 'f1-fare-economy',
@@ -75,7 +98,7 @@ describe('PricingService', () => {
       fare,
       passengerTypes: ['ADULT'],
       seats: [{ passengerIndex: 0, seat: economySeat }],
-      extras: [{ extra: { id: 'e1', code: 'MEAL', name: 'Meal', price: 24, currency: 'EUR', category: 'MEAL' }, quantity: 2 }],
+      extras: [{ service: extraService({ id: 'e1', code: 'MEAL', name: 'Meal', price: 24 }), quantity: 2, passengerIndex: null }],
       extraBags: 1,
     });
     // 120 + 15 seat + 48 extras + 65 bag

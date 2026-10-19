@@ -221,4 +221,20 @@ describe('ResultsPage', () => {
     expect(el.textContent).toContain("Round-trip booking isn't available yet");
     expect(el.querySelector('.cards .card')).not.toBeNull();
   });
+
+  it('carries the offerId query param into the search criteria (BR-16)', async () => {
+    const { flightsApi } = await setup({ params: { ...PARAMS, offerId: 'offer-9' } });
+
+    expect(flightsApi.searchFlights).toHaveBeenCalledWith(
+      expect.objectContaining({ offerId: 'offer-9' }),
+    );
+  });
+
+  it('reads no offerId when the query param is absent', async () => {
+    const { flightsApi } = await setup();
+
+    expect(flightsApi.searchFlights).toHaveBeenCalledWith(
+      expect.objectContaining({ offerId: null }),
+    );
+  });
 });

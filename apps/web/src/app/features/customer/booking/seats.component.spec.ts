@@ -19,8 +19,11 @@ const ECO_10A = seat('s-e-10a', '10A', 'ECONOMY', 10, 'A');
 const ECO_10B = seat('s-e-10b', '10B', 'ECONOMY', 10, 'B');
 const ECO_10C = seat('s-e-10c', '10C', 'ECONOMY', 10, 'C');
 const ECO_10D = seat('s-e-10d', '10D', 'ECONOMY', 10, 'D');
+const ECO_10E = seat('s-e-10e', '10E', 'ECONOMY', 10, 'E');
+const ECO_10F = seat('s-e-10f', '10F', 'ECONOMY', 10, 'F');
+const ECO_12A = seat('s-e-12a', '12A', 'ECONOMY', 12, 'A', true);
 
-const CATALOG: Seat[] = [BIZ_1A, BIZ_1D, ECO_10A, ECO_10B, ECO_10C, ECO_10D];
+const CATALOG: Seat[] = [BIZ_1A, BIZ_1D, ECO_10A, ECO_10B, ECO_10C, ECO_10D, ECO_10E, ECO_10F, ECO_12A];
 
 const AVAILABILITY: SeatAvailability = {
   flightId: 'fl-1',
@@ -36,12 +39,16 @@ interface SetupOptions {
   seats?: SeatSelection[];
   fareCabin?: CabinClass;
   catalogFailsOnce?: boolean;
+  availability?: SeatAvailability;
+  farePrices?: boolean;
 }
 
 async function setup(opts: SetupOptions = {}) {
   const draftStub = {
     outbound: { id: 'fl-1', aircraftId: 'ac-1' },
-    fare: { cabinClass: opts.fareCabin ?? 'ECONOMY' },
+    fare: opts.farePrices
+      ? { cabinClass: opts.fareCabin ?? 'ECONOMY', basePrice: 100, taxAmount: 20, feeAmount: 5, currency: 'EUR' }
+      : { cabinClass: opts.fareCabin ?? 'ECONOMY' },
     passengers: [adult('Lena'), adult('Jonas')],
     seats: opts.seats ?? [],
   } as unknown as BookingDraft;
@@ -58,7 +65,7 @@ async function setup(opts: SetupOptions = {}) {
   const seatCatalog = opts.catalogFailsOnce
     ? vi.fn().mockReturnValueOnce(throwError(() => new Error('down'))).mockReturnValue(of(CATALOG))
     : vi.fn().mockReturnValue(of(CATALOG));
-  const seatAvailability = vi.fn().mockReturnValue(of(AVAILABILITY));
+  const seatAvailability = vi.fn().mockReturnValue(of(opts.availability ?? AVAILABILITY));
   const seatService = Object.assign(Object.create(SeatService.prototype) as SeatService, {
     seatCatalog,
     seatAvailability,
@@ -209,5 +216,85 @@ describe('SeatsPage', () => {
     (fixture.componentInstance as any).continue();
     expect(draftService.setSeats).not.toHaveBeenCalled();
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('groups rows into labelled cabin sections from the seat data', async () => {
+    const { el } = await setup();
+    const sections = Array.from(el.querySelectorAll<HTMLElement>('.seatmap__section')).map((s) => s.textContent);
+    expect(sections.length).toBe(2);
+    expect(sections[0]).toContain('Business');
+    expect(sections[0]).toContain('Rows 1–1');
+    expect(sections[1]).toContain('Economy');
+    expect(sections[1]).toContain('Rows 10–12');
+  });
+
+  it('labels seat positions (window / middle / aisle) from the actual columns', async () => {
+    const { el } = await setup();
+    expect(seatButton(el, '10A').getAttribute('aria-label')).toContain('window seat');
+    expect(seatButton(el, '10B').getAttribute('aria-label')).toContain('middle seat');
+    expect(seatButton(el, '10C').getAttribute('aria-label')).toContain('aisle seat');
+    expect(seatButton(el, '10D').getAttribute('aria-label')).toContain('aisle seat');
+    expect(seatButton(el, '10F').getAttribute('aria-label')).toContain('window seat');
+  });
+
+  it('marks exit rows with indicators and extra-legroom labels', async () => {
+    const { el } = await setup();
+    const exitSeat = seatButton(el, '12A');
+    expect(exitSeat.getAttribute('aria-label')).toContain('exit row, extra legroom');
+    expect(exitSeat.disabled).toBe(false);
+    const exitRow = exitSeat.closest('.seatmap__row--exit');
+    expect(exitRow).not.toBeNull();
+    expect(exitRow!.querySelectorAll('.seatmap__exit').length).toBe(2);
+  });
+
+  it('never makes an occupied exit-row seat selectable', async () => {
+    const { el } = await setup({
+      availability: { flightId: 'fl-1', occupiedSeatIds: ['s-e-12a'], heldSeatIds: [] },
+    });
+    const exitSeat = seatButton(el, '12A');
+    expect(exitSeat.disabled).toBe(true);
+    expect(exitSeat.classList.contains('seat--occupied')).toBe(true);
+    expect(exitSeat.getAttribute('aria-pressed')).toBe('false');
+    expect(exitSeat.getAttribute('aria-label')).toContain('Occupied');
+  });
+
+  it('deselects a seat when it is clicked again', async () => {
+    const { fixture, el } = await setup();
+    seatButton(el, '10A').click();
+    await settle(fixture);
+    expect(seatButton(el, '10A').getAttribute('aria-pressed')).toBe('true');
+    expect(el.querySelector('.side__progress')?.textContent).toContain('1 of 2 selected');
+
+    // The click auto-advanced to passenger 2; deselecting 10A must not steal it.
+    seatButton(el, '10A').click();
+    await settle(fixture);
+    expect(seatButton(el, '10A').getAttribute('aria-pressed')).toBe('false');
+    expect(el.querySelector('.side__progress')?.textContent).toContain('0 of 2 selected');
+  });
+
+  it('shows the current total with seats included at no charge', async () => {
+    const { fixture, el } = await setup({ farePrices: true });
+    seatButton(el, '10A').click();
+    await settle(fixture);
+    seatButton(el, '10D').click();
+    await settle(fixture);
+
+    const table = el.querySelector('.side__table')!.textContent!;
+    expect(table).toContain('Seats');
+    expect(table).toContain('Included');
+    expect(table).toContain('€250.00'); // (100 + 20 + 5) × 2 travellers
+    expect(el.textContent).toContain('Seat selection is included in your fare');
+  });
+
+  it('shows a sold-out notice when no seat in the fare cabin is selectable', async () => {
+    const { el } = await setup({
+      availability: {
+        flightId: 'fl-1',
+        occupiedSeatIds: ['s-e-10a', 's-e-10b', 's-e-10c', 's-e-10d', 's-e-10e', 's-e-10f', 's-e-12a'],
+        heldSeatIds: [],
+      },
+    });
+    expect(el.textContent).toContain('No seats left in your cabin');
+    expect(continueButton(el).disabled).toBe(true);
   });
 });

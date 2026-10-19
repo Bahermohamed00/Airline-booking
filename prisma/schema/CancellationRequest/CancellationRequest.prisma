@@ -1,0 +1,30 @@
+model CancellationRequest {
+  id               String                    @id @default(uuid()) @db.Uuid
+  bookingId        String                    @map("booking_id") @db.Uuid
+  userId           String                    @map("user_id") @db.Uuid
+  reason           String?                   @db.VarChar(500)
+  status           CancellationRequestStatus @default(PENDING)
+  requestedAt      DateTime                  @default(now()) @map("requested_at") @db.Timestamptz(6)
+  reviewedAt       DateTime?                 @map("reviewed_at") @db.Timestamptz(6)
+  reviewedBy       String?                   @map("reviewed_by") @db.Uuid
+  rejectionReason  String?                   @map("rejection_reason") @db.VarChar(500)
+  refundId         String?                   @map("refund_id") @db.Uuid
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  booking Booking  @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  refund  Refund?  @relation(fields: [refundId], references: [id], onDelete: SetNull)
+
+  @@index([status, requestedAt])
+  @@index([bookingId])
+  @@map("cancellation_requests")
+}
+
+enum CancellationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("cancellation_request_status")
+}

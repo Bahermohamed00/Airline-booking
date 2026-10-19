@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuthUser } from '../decorators/current-user.decorator.js';
 
-interface JwtPayload {
+export interface JwtPayload {
   sub: string;
   email: string;
   sid: string;

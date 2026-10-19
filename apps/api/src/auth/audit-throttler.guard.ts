@@ -16,6 +16,20 @@ export class AuditThrottlerGuard extends ThrottlerGuard {
     super(options, storageService, reflector);
   }
 
+  /**
+   * Rate limiting is HTTP-scoped. In WS/RPC contexts the base guard treats the
+   * socket as the request and the message payload as the response — calling
+   * res.header(...) on a plain object throws and would silently reject every
+   * WebSocket message. Realtime abuse control belongs to connection auth and
+   * per-subscription authorization, not HTTP rate limits.
+   */
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (context.getType() !== 'http') {
+      return true;
+    }
+    return super.canActivate(context);
+  }
+
   protected async throwThrottlingException(context: ExecutionContext, throttlerLimitDetail: ThrottlerLimitDetail): Promise<void> {
     const req = context.switchToHttp().getRequest<Request>();
     // Best-effort: throttling must never depend on audit availability.

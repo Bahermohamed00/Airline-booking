@@ -4,9 +4,13 @@ import { provideRouter, ActivatedRoute, convertToParamMap, type ParamMap } from 
 import { of, throwError, Subject } from 'rxjs';
 import { AdminBookingsPage } from './admin-bookings.component';
 import { CustomerBookingService } from '../../../core/services/customer-booking.service';
+import { AdminPaymentsService } from '../payments/admin-payments.service';
+import { AdminNotificationsService, type AdminNotificationItem } from '../notifications/admin-notifications.service';
 import { AuditService, type AuditLogPage } from '../audit/audit.service';
 import { AuthService } from '../../../core/services/auth.service';
+import { ToastService } from '../../../shared/ui/toast.service';
 import type { CustomerBooking } from '../../../core/models/customer-booking.model';
+import type { AdminPayment } from '../../../core/models/payment.model';
 
 function booking(partial: Partial<CustomerBooking> = {}): CustomerBooking {
   return {
@@ -74,14 +78,61 @@ const AUDIT_PAGE: AuditLogPage = {
   totalPages: 1,
 };
 
+function payment(partial: Partial<AdminPayment> = {}): AdminPayment {
+  return {
+    id: 'pay-1',
+    bookingId: 'bk-1',
+    bookingReference: 'NVABC1',
+    bookingStatus: 'CONFIRMED',
+    contactEmail: 'lena@example.com',
+    amount: 498.5,
+    currency: 'EUR',
+    status: 'SUCCESS',
+    provider: 'stripe',
+    providerReference: 'pi_test_123',
+    paidAt: '2026-01-10T10:05:00Z',
+    failedAt: null,
+    createdAt: '2026-01-10T10:00:00Z',
+    refunds: [],
+    ...partial,
+  };
+}
+
+function notificationItem(partial: Partial<AdminNotificationItem> = {}): AdminNotificationItem {
+  return {
+    id: 'ntf-1',
+    type: 'BOOKING_CONFIRMED',
+    channel: 'IN_APP',
+    status: 'DELIVERED',
+    title: 'Booking confirmed',
+    content: 'Your booking NVABC1 is confirmed.',
+    userId: 'user-1',
+    bookingId: 'bk-1',
+    readAt: null,
+    attempts: 1,
+    error: null,
+    sentAt: '2026-01-10T09:31:00Z',
+    createdAt: '2026-01-10T09:30:05Z',
+    ...partial,
+  };
+}
+
 function mocks(list: CustomerBooking[] = [booking()]) {
   return {
     bookings: {
       listAdmin: vi.fn().mockReturnValue(of(list)),
       getAdmin: vi.fn().mockReturnValue(of(list[0] ?? booking())),
     },
+    payments: {
+      listPayments: vi.fn().mockReturnValue(of([])),
+      refund: vi.fn(),
+    },
+    notifications: {
+      list: vi.fn().mockReturnValue(of({ data: [], page: 1, limit: 20, total: 0, totalPages: 0 })),
+    },
     audit: { listLogs: vi.fn().mockReturnValue(of(AUDIT_PAGE)) },
     auth: { hasPermission: vi.fn().mockReturnValue(true) },
+    toast: { success: vi.fn(), error: vi.fn() },
   };
 }
 
@@ -94,8 +145,11 @@ async function setup(m: Mocks, route?: unknown): Promise<ComponentFixture<AdminB
       provideRouter([]),
       ...(route ? [{ provide: ActivatedRoute, useValue: route }] : []),
       { provide: CustomerBookingService, useValue: m.bookings },
+      { provide: AdminPaymentsService, useValue: m.payments },
+      { provide: AdminNotificationsService, useValue: m.notifications },
       { provide: AuditService, useValue: m.audit },
       { provide: AuthService, useValue: m.auth },
+      { provide: ToastService, useValue: m.toast },
     ],
   }).compileComponents();
 
@@ -402,23 +456,108 @@ describe('AdminBookingsPage', () => {
     expect(m.audit.listLogs).not.toHaveBeenCalled();
   });
 
-  it('shows honest deferred states for payments/refunds and notifications', async () => {
+  // ---------- Notifications tab ----------
+
+  it('loads booking-scoped notifications when the tab opens and renders them', async () => {
     const m = mocks();
+    m.notifications.list.mockReturnValue(
+      of({ data: [notificationItem()], page: 1, limit: 20, total: 1, totalPages: 1 }),
+    );
     const fixture = await setup(m);
-    const el = await openRow(fixture);
 
-    await switchTab(fixture, 'Payments');
-    expect(el.querySelector('.drawer')!.textContent).toContain(
-      'Payments and refunds will be available in a future phase.',
-    );
+    expect(m.notifications.list).not.toHaveBeenCalled();
+    await openRow(fixture);
+    expect(m.notifications.list).not.toHaveBeenCalled();
 
-    await switchTab(fixture, 'Notifications');
-    expect(el.querySelector('.drawer')!.textContent).toContain(
-      'Notifications will be available in a future phase.',
-    );
+    const el = await switchTab(fixture, 'Notifications');
+    expect(m.notifications.list).toHaveBeenCalledWith({ bookingId: 'bk-1', limit: 20 });
+    const text = el.querySelector('.drawer')!.textContent!;
+    expect(text).toContain('Booking confirmed');
+    expect(text).toContain('BOOKING_CONFIRMED');
+    expect(text).toContain('IN_APP');
+    expect(text).toContain('DELIVERED');
+    expect(text).toContain('Sent');
   });
 
-  it('has no cancel action, no BR-14 exception action and no fabricated refund amounts', async () => {
+  it('shows an honest empty state when the booking has no notifications', async () => {
+    const m = mocks();
+    const fixture = await setup(m);
+    await openRow(fixture);
+    const el = await switchTab(fixture, 'Notifications');
+
+    expect(el.querySelector('.drawer')!.textContent).toContain('No notifications for this booking');
+    expect(el.querySelector('.drawer')!.textContent).not.toContain('Could not load notifications');
+  });
+
+  it('distinguishes failure from empty and retries on demand', async () => {
+    const m = mocks();
+    m.notifications.list
+      .mockReturnValueOnce(throwError(() => new Error('down')))
+      .mockReturnValue(of({ data: [notificationItem()], page: 1, limit: 20, total: 1, totalPages: 1 }));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    let el = await switchTab(fixture, 'Notifications');
+
+    expect(el.querySelector('.drawer')!.textContent).toContain('Could not load notifications for this booking.');
+    expect(el.querySelector('.drawer')!.textContent).not.toContain('No notifications for this booking');
+
+    el.querySelector<HTMLElement>('.drawer .list-error na-button button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+    expect(m.notifications.list).toHaveBeenCalledTimes(2);
+    expect(el.querySelector('.drawer')!.textContent).toContain('Booking confirmed');
+  });
+
+  it('never leaks the previous booking\'s notifications when switching bookings mid-flight', async () => {
+    const pending = new Subject<unknown>();
+    const m = mocks([booking(), booking({ id: 'bk-2', bookingReference: 'NVXYZ9' })]);
+    m.notifications.list.mockImplementation((q: { bookingId?: string }) =>
+      q.bookingId === 'bk-1'
+        ? pending.asObservable()
+        : of({ data: [notificationItem({ id: 'ntf-2', bookingId: 'bk-2', title: 'Payment succeeded' })], page: 1, limit: 20, total: 1, totalPages: 1 }),
+    );
+    m.bookings.getAdmin.mockImplementation((id: string) =>
+      of(booking({ id, bookingReference: id === 'bk-1' ? 'NVABC1' : 'NVXYZ9' })),
+    );
+    const fixture = await setup(m);
+    let el = await openRow(fixture);
+    await switchTab(fixture, 'Notifications');
+
+    el.querySelectorAll<HTMLElement>('tbody tr')[1]!.click();
+    fixture.detectChanges();
+    await switchTab(fixture, 'Notifications');
+    expect(el.querySelector('.drawer')!.textContent).toContain('Payment succeeded');
+
+    // Late response for bk-1 is discarded.
+    pending.next({ data: [notificationItem({ title: 'Booking confirmed' })], page: 1, limit: 20, total: 1, totalPages: 1 });
+    pending.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const text = el.querySelector('.drawer')!.textContent!;
+    expect(text).not.toContain('Booking confirmed');
+    expect(text).toContain('Payment succeeded');
+  });
+
+  it('shows a friendly state on 403 and never calls the API without notifications:read', async () => {
+    const m = mocks();
+    m.notifications.list.mockReturnValue(throwError(() => ({ status: 403 })));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    let el = await switchTab(fixture, 'Notifications');
+    expect(el.querySelector('.drawer')!.textContent).toContain("You don't have permission");
+
+    TestBed.resetTestingModule();
+    const m2 = mocks();
+    m2.auth.hasPermission.mockImplementation((p: string) => p !== 'notifications:read');
+    const fixture2 = await setup(m2);
+    await openRow(fixture2);
+    el = await switchTab(fixture2, 'Notifications');
+    expect(m2.notifications.list).not.toHaveBeenCalled();
+    expect(el.querySelector('.drawer')!.textContent).toContain("You don't have permission");
+  });
+
+  it('has no cancel action and no BR-14 exception action in the drawer', async () => {
     const m = mocks();
     const fixture = await setup(m);
     const el = await openRow(fixture);
@@ -427,9 +566,188 @@ describe('AdminBookingsPage', () => {
     expect(drawer.textContent).not.toContain('Cancel booking');
     expect(drawer.textContent).not.toContain('Confirm without payment');
     expect(drawer.textContent).not.toContain('Estimated refund');
-    expect(el.querySelector('.drawer na-dialog')).toBeNull();
-    expect(el.querySelector('.drawer__actions na-button')).toBeNull();
-    expect(drawer.textContent).toContain('future backend phase');
+    // The obsolete "future backend phase" claim is gone; the footer points at
+    // the real Payments and Cancellation-requests screens.
+    expect(drawer.textContent).not.toContain('future backend phase');
+    expect(drawer.textContent).toContain('Payments');
+    expect(drawer.textContent).toContain('Cancellation requests');
+  });
+
+  // ---------- Payments & refunds tab ----------
+
+  it('loads payments for the selected booking only when the payments tab opens', async () => {
+    const m = mocks();
+    m.payments.listPayments.mockReturnValue(of([payment()]));
+    const fixture = await setup(m);
+
+    // Not fetched before the tab is opened.
+    expect(m.payments.listPayments).not.toHaveBeenCalled();
+
+    await openRow(fixture);
+    expect(m.payments.listPayments).not.toHaveBeenCalled();
+
+    const el = await switchTab(fixture, 'Payments');
+    expect(m.payments.listPayments).toHaveBeenCalledWith({ bookingId: 'bk-1' });
+    const text = el.querySelector('.drawer')!.textContent!;
+    expect(text).toContain('€498.50');
+    expect(text).toContain('Paid'); // SUCCESS status badge label
+    expect(text).toContain('stripe');
+    expect(text).toContain('pi_test_123');
+    expect(text).toContain('Paid');
+  });
+
+  it('renders refund records with their statuses under the payment', async () => {
+    const m = mocks();
+    m.payments.listPayments.mockReturnValue(
+      of([
+        payment({
+          status: 'PARTIALLY_REFUNDED',
+          refunds: [
+            {
+              id: 'rf-1',
+              paymentId: 'pay-1',
+              bookingId: 'bk-1',
+              amount: 100,
+              currency: 'EUR',
+              status: 'PROCESSED',
+              reason: 'Customer cancellation',
+              processedAt: '2026-01-12T09:00:00Z',
+              createdAt: '2026-01-11T09:00:00Z',
+              updatedAt: '2026-01-12T09:00:00Z',
+            },
+          ],
+        }),
+      ]),
+    );
+    const fixture = await setup(m);
+    await openRow(fixture);
+    const el = await switchTab(fixture, 'Payments');
+
+    const text = el.querySelector('.drawer')!.textContent!;
+    expect(text).toContain('Partially refunded');
+    expect(text).toContain('Refund €100.00');
+    expect(text).toContain('Processed');
+    expect(text).toContain('Customer cancellation');
+  });
+
+  it('shows an honest empty state when the booking has no payments', async () => {
+    const m = mocks();
+    m.payments.listPayments.mockReturnValue(of([]));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    const el = await switchTab(fixture, 'Payments');
+
+    expect(el.querySelector('.drawer')!.textContent).toContain('No payments yet');
+    expect(el.querySelector('.drawer')!.textContent).not.toContain('Could not load payments');
+  });
+
+  it('distinguishes failure from empty and retries on demand', async () => {
+    const m = mocks();
+    m.payments.listPayments
+      .mockReturnValueOnce(throwError(() => new Error('down')))
+      .mockReturnValue(of([payment()]));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    let el = await switchTab(fixture, 'Payments');
+
+    let drawer = el.querySelector('.drawer')!;
+    expect(drawer.textContent).toContain('Could not load payments for this booking.');
+    expect(drawer.textContent).not.toContain('No payments yet');
+
+    drawer.querySelector<HTMLElement>('.list-error na-button button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+    drawer = el.querySelector('.drawer')!;
+    expect(m.payments.listPayments).toHaveBeenCalledTimes(2);
+    expect(drawer.textContent).toContain('€498.50');
+  });
+
+  it('never leaks the previous booking\'s payments when switching bookings mid-flight', async () => {
+    const first = payment({ id: 'pay-1', bookingId: 'bk-1', providerReference: 'pi_first' });
+    const second = payment({ id: 'pay-2', bookingId: 'bk-2', providerReference: 'pi_second' });
+    const pending = new Subject<AdminPayment[]>();
+    const m = mocks([booking(), booking({ id: 'bk-2', bookingReference: 'NVXYZ9' })]);
+    m.payments.listPayments.mockImplementation((q: { bookingId?: string }) =>
+      q.bookingId === 'bk-1' ? pending.asObservable() : of([second]),
+    );
+    m.bookings.getAdmin.mockImplementation((id: string) =>
+      of(booking({ id, bookingReference: id === 'bk-1' ? 'NVABC1' : 'NVXYZ9' })),
+    );
+    const fixture = await setup(m);
+    let el = await openRow(fixture);
+    await switchTab(fixture, 'Payments');
+
+    // Switch to the second booking before the first request resolves.
+    el.querySelectorAll<HTMLElement>('tbody tr')[1]!.click();
+    fixture.detectChanges();
+    await switchTab(fixture, 'Payments');
+    let drawerText = el.querySelector('.drawer')!.textContent!;
+    expect(drawerText).toContain('pi_second');
+
+    // The late response for bk-1 must be discarded.
+    pending.next([first]);
+    pending.complete();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    drawerText = el.querySelector('.drawer')!.textContent!;
+    expect(drawerText).not.toContain('pi_first');
+    expect(drawerText).toContain('pi_second');
+  });
+
+  it('hides the refund action without payments:refund and shows it for eligible payments', async () => {
+    const m = mocks();
+    m.auth.hasPermission.mockImplementation((p: string) => p !== 'payments:refund');
+    m.payments.listPayments.mockReturnValue(of([payment()]));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    let el = await switchTab(fixture, 'Payments');
+    expect(el.querySelector('.drawer')!.textContent).not.toContain('Issue refund');
+
+    // With the permission and a SUCCESS payment, the action is available.
+    TestBed.resetTestingModule();
+    const m2 = mocks();
+    m2.payments.listPayments.mockReturnValue(of([payment()]));
+    const fixture2 = await setup(m2);
+    await openRow(fixture2);
+    el = await switchTab(fixture2, 'Payments');
+    const btn = Array.from(el.querySelectorAll<HTMLElement>('.drawer na-button')).find((b) =>
+      b.textContent?.includes('Issue refund'),
+    );
+    expect(btn).toBeDefined();
+    btn!.querySelector('button')!.click();
+    fixture2.detectChanges();
+    expect(el.querySelector('na-refund-dialog')).not.toBeNull();
+  });
+
+  it('never triggers a refund from loading or tab switching alone', async () => {
+    const m = mocks();
+    m.payments.listPayments.mockReturnValue(of([payment()]));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    await switchTab(fixture, 'Payments');
+    expect(m.payments.refund).not.toHaveBeenCalled();
+  });
+
+  it('shows a friendly state when the payments API returns 403', async () => {
+    const m = mocks();
+    m.payments.listPayments.mockReturnValue(throwError(() => ({ status: 403 })));
+    const fixture = await setup(m);
+    await openRow(fixture);
+    const el = await switchTab(fixture, 'Payments');
+
+    expect(el.querySelector('.drawer')!.textContent).toContain("You don't have permission");
+  });
+
+  it('does not call the payments API at all without the payments:read permission', async () => {
+    const m = mocks();
+    m.auth.hasPermission.mockImplementation((p: string) => p !== 'payments:read');
+    const fixture = await setup(m);
+    await openRow(fixture);
+    const el = await switchTab(fixture, 'Payments');
+
+    expect(m.payments.listPayments).not.toHaveBeenCalled();
+    expect(el.querySelector('.drawer')!.textContent).toContain("You don't have permission");
   });
 
   it('deep link ?email= pre-filters the first load to that customer', async () => {

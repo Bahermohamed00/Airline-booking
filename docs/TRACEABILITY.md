@@ -92,7 +92,21 @@ This document maps SRS v2.1 requirements to their implementation artifacts for t
 | BR-08/09 Backend-enforced RBAC | — | UI mirrors via `permissionGuard` | All admin offer routes guarded | `JwtAuthGuard` + `PermissionsGuard`; `offers:read`/`offers:manage` seeded; Super Admin bypass | `Permission` seed catalog | `offers.e2e-spec.ts` (401 unauthenticated, 403 customer) |
 | BR-10/BR-11 Audit log | UC-12 | — | Mutations audited | `AuditService.log` (fail-soft) | `OFFER_CREATED`, `OFFER_UPDATED`, `OFFER_DELETED` in `AuditLog` | `offers.e2e-spec.ts` (audit rows asserted) |
 | Seed data | — | — | — | `seedOffers()` — 8 fictional NovaAir offers (6 ACTIVE rolling windows, 1 DRAFT, 1 EXPIRED), upsert on unique title (idempotent) | `offers` table | `seed-identity.spec.ts` (seed harness) |
-| Scope isolation (no pricing integration) | — | — | No offer→fare/booking/payment coupling anywhere | — | `Offer` has no relation to fares/bookings by design | Backend grep + e2e |
+| Scope isolation (no pricing integration) — **SUPERSEDED 2026-10-08 by BR-16** | — | — | Was: no offer→fare/booking/payment coupling anywhere; replaced by Bookable Offers (BR-16 — see section below and `docs/adr/0005-bookable-offers.md`) | — | Was: `Offer` has no relation to fares/bookings by design; now `Offer.discountType/discountValue/routeId/cabinClass` + `Booking.offerId` (migration `20261008094004_bookable_offers`) | — |
+
+## BR-16 — Bookable Offers (approved 2026-10-08)
+
+Supersedes the Phase 5 "Scope isolation (no pricing integration)" row above; see `docs/adr/0005-bookable-offers.md`. Schema migration `20261008094004_bookable_offers` is applied.
+
+| Requirement | Use Case | UI / Screen | API Endpoint / Module | Service / Guard | Prisma / PostgreSQL | Test |
+|-------------|----------|-------------|-----------------------|-----------------|---------------------|------|
+| BR-16 Bookable offer schema | — | — | — | — | Migration `20261008094004_bookable_offers`: `Offer.discountType` (PERCENT/FIXED_AMOUNT; null = marketing-only), `discountValue`, optional `routeId`/`cabinClass` eligibility; `Booking.offerId → Offer.id ON DELETE RESTRICT` + index; `Route.offers` back-relation | schema applied (dev + test DBs) |
+| BR-16 Offer eligibility & validation | — | — | — | Offer eligibility/validation: ACTIVE + validity window, `discountType` required for bookability, `routeId`/`cabinClass` NULL = unrestricted, both set = AND-combined | `Offer` eligibility columns | `offers.service.spec.ts` |
+| BR-16 Booking pricing integration + snapshot | UC-03 | Review page (offer applied server-side) | `POST /api/bookings` accepts optional `offerId` (UUID v4); idempotency request hash includes `offerId` when present | Base-fare-only discount in integer cents (PERCENT `round(baseCents × pct/100)`; FIXED_AMOUNT exact) inside the existing creation transaction; `totalAmount = (discountedBase + taxAmount + feeAmount) × passengerCount` > 0; client sends only `offerId` | `Booking.offerId`; offer terms snapshotted into `Booking.fareRulesSnapshot.offer` { id, title, discountType, discountValue, discountAmountPerPassenger, currency } | `bookings.service.spec.ts`, `bookings.e2e-spec.ts` |
+| BR-16 Price preview | UC-03 | Review page quote | `POST /api/bookings/price-preview` (authenticated, read-only quote) | Same server-side pricing path as booking creation; no persistence | — | `bookings.e2e-spec.ts` |
+| BR-16 Permanent offer delete | UC-09 | AdminOffersPage | `DELETE /api/admin/offers/:id/permanent` — hard delete only with zero referencing bookings, else 409 `OFFER_IN_USE` with `bookingCount`; existing soft DELETE (ACTIVE→INACTIVE, 409 if already INACTIVE) unchanged | `AdminOffersController`, `OffersService`; FK RESTRICT as DB backstop | `Booking.offerId → Offer.id ON DELETE RESTRICT` | `offers.e2e-spec.ts`, `offers.service.spec.ts` |
+| BR-10/BR-11 Audit log | UC-12 | — | Permanent delete audited | `AuditService.log` (fail-soft) | `OFFER_HARD_DELETED` in `AuditLog` | `offers.e2e-spec.ts` (audit row asserted) |
+| BR-16 Tests | — | — | — | — | — | Offers/bookings unit + e2e suites (`offers.service.spec.ts`, `bookings.service.spec.ts`, `offers.e2e-spec.ts`, `bookings.e2e-spec.ts`) |
 
 ## Phase 6A — Admin Dashboard Real Data
 

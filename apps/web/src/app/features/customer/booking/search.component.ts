@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FlightService } from '../../../core/services/flight.service';
 import type { CabinClass } from '../../../core/models/domain.model';
 import type { SearchCriteria, TripType } from '../../../core/models/booking-flow.model';
@@ -44,6 +44,11 @@ export class SearchPage {
   private readonly router = inject(Router);
   private readonly flightsApi = inject(FlightService);
 
+  /** BR-16: offer carried in from /offers deep links; forwarded to /results. */
+  protected readonly offerId = signal<string | null>(
+    inject(ActivatedRoute).snapshot.queryParamMap.get('offerId'),
+  );
+
   private readonly fromField = viewChild('fromField', { read: NaAutocomplete });
   private readonly toField = viewChild('toField', { read: NaAutocomplete });
 
@@ -83,7 +88,6 @@ export class SearchPage {
   protected readonly departureDate = signal(toDateInput(new Date(Date.now() + 86400000)));
   protected readonly returnDate = signal(toDateInput(new Date(Date.now() + 5 * 86400000)));
   protected readonly cabinClass = signal<CabinClass>('ECONOMY');
-  protected readonly promoCode = signal('');
   protected readonly counts = signal({ adults: 1, children: 0, infants: 0 });
   protected readonly formError = signal<string | null>(null);
   protected readonly advisoryDismissed = signal(false);
@@ -163,7 +167,6 @@ export class SearchPage {
       returnDate: this.tripType() === 'ROUND_TRIP' ? this.returnDate() : null,
       passengers: this.counts(),
       cabinClass: this.cabinClass(),
-      promoCode: this.promoCode().trim() || null,
     };
     this.remember(criteria);
     this.goToResults(criteria);
@@ -178,7 +181,6 @@ export class SearchPage {
       returnDate: null,
       passengers: { adults: 1, children: 0, infants: 0 },
       cabinClass: 'ECONOMY',
-      promoCode: null,
     };
     this.remember(criteria);
     this.goToResults(criteria);
@@ -196,7 +198,7 @@ export class SearchPage {
         children: c.passengers.children,
         infants: c.passengers.infants,
         cabin: c.cabinClass,
-        promo: c.promoCode ?? undefined,
+        offerId: c.offerId ?? this.offerId() ?? undefined,
       },
     });
   }

@@ -25,10 +25,14 @@ import { ScheduleRulesModule } from './schedule-rules/schedule-rules.module.js';
 import { BookingsModule } from './bookings/bookings.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { OffersModule } from './offers/offers.module.js';
+import { ExtrasModule } from './extras/extras.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { BaggageModule } from './baggage/baggage.module.js';
 import { SupportModule } from './support/support.module.js';
+import { CheckinModule } from './checkin/checkin.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
 import { JwtAuthGuard } from './auth/auth.guard.js';
 import { RolesGuard } from './auth/roles.guard.js';
 import { PermissionsGuard } from './auth/permissions.guard.js';
@@ -66,10 +70,14 @@ const skipThrottleInTest = (): boolean =>
     BookingsModule,
     PaymentsModule,
     OffersModule,
+    ExtrasModule,
     DashboardModule,
     SettingsModule,
     BaggageModule,
     SupportModule,
+    CheckinModule,
+    NotificationsModule,
+    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [

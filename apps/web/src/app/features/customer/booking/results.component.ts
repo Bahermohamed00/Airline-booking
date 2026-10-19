@@ -135,7 +135,7 @@ export class ResultsPage {
           infants: Math.max(0, Number(params.get('infants')) || 0),
         },
         cabinClass: (params.get('cabin') as CabinClass) ?? 'ECONOMY',
-        promoCode: params.get('promo'),
+        offerId: params.get('offerId'),
       };
       this.criteria.set(criteria);
       this.runSearch();

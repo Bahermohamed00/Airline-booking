@@ -63,6 +63,11 @@ const SAFE_METADATA_KEYS = [
   'amount',
   'currency',
   'providerReference',
+  // Refund recovery/orphan operations (Phase 3.4).
+  'via',
+  'outcome',
+  'providerRefundReference',
+  'paymentProviderReference',
   // Offer metadata.
   'title',
   // Flight-catalog metadata (non-sensitive identifiers and summary counts).

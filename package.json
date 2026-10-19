@@ -42,7 +42,8 @@
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
-    "@prisma/client": "^6.7.0"
+    "@prisma/client": "^6.7.0",
+    "stripe": "^17.7.0"
   },
   "engines": {
     "node": ">=22.0.0",

@@ -97,6 +97,16 @@ describe('AdminBaggagePage', () => {
     expect(root.textContent).toContain('18 kg');
   });
 
+  it('shows an honest "Not recorded" for bags without a captured weight — never a fabricated number', async () => {
+    const m = mocks([bag({ weightKg: null })]);
+    const fixture = await setup(m);
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.textContent).toContain('Not recorded');
+    expect(root.textContent).not.toContain('null');
+    expect(root.textContent).not.toMatch(/\d+\s*kg/);
+  });
+
   it('shows passenger and booking context when a row is selected', async () => {
     const m = mocks();
     const fixture = await setup(m);

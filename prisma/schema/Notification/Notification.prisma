@@ -7,15 +7,33 @@ enum NotificationChannel {
   @@map("notification_channel")
 }
 
+enum NotificationType {
+  BOOKING_CONFIRMED
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  CANCELLATION_APPROVED
+  CANCELLATION_REJECTED
+  REFUND_PROCESSED
+  REFUND_REVIEW_REQUIRED
+
+  @@map("notification_type")
+}
+
 model Notification {
   id         String   @id @default(uuid()) @db.Uuid
   userId     String?  @map("user_id") @db.Uuid
   bookingId  String?  @map("booking_id") @db.Uuid
   templateId String?  @map("template_id") @db.Uuid
+  type       NotificationType? @map("type")
   channel    NotificationChannel
   status     NotificationStatus @default(PENDING)
+  title      String   @default("") @db.VarChar(255)
   content    String   @db.Text
+  readAt     DateTime? @map("read_at") @db.Timestamptz(6)
+  dedupeKey  String?  @unique @map("dedupe_key") @db.VarChar(150)
   error      String?  @db.Text
+  attempts   Int      @default(0)
+  nextRetryAt DateTime? @map("next_retry_at") @db.Timestamptz(6)
   sentAt     DateTime? @map("sent_at") @db.Timestamptz(6)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -24,6 +42,8 @@ model Notification {
   template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
+  @@index([userId, createdAt])
+  @@index([channel, status, nextRetryAt])
   @@index([bookingId])
   @@map("notifications")
 }

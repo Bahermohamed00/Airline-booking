@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { PaymentsService } from '../payments/payments.service.js';
 
 /**
  * Automatic seat-hold expiration. Expiring a hold only flips its status —
@@ -22,6 +23,10 @@ export class SeatHoldsService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditService) private readonly auditService: AuditService,
+    // Used only AFTER the sweep transaction commits (Phase 3.2C): bookings the
+    // sweep cancels get their still-open Stripe PaymentIntents cancelled
+    // post-commit — never inside the expiry transaction.
+    @Inject(PaymentsService) private readonly payments: PaymentsService,
   ) {}
 
   /**
@@ -84,6 +89,11 @@ export class SeatHoldsService {
       } catch (error) {
         this.logger.warn(`audit log failed for BOOKING_CANCELLED ${booking.bookingReference}: ${String(error)}`);
       }
+    }
+    // Phase 3.2C: post-commit (never inside the expiry transaction) — close
+    // any still-open Stripe PaymentIntent of the auto-cancelled bookings.
+    for (const booking of cancelledBookings) {
+      await this.payments.cancelOpenIntentsForCancelledBooking(booking.id);
     }
     return expiredCount;
   }

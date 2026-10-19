@@ -57,8 +57,10 @@ import { MailModule } from '../mail/mail.module.js';
     RolesGuard,
     PermissionsGuard,
     OwnershipGuard,
-    // Exported so non-HTTP transports (WebSocket gateway) can reuse the exact
-    // same JWT verification + AuthUser resolution as REST.
+    // JwtService (token verification) and JwtStrategy (validate() trust rules)
+    // are re-exported so non-HTTP transports (the dashboard and realtime
+    // WebSocket gateways) reuse the exact same JWT verification + AuthUser
+    // resolution as REST, including WebSocket handshake auth.
     JwtModule,
     JwtStrategy,
   ],

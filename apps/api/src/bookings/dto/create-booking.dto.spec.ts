@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { CreateBookingDto, MAX_BOOKING_PASSENGERS } from './create-booking.dto';
 
 const validBody = () => ({
@@ -62,5 +63,38 @@ describe('CreateBookingDto', () => {
     };
     const errors = await errorsFor(body);
     expect(errors.some((e) => e.property === 'seatIds')).toBe(true);
+  });
+
+  // ---------- extras selections ----------
+
+  it('accepts a valid extras selection (service id, quantity, passenger association only)', async () => {
+    const body = {
+      ...validBody(),
+      extras: [{ serviceId: randomUUID(), quantity: 2, passengerIndex: 0 }],
+    };
+    expect(await errorsFor(body)).toHaveLength(0);
+  });
+
+  it.each([
+    ['non-UUID service id', { serviceId: 'BAG_23KG', quantity: 1 }],
+    ['zero quantity', { serviceId: randomUUID(), quantity: 0 }],
+    ['fractional quantity', { serviceId: randomUUID(), quantity: 1.5 }],
+    ['oversized quantity', { serviceId: randomUUID(), quantity: 100 }],
+    ['negative passenger index', { serviceId: randomUUID(), quantity: 1, passengerIndex: -1 }],
+    ['out-of-range passenger index', { serviceId: randomUUID(), quantity: 1, passengerIndex: MAX_BOOKING_PASSENGERS }],
+  ])('rejects an invalid extras selection: %s', async (_label, selection) => {
+    const errors = await errorsFor({ ...validBody(), extras: [selection] });
+    expect(errors.some((e) => e.property === 'extras')).toBe(true);
+  });
+
+  it('client-supplied prices in extras are rejected by the global validation pipe (forbidNonWhitelisted)', async () => {
+    // Mirrors app.module.ts: whitelist + forbidNonWhitelisted + transform.
+    // A client trying to set its own price gets a 400 before any service code runs.
+    const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+    const body = {
+      ...validBody(),
+      extras: [{ serviceId: randomUUID(), quantity: 1, price: 0.01 }],
+    };
+    await expect(pipe.transform(body, { type: 'body', metatype: CreateBookingDto })).rejects.toBeInstanceOf(BadRequestException);
   });
 });

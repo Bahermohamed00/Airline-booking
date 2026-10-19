@@ -1,5 +1,5 @@
-import { IsEnum, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
-import { OfferStatus } from '@prisma/client';
+import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { CabinClass, DiscountType, OfferStatus } from '@prisma/client';
 import { TrimString } from '../../auth/dto/transforms.js';
 import { ISO_DATE_PATTERN } from '../../schedule-rules/dto/create-schedule-rule.dto.js';
 import { OFFER_IMAGE_PATTERN } from './create-offer.dto.js';
@@ -59,4 +59,21 @@ export class UpdateOfferDto {
   @IsOptional()
   @Matches(ISO_DATE_PATTERN, { message: 'validUntil must be a yyyy-mm-dd date' })
   validUntil?: string;
+
+  // Explicit null clears the field (validated in the service); undefined keeps the existing value.
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsEnum(DiscountType)
+  discountType?: DiscountType | null;
+
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  discountValue?: number | null;
+
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsUUID('4')
+  routeId?: string | null;
+
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsEnum(CabinClass)
+  cabinClass?: CabinClass | null;
 }

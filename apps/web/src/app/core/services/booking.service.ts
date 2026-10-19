@@ -50,7 +50,6 @@ export class BookingService {
       returnSeats: draft.returnSeats,
       extras: draft.extras,
       extraBags: draft.baggagePieces.reduce((a, b) => a + b, 0),
-      promoCode: draft.criteria.promoCode,
     });
 
     const bookingId = crypto.randomUUID();
@@ -91,10 +90,18 @@ export class BookingService {
       })),
       extras: draft.extras.map((e, i) => ({
         id: `${bookingId}-be${i}`,
-        extraServiceId: e.extra.id,
-        extraService: e.extra,
+        extraServiceId: e.service.id,
+        extraService: {
+          id: e.service.id,
+          code: e.service.code,
+          name: e.service.name,
+          description: e.service.description,
+          price: e.service.price,
+          currency: e.service.currency,
+          category: e.service.category,
+        },
         quantity: e.quantity,
-        price: e.extra.price * e.quantity,
+        price: e.service.price * e.quantity,
       })),
       payments: [
         {

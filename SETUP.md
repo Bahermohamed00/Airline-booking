@@ -109,6 +109,63 @@ npm run web:test
 | `npm run web:dev` | Start Angular dev server |
 | `npm run web:build` | Build Angular app |
 
+## Stripe webhooks in local development
+
+With `PAYMENT_PROVIDER=stripe`, payment success is confirmed by Stripe's
+**signed webhook**, not by the browser. Stripe must be able to POST to the
+API's webhook route (`@Controller('payments')` + `@Post('webhook')` under the
+global `api` prefix → `POST /api/payments/webhook`), so in local development
+you must run the Stripe CLI forwarder in a separate terminal:
+
+```bash
+stripe listen --forward-to http://localhost:3000/api/payments/webhook
+```
+
+- The CLI prints a **fresh webhook signing secret (`whsec_…`) for each
+  session**. Copy it into the API `.env` as `STRIPE_WEBHOOK_SECRET` and
+  restart the API whenever it changes — a mismatch makes every webhook fail
+  signature verification (HTTP 400, `webhook signature verification failed`
+  in the API logs). Keep it out of version control.
+- Use Stripe **test-mode** keys only (`sk_test_…` / `pk_test_…`) and test
+  cards (e.g. `4242 4242 4242 4242`, any future expiry/CVC).
+- Without the forwarder, a paid Stripe PaymentIntent is NOT written back
+  immediately: the booking stays PENDING until the on-demand reconciliation
+  (customer page recovery poll) or the scheduled sweep (payments idle ≥ 5
+  minutes) retrieves the intent from Stripe. The UI still settles
+  automatically — just seconds-to-minutes slower instead of instantly.
+
+## Production runtime configuration
+
+Production builds never bake in an API address. The Angular app loads
+`config.json` from the web root at bootstrap (before the first component
+renders) and **refuses to start** when it is missing, invalid, points at a
+local host, or is not HTTPS.
+
+Supply it per environment at deploy time — place a file next to `index.html`
+(in the published `dist/web/browser/` output) containing:
+
+```json
+{ "apiBaseUrl": "https://<your-api-host>/api" }
+```
+
+Rules enforced by `apps/web/src/app/core/config/runtime-config.ts`:
+
+- `apiBaseUrl` must be an absolute URL ending in `/api` (the NestJS global
+  prefix, see `apps/api/src/main.ts`).
+- Production requires `https://` and rejects localhost/loopback hosts.
+- The checked-in `apps/web/public/config.json` holds the local-development
+  value (`http://localhost:3000/api`) so `ng serve` keeps working; a
+  production deployment MUST replace it — otherwise the app fails startup
+  loudly instead of silently targeting localhost.
+- Serve `config.json` with `Cache-Control: no-store` (or a short `max-age`)
+  so a stale API address is never retained after a deployment. The app also
+  fetches it with `cache: 'no-store'`.
+
+The production Stripe **publishable** key (`pk_live_…`) is supplied separately
+via `environment.prod.ts` at build time by the deploy pipeline. Server-side
+payment secrets belong only in API environment variables — never in frontend
+assets.
+
 ## Troubleshooting
 
 **Migration fails with connection error**

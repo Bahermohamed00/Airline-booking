@@ -9,6 +9,7 @@ model BookingPassenger {
   seats     BookingSeat[]
   baggage   Baggage[]
   checkIns  CheckIn[]
+  extras    BookingExtra[]
 
   @@unique([bookingId, passengerId])
   @@map("booking_passengers")

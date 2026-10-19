@@ -17,6 +17,7 @@ export class BookingDraftService {
   readonly outbound = computed(() => this.draftSignal()?.outbound ?? null);
   readonly fare = computed(() => this.draftSignal()?.fare ?? null);
   readonly seatHoldExpiresAt = computed(() => this.draftSignal()?.seatHoldExpiresAt ?? null);
+  readonly offerId = computed(() => this.draftSignal()?.offerId ?? null);
 
   start(criteria: SearchCriteria, flight: Flight, fare: Fare, returnFlight?: Flight, returnFare?: Fare): void {
     const count = criteria.passengers;
@@ -38,6 +39,7 @@ export class BookingDraftService {
       returnSeats: [],
       extras: [],
       baggagePieces: passengers.map(() => 0),
+      offerId: criteria.offerId ?? null,
       seatHoldExpiresAt: null,
       confirmedBooking: null,
     });
@@ -70,6 +72,13 @@ export class BookingDraftService {
 
   setBaggage(pieces: number[]): void {
     this.update((d) => ({ ...d, baggagePieces: pieces }));
+  }
+
+  /** BR-16: drop the carried offer (from the draft and its criteria, so a
+   *  fare re-selection cannot resurrect it) — used by the explicit "continue
+   *  without this offer" recovery when the server rejects it. Never silent. */
+  clearOffer(): void {
+    this.update((d) => ({ ...d, offerId: null, criteria: { ...d.criteria, offerId: null } }));
   }
 
   holdSecondsRemaining(now: number = Date.now()): number {

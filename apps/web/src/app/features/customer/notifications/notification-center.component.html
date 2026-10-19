@@ -1,0 +1,122 @@
+<main class="inbox">
+  <header class="inbox__header">
+    <div>
+      <h1 class="inbox__title">Notifications</h1>
+      <p class="inbox__subtitle">
+        @if (unreadCount() > 0) {
+          {{ unreadCount() }} unread
+        } @else {
+          You're all caught up
+        }
+      </p>
+    </div>
+    <button
+      type="button"
+      class="inbox__mark-all"
+      [disabled]="markingAll() || unreadCount() === 0"
+      (click)="markAll()"
+    >
+      {{ markingAll() ? 'Marking…' : 'Mark all as read' }}
+    </button>
+  </header>
+
+  <div class="inbox__filters" role="group" aria-label="Filter notifications">
+    <button
+      type="button"
+      class="inbox__filter"
+      [class.inbox__filter--active]="filter() === 'all'"
+      [attr.aria-pressed]="filter() === 'all'"
+      (click)="setFilter('all')"
+    >
+      All
+    </button>
+    <button
+      type="button"
+      class="inbox__filter"
+      [class.inbox__filter--active]="filter() === 'unread'"
+      [attr.aria-pressed]="filter() === 'unread'"
+      (click)="setFilter('unread')"
+    >
+      Unread
+    </button>
+  </div>
+
+  @if (loading()) {
+    <ul class="inbox__list" aria-label="Loading notifications">
+      @for (row of [1, 2, 3]; track row) {
+        <li class="inbox__skeleton" aria-hidden="true"></li>
+      }
+      <li class="inbox__status" role="status">Loading notifications…</li>
+    </ul>
+  } @else if (loadError()) {
+    <div class="inbox__status" role="alert">
+      <p>Could not load notifications.</p>
+      <button type="button" class="inbox__retry" (click)="load()">Retry</button>
+    </div>
+  } @else if (items().length === 0) {
+    <div class="inbox__status" role="status">
+      @if (filter() === 'unread') {
+        <p>No unread notifications.</p>
+      } @else {
+        <p>No notifications yet. Booking and payment updates will appear here.</p>
+      }
+    </div>
+  } @else {
+    <ul class="inbox__list">
+      @for (item of items(); track item.id) {
+        <li class="inbox__item" [class.inbox__item--unread]="!item.readAt">
+          <div class="inbox__item-body">
+            <div class="inbox__item-head">
+              <h2 class="inbox__item-title">{{ item.title }}</h2>
+              @if (!item.readAt) {
+                <span class="inbox__dot" aria-label="Unread"></span>
+              }
+            </div>
+            <p class="inbox__item-content">{{ item.content }}</p>
+            <time class="inbox__item-date" [attr.datetime]="item.createdAt">
+              {{ item.createdAt | date: 'd MMM y, HH:mm' }}
+            </time>
+          </div>
+          <div class="inbox__item-actions">
+            @if (linkFor(item); as link) {
+              <a [routerLink]="link" class="inbox__action inbox__action--link">View booking</a>
+            }
+            @if (!item.readAt) {
+              <button
+                type="button"
+                class="inbox__action"
+                [disabled]="markingIds().has(item.id)"
+                [attr.aria-label]="'Mark as read: ' + item.title"
+                (click)="markOne(item)"
+              >
+                Mark as read
+              </button>
+            }
+          </div>
+        </li>
+      }
+    </ul>
+
+    @if (totalPages() > 1) {
+      <nav class="inbox__pagination" aria-label="Notification pages">
+        <button
+          type="button"
+          class="inbox__page-btn"
+          [disabled]="page() <= 1"
+          (click)="goToPage(page() - 1)"
+        >
+          Previous
+        </button>
+        <span class="inbox__page-info">Page {{ page() }} of {{ totalPages() }} · {{ total() }} notifications</span>
+        <button
+          type="button"
+          class="inbox__page-btn"
+          [disabled]="page() >= totalPages()"
+          (click)="goToPage(page() + 1)"
+        >
+          Next
+        </button>
+      </nav>
+    }
+  }
+</main>

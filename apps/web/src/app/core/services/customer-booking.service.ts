@@ -4,8 +4,12 @@ import { Observable } from 'rxjs';
 import { API_CONFIG, type ApiConfig } from '../config/api-config';
 import type {
   AdminBookingQuery,
+  CancellationPreview,
+  CancellationRequest,
   CreateBookingPayload,
   CustomerBooking,
+  PricePreviewRequest,
+  PricePreviewResponse,
 } from '../models/customer-booking.model';
 import type { AdminCancelBookingResult } from '../models/payment.model';
 
@@ -23,6 +27,15 @@ export class CustomerBookingService {
     return this.http.post<CustomerBooking>(`${this.config.baseUrl}/bookings`, payload);
   }
 
+  /** BR-16: read-only server-side price preview (JWT required). Errors carry
+   *  err.error.code — e.g. OFFER_NOT_FOUND (404), OFFER_NOT_AVAILABLE (409). */
+  pricePreview(request: PricePreviewRequest): Observable<PricePreviewResponse> {
+    return this.http.post<PricePreviewResponse>(
+      `${this.config.baseUrl}/bookings/price-preview`,
+      request,
+    );
+  }
+
   myBookings(): Observable<CustomerBooking[]> {
     return this.http.get<CustomerBooking[]>(`${this.config.baseUrl}/bookings`);
   }
@@ -33,6 +46,25 @@ export class CustomerBookingService {
 
   cancel(id: string): Observable<CustomerBooking> {
     return this.http.post<CustomerBooking>(`${this.config.baseUrl}/bookings/${id}/cancel`, {});
+  }
+
+  /**
+   * Customer cancellation REQUEST for a CONFIRMED (paid) booking — the booking
+   * stays active until staff review it. Errors: 409 CANCELLATION_REQUEST_PENDING
+   * (a request is already open); other 409s for non-cancellable states. Direct
+   * cancel remains only for unpaid PENDING bookings (409 CANCELLATION_REQUEST_REQUIRED
+   * is returned by /cancel for CONFIRMED ones).
+   */
+  requestCancellation(id: string, reason?: string): Observable<CancellationRequest> {
+    return this.http.post<CancellationRequest>(
+      `${this.config.baseUrl}/bookings/${id}/cancellation-request`,
+      reason === undefined ? {} : { reason },
+    );
+  }
+
+  /** Server-calculated cancellation preview — informational only, never an authorization. */
+  cancellationPreview(id: string): Observable<CancellationPreview> {
+    return this.http.get<CancellationPreview>(`${this.config.baseUrl}/bookings/${id}/cancellation-preview`);
   }
 
   listAdmin(query: AdminBookingQuery = {}): Observable<CustomerBooking[]> {

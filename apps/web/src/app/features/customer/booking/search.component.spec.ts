@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, Router, ActivatedRoute, convertToParamMap } from '@angular/router';
 import { of, throwError, Subject } from 'rxjs';
 import { SearchPage } from './search.component';
 import { FlightService } from '../../../core/services/flight.service';
@@ -36,10 +36,24 @@ const AIRPORTS: Airport[] = [
   },
 ];
 
-async function setup(listAirports: ReturnType<typeof vi.fn> = vi.fn(() => of(AIRPORTS))) {
+async function setup(
+  listAirports: ReturnType<typeof vi.fn> = vi.fn(() => of(AIRPORTS)),
+  offerId?: string,
+) {
   await TestBed.configureTestingModule({
     imports: [SearchPage],
-    providers: [provideRouter([]), { provide: FlightService, useValue: { listAirports } }],
+    providers: [
+      provideRouter([]),
+      { provide: FlightService, useValue: { listAirports } },
+      ...(offerId
+        ? [
+            {
+              provide: ActivatedRoute,
+              useValue: { snapshot: { queryParamMap: convertToParamMap({ offerId }) } },
+            },
+          ]
+        : []),
+    ],
   }).compileComponents();
 
   const fixture: ComponentFixture<SearchPage> = TestBed.createComponent(SearchPage);
@@ -164,5 +178,46 @@ describe('SearchPage', () => {
   it('shows an honest empty state when no airports are available', async () => {
     const { el } = await setup(vi.fn(() => of([])));
     expect(el.textContent).toContain('No airports available');
+  });
+
+  it('forwards an incoming offerId query param into the /results navigation (BR-16)', async () => {
+    const { fixture, el } = await setup(vi.fn(() => of(AIRPORTS)), 'offer-9');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+
+    typeInAutocomplete(el, 0, 'FRA');
+    fixture.detectChanges();
+    pickFirstOption(el);
+    fixture.detectChanges();
+    typeInAutocomplete(el, 1, 'JFK');
+    fixture.detectChanges();
+    pickFirstOption(el);
+    fixture.detectChanges();
+
+    el.querySelector<HTMLButtonElement>('na-button button')!.click();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(['/results'], {
+      queryParams: expect.objectContaining({ offerId: 'offer-9' }),
+    });
+  });
+
+  it('sends no offerId param when none was carried in', async () => {
+    const { fixture, el } = await setup();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+
+    typeInAutocomplete(el, 0, 'FRA');
+    fixture.detectChanges();
+    pickFirstOption(el);
+    fixture.detectChanges();
+    typeInAutocomplete(el, 1, 'JFK');
+    fixture.detectChanges();
+    pickFirstOption(el);
+    fixture.detectChanges();
+
+    el.querySelector<HTMLButtonElement>('na-button button')!.click();
+    await fixture.whenStable();
+
+    const params = navigate.mock.calls[0][1]?.queryParams as Record<string, unknown>;
+    expect(params['offerId']).toBeUndefined();
   });
 });

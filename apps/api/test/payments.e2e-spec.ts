@@ -7,6 +7,8 @@ import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { generateSeatMap } from '../src/aircraft/seat-map.js';
+import { PaymentReconciliationService } from '../src/payments/payment-reconciliation.service.js';
+import { RefundReconciliationService } from '../src/payments/refund-reconciliation.service.js';
 import {
   prismaTestClient,
   registerVerifiedUser,
@@ -679,6 +681,35 @@ describe('Payments (e2e)', () => {
     };
   }
 
+  /** Customer cancellation request (paid bookings cancel via staff review). */
+  function requestCancellation(
+    customerToken: string,
+    bookingId: string,
+    reason?: string,
+  ) {
+    return request(app.getHttpServer())
+      .post(`/api/bookings/${bookingId}/cancellation-request`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send(reason === undefined ? {} : { reason });
+  }
+
+  function approveCancellationRequest(staffToken: string, requestId: string) {
+    return request(app.getHttpServer())
+      .post(`/api/admin/cancellation-requests/${requestId}/approve`)
+      .set('Authorization', `Bearer ${staffToken}`);
+  }
+
+  function rejectCancellationRequest(
+    staffToken: string,
+    requestId: string,
+    rejectionReason?: string,
+  ) {
+    return request(app.getHttpServer())
+      .post(`/api/admin/cancellation-requests/${requestId}/reject`)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send(rejectionReason === undefined ? {} : { rejectionReason });
+  }
+
   it('finance staff refunds partially then fully; statuses and remainders are enforced', async () => {
     const finance = await loginStaff('refunder@test.dev', [
       'payments:read',
@@ -841,15 +872,491 @@ describe('Payments (e2e)', () => {
       .get('/api/admin/refunds')
       .set('Authorization', `Bearer ${finance}`)
       .expect(200);
-    expect(list.body).toHaveLength(1);
-    expect(list.body[0]).toMatchObject({
+    expect(list.body).toMatchObject({
+      page: 1,
+      limit: 20,
+      total: 1,
+      totalPages: 1,
+    });
+    expect(list.body.items).toHaveLength(1);
+    expect(list.body.items[0]).toMatchObject({
       bookingReference: booking.reference,
       contactEmail: 'reflist-customer@test.dev',
       amount: 100,
       status: 'PROCESSED',
       paymentStatus: 'PARTIALLY_REFUNDED',
       paymentProviderReference: expect.stringMatching(/^mockpay_/),
+      recoveryKey: expect.stringMatching(/^refund-/),
+      pendingAgeMinutes: null,
+      pendingRecovery: false,
     });
+  });
+
+  it('admin refunds listing: filters by status/booking reference/pending age and paginates', async () => {
+    const finance = await loginStaff('refops-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const { booking, paymentId } = await paidBooking('refops@test.dev');
+    await request(app.getHttpServer())
+      .post(`/api/admin/payments/${paymentId}/refund`)
+      .set('Authorization', `Bearer ${finance}`)
+      .send({ amount: 100, reason: 'Partial goodwill' })
+      .expect(201);
+    // A stale stuck refund (backdated beyond the sweep age) and a fresh one.
+    const stale = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 50,
+        currency: 'EUR',
+        status: 'PENDING',
+        reason: 'Crash-window artifact',
+        createdAt: new Date(Date.now() - 30 * 60_000),
+      },
+    });
+    await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 25,
+        currency: 'EUR',
+        status: 'PENDING',
+        reason: 'Just now',
+      },
+    });
+
+    const pending = await request(app.getHttpServer())
+      .get('/api/admin/refunds?status=PENDING&pendingMinAgeMinutes=15')
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(200);
+    expect(pending.body.total).toBe(1);
+    expect(pending.body.items[0]).toMatchObject({
+      id: stale.id,
+      status: 'PENDING',
+      pendingRecovery: true,
+    });
+    expect(pending.body.items[0].pendingAgeMinutes).toBeGreaterThanOrEqual(15);
+
+    const byReference = await request(app.getHttpServer())
+      .get(`/api/admin/refunds?bookingReference=${booking.reference.toLowerCase()}`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(200);
+    expect(byReference.body.total).toBe(3);
+
+    const page = await request(app.getHttpServer())
+      .get('/api/admin/refunds?page=2&limit=2')
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(200);
+    expect(page.body).toMatchObject({ page: 2, limit: 2, total: 3, totalPages: 2 });
+    expect(page.body.items).toHaveLength(1);
+  });
+
+  it('refund operations snapshot: buckets, metrics, alerts and authorization (3.4D/3.4F)', async () => {
+    const finance = await loginStaff('refmetrics-fin@test.dev', [
+      'payments:read',
+    ]);
+    const bookingMgr = await loginStaff('refmetrics-bm@test.dev', [
+      'bookings:manage',
+    ]);
+    const { booking, paymentId } = await paidBooking('refmetrics@test.dev');
+    await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 50,
+        currency: 'EUR',
+        status: 'PENDING',
+        createdAt: new Date(Date.now() - 2 * 60_000),
+      },
+    });
+    await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 75,
+        currency: 'EUR',
+        status: 'PENDING',
+        createdAt: new Date(Date.now() - 90 * 60_000),
+      },
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/admin/refunds/operations')
+      .set('Authorization', `Bearer ${bookingMgr}`)
+      .expect(403);
+
+    // Counters are process-global across the suite: measure the delta of one
+    // real service-flow refund around this test.
+    const before = await request(app.getHttpServer())
+      .get('/api/admin/refunds/operations')
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(200);
+    const refundFinance = await loginStaff('refmetrics-ref@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    await request(app.getHttpServer())
+      .post(`/api/admin/payments/${paymentId}/refund`)
+      .set('Authorization', `Bearer ${refundFinance}`)
+      .send({ amount: 25, reason: 'Metrics delta' })
+      .expect(201);
+
+    const ops = await request(app.getHttpServer())
+      .get('/api/admin/refunds/operations')
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(200);
+    expect(ops.body.pending.total).toBe(2);
+    expect(ops.body.pending.buckets).toMatchObject({
+      lt5m: 1,
+      m5to15: 0,
+      m15to60: 0,
+      h1to6: 1,
+      h6to24: 0,
+      gt24h: 0,
+    });
+    // The 90-minute-old refund is beyond the 60-minute alert threshold.
+    expect(ops.body.pending.stuck).toBe(1);
+    expect(ops.body.orphans).toEqual({ unmatched: 0 });
+    const createdDelta =
+      ops.body.metrics.counters.refunds_created_total -
+      before.body.metrics.counters.refunds_created_total;
+    const processedDelta =
+      ops.body.metrics.counters.refunds_processed_total -
+      before.body.metrics.counters.refunds_processed_total;
+    expect(createdDelta).toBe(1);
+    expect(processedDelta).toBe(1);
+    expect(ops.body.metrics.gauges).toMatchObject({
+      refunds_pending: 2,
+      refunds_pending_stuck: 1,
+    });
+    expect(ops.body.alerts.active).toEqual([]);
+    // No identifiers in metric dimensions — only plain counter names.
+    expect(JSON.stringify(ops.body.metrics)).not.toContain(booking.id);
+  });
+
+  it('manual recovery is audited with actor, refund and outcome (3.4D)', async () => {
+    const finance = await loginStaff('refaudit-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const { booking, paymentId } = await paidBooking('refaudit@test.dev');
+    const stuck = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 100,
+        currency: 'EUR',
+        status: 'PENDING',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(201);
+
+    const audits = await auditRows('REFUND_RECOVERY_REQUESTED', stuck.id);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.actorType).toBe('Staff');
+    expect(audits[0]!.metadata).toMatchObject({ outcome: 'processed' });
+  });
+
+  // ---------- Refund recovery (resume) ----------
+
+  it('resumes a stuck PENDING refund: PROCESSED with the provider reference, payment recomputed, safe to repeat', async () => {
+    const finance = await loginStaff('resume-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const { booking, paymentId } = await paidBooking('resume-customer@test.dev');
+    const stuck = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 200,
+        currency: 'EUR',
+        status: 'PENDING',
+        reason: 'Stuck after crash',
+      },
+    });
+
+    const resumed = await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(201);
+    expect(resumed.body.refund).toMatchObject({
+      id: stuck.id,
+      status: 'PROCESSED',
+      amount: 200,
+    });
+    expect(resumed.body.refund.providerReference).toMatch(/^mockref_mockpay_/);
+    expect(resumed.body.refund.processedAt).toBeTruthy();
+    expect(resumed.body.payment.status).toBe('PARTIALLY_REFUNDED');
+
+    const stored = await prismaTestClient.refund.findUniqueOrThrow({
+      where: { id: stuck.id },
+    });
+    expect(stored.status).toBe('PROCESSED');
+    expect(stored.providerReference).toBe(resumed.body.refund.providerReference);
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(
+      1,
+    );
+
+    // Repeated recovery: no new refund row, no new provider reference.
+    const again = await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(201);
+    expect(again.body.refund.providerReference).toBe(stored.providerReference);
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(
+      1,
+    );
+
+    const refundAudits = await auditRows('REFUND_COMPLETED');
+    expect(refundAudits).toHaveLength(1);
+  });
+
+  it('settles the payment as REFUNDED when the resumed refund completes the total', async () => {
+    const finance = await loginStaff('resume-full-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const { booking, paymentId } = await paidBooking('resume-full@test.dev');
+    const stuck = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 505,
+        currency: 'EUR',
+        status: 'PENDING',
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(201);
+    expect(res.body.refund.status).toBe('PROCESSED');
+    expect(res.body.payment.status).toBe('REFUNDED');
+    expect(
+      (
+        await prismaTestClient.payment.findUniqueOrThrow({
+          where: { id: paymentId },
+        })
+      ).status,
+    ).toBe('REFUNDED');
+  });
+
+  it('resume guards: 401 unauthenticated, 403 customer, 403 wrong permission, 404 unknown, 409 REJECTED', async () => {
+    const finance = await loginStaff('resume-authz-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const bookingMgr = await loginStaff('resume-authz-bm@test.dev', [
+      'bookings:manage',
+    ]);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'resume-authz@test.dev',
+    );
+    const stuck = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 100,
+        currency: 'EUR',
+        status: 'PENDING',
+      },
+    });
+    const rejected = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 50,
+        currency: 'EUR',
+        status: 'REJECTED',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${stuck.id}/resume`)
+      .set('Authorization', `Bearer ${bookingMgr}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${randomUUID()}/resume`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(`/api/admin/refunds/${rejected.id}/resume`)
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(409);
+
+    // The failed attempts finalized nothing.
+    expect(
+      (
+        await prismaTestClient.refund.findUniqueOrThrow({
+          where: { id: stuck.id },
+        })
+      ).status,
+    ).toBe('PENDING');
+    expect(
+      (
+        await prismaTestClient.refund.findUniqueOrThrow({
+          where: { id: rejected.id },
+        })
+      ).status,
+    ).toBe('REJECTED');
+  });
+
+  it('two concurrent resumes converge: one provider refund, one audit, both callers see PROCESSED', async () => {
+    const finance = await loginStaff('resume-race-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const { booking, paymentId } = await paidBooking('resume-race@test.dev');
+    const stuck = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 200,
+        currency: 'EUR',
+        status: 'PENDING',
+        reason: 'Stuck after crash',
+      },
+    });
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/admin/refunds/${stuck.id}/resume`)
+        .set('Authorization', `Bearer ${finance}`),
+      request(app.getHttpServer())
+        .post(`/api/admin/refunds/${stuck.id}/resume`)
+        .set('Authorization', `Bearer ${finance}`),
+    ]);
+
+    // Both callers observe the committed success — the CAS loser replays the
+    // winner's state instead of finalizing (or refunding) again.
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+    expect(a.body.refund.status).toBe('PROCESSED');
+    expect(b.body.refund.status).toBe('PROCESSED');
+    expect(a.body.refund.providerReference).toBe(
+      b.body.refund.providerReference,
+    );
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(
+      1,
+    );
+    expect(await auditRows('REFUND_COMPLETED', stuck.id)).toHaveLength(1);
+  });
+
+  // ---------- Reconciliation sweep wiring ----------
+
+  it('reconciliation sweep is wired into the module and no-ops under the mock provider', async () => {
+    // The sweep is Stripe-mode only; with PAYMENT_PROVIDER=mock it must not
+    // touch the database. Stripe retrieve behavior is covered by unit tests
+    // and live verification, keeping this suite deterministic.
+    const reconciliation = moduleFixture.get(PaymentReconciliationService);
+    const summary = await reconciliation.reconcileStalePendingPayments();
+    expect(summary).toEqual({
+      eligible: 0,
+      succeeded: 0,
+      canceled: 0,
+      noted: 0,
+      failed: 0,
+    });
+  });
+
+  it('refund reconciliation sweep converges stale PENDING refunds and leaves fresh/terminal rows untouched', async () => {
+    const { booking, paymentId } = await paidBooking('refund-sweep@test.dev');
+    // Older than PAYMENT_REFUND_RECONCILIATION_MIN_AGE_MINUTES (5): eligible.
+    const stale = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 200,
+        currency: 'EUR',
+        status: 'PENDING',
+        reason: 'Crash-window artifact',
+        createdAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+    // Just created: not yet eligible — the sweep must not rush fresh refunds.
+    const fresh = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 100,
+        currency: 'EUR',
+        status: 'PENDING',
+        reason: 'In flight right now',
+      },
+    });
+    // Terminal: never eligible, never resurrected.
+    const rejected = await prismaTestClient.refund.create({
+      data: {
+        paymentId,
+        bookingId: booking.id,
+        amount: 50,
+        currency: 'EUR',
+        status: 'REJECTED',
+        createdAt: new Date(Date.now() - 10 * 60_000),
+      },
+    });
+
+    const sweep = moduleFixture.get(RefundReconciliationService);
+    const summary = await sweep.reconcileStalePendingRefunds();
+    expect(summary).toEqual({
+      eligible: 1,
+      processed: 1,
+      pending: 0,
+      rejected: 0,
+      failed: 0,
+    });
+
+    // LOCAL PENDING + provider replay succeeds → PROCESSED with the provider
+    // reference; the payment status is recomputed from committed refunds.
+    const converged = await prismaTestClient.refund.findUniqueOrThrow({
+      where: { id: stale.id },
+    });
+    expect(converged.status).toBe('PROCESSED');
+    expect(converged.providerReference).toMatch(/^mockref_mockpay_/);
+    expect(converged.processedAt).toBeTruthy();
+    expect(
+      (
+        await prismaTestClient.payment.findUniqueOrThrow({
+          where: { id: paymentId },
+        })
+      ).status,
+    ).toBe('PARTIALLY_REFUNDED');
+
+    // Fresh PENDING and REJECTED rows are untouched.
+    expect(
+      (
+        await prismaTestClient.refund.findUniqueOrThrow({
+          where: { id: fresh.id },
+        })
+      ).status,
+    ).toBe('PENDING');
+    expect(
+      (
+        await prismaTestClient.refund.findUniqueOrThrow({
+          where: { id: rejected.id },
+        })
+      ).status,
+    ).toBe('REJECTED');
+
+    // The sweep audits as the System actor via the reconciliation path.
+    const audits = await auditRows('REFUND_COMPLETED', stale.id);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.actorType).toBe('System');
+    expect(audits[0]!.metadata).toMatchObject({ via: 'reconciliation' });
   });
 
   // ---------- Admin cancellation ----------
@@ -933,7 +1440,14 @@ describe('Payments (e2e)', () => {
       expect.arrayContaining(['BOOKING_CANCELLED', 'REFUND_COMPLETED']),
     );
 
-    // Seat is freed: the availability endpoint no longer shows it occupied.
+    // Seat is freed: cancellation deletes the BookingSeat rows (the booking row
+    // itself is preserved), so the availability endpoint no longer shows the
+    // seat as occupied.
+    expect(
+      await prismaTestClient.bookingSeat.count({
+        where: { bookingPassenger: { bookingId: booking.id } },
+      }),
+    ).toBe(0);
     const availability = await request(app.getHttpServer())
       .get(`/api/flights/${flightId}/seat-availability`)
       .expect(200);
@@ -1132,6 +1646,454 @@ describe('Payments (e2e)', () => {
       where: { id: booking.id },
     });
     expect(stored.status).toBe('PENDING');
+  });
+
+  // ---------- Customer cancellation requests (paid bookings) ----------
+
+  it('full flow: customer requests, admin lists, approves — mock provider refund PROCESSED, booking CANCELLED, seats freed', async () => {
+    const staff = await loginStaff('cr-flow-bm@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-100@test.dev',
+    );
+    const { flight, seatsSmall } = await fixtures();
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 8 * 86_400_000) },
+    });
+
+    const created = await requestCancellation(
+      customerToken,
+      booking.id,
+      'Trip cancelled',
+    ).expect(201);
+    expect(created.body).toMatchObject({
+      bookingId: booking.id,
+      status: 'PENDING',
+      reason: 'Trip cancelled',
+    });
+    expect(created.body.requestedAt).toBeTruthy();
+
+    // The admin worklist shows the request with booking, customer, flight,
+    // payment and the live policy evaluation (100% tier at +8 days).
+    const list = await request(app.getHttpServer())
+      .get('/api/admin/cancellation-requests?status=PENDING')
+      .set('Authorization', `Bearer ${staff}`)
+      .expect(200);
+    const item = list.body.find(
+      (r: { id: string }) => r.id === created.body.id,
+    );
+    expect(item).toMatchObject({
+      status: 'PENDING',
+      reason: 'Trip cancelled',
+      booking: {
+        id: booking.id,
+        status: 'CONFIRMED',
+        totalAmount: 505,
+        currency: 'EUR',
+      },
+      customer: { email: 'cancel-pol-100@test.dev' },
+      flight: { flightNumber: 'NV900', originIata: 'FRA', destinationIata: 'JFK' },
+      payment: { amount: 505, currency: 'EUR', status: 'SUCCESS' },
+      policy: { refundPercentage: 100, refundableAmount: 505, currency: 'EUR' },
+      refund: null,
+    });
+
+    const approved = await approveCancellationRequest(
+      staff,
+      created.body.id,
+    ).expect(200);
+    expect(approved.body).toMatchObject({
+      status: 'APPROVED',
+      booking: { status: 'CANCELLED' },
+      refund: { status: 'PROCESSED', amount: 505 },
+    });
+
+    const payment = await prismaTestClient.payment.findUniqueOrThrow({
+      where: { id: paymentId },
+    });
+    expect(payment.status).toBe('REFUNDED');
+    const refunds = await prismaTestClient.refund.findMany({
+      where: { paymentId },
+    });
+    expect(refunds).toHaveLength(1);
+    expect(Number(refunds[0]!.amount)).toBe(505);
+    expect(refunds[0]!.status).toBe('PROCESSED');
+    expect(refunds[0]!.providerReference).toMatch(/^mockref_mockpay_/);
+
+    // Inventory freed: BookingSeat rows are gone and the seat is resalable.
+    expect(
+      await prismaTestClient.bookingSeat.count({
+        where: { bookingPassenger: { bookingId: booking.id } },
+      }),
+    ).toBe(0);
+    const availability = await request(app.getHttpServer())
+      .get(`/api/flights/${flight.id}/seat-availability`)
+      .expect(200);
+    expect(availability.body.occupiedSeatIds).not.toContain(seatsSmall[0]!.id);
+
+    // The customer sees the request outcome on the booking view.
+    const view = await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+    expect(view.body.cancellationRequest).toMatchObject({
+      id: created.body.id,
+      status: 'APPROVED',
+    });
+
+    // Both sides of the review are audited.
+    const actions = (await auditRows('CANCELLATION_REQUESTED'))
+      .concat(await auditRows('CANCELLATION_REQUEST_APPROVED'))
+      .map((a) => a.action)
+      .sort();
+    expect(actions).toEqual([
+      'CANCELLATION_REQUESTED',
+      'CANCELLATION_REQUEST_APPROVED',
+    ]);
+  });
+
+  it('policy 80%: approval 3–6 days before departure refunds the tier share', async () => {
+    const staff = await loginStaff('cr-approve-80@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-80@test.dev',
+    );
+    const { flight } = await fixtures();
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 5 * 86_400_000) },
+    });
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+    await approveCancellationRequest(staff, created.body.id).expect(200);
+
+    const refunds = await prismaTestClient.refund.findMany({
+      where: { paymentId },
+    });
+    expect(refunds).toHaveLength(1);
+    expect(Number(refunds[0]!.amount)).toBe(404);
+    expect(refunds[0]!.status).toBe('PROCESSED');
+    // The refund finalizes while the booking is still CONFIRMED (the
+    // finalization hook cancels it afterwards), so a mid-tier refund settles
+    // as PARTIALLY_REFUNDED — the withheld 20% share is not a remainder.
+    expect(
+      (await prismaTestClient.payment.findUniqueOrThrow({ where: { id: paymentId } })).status,
+    ).toBe('PARTIALLY_REFUNDED');
+    expect(
+      (await prismaTestClient.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+    ).toBe('CANCELLED');
+  });
+
+  it('policy 50%: approval 24–72 hours before departure (fixture default +2 days)', async () => {
+    const staff = await loginStaff('cr-approve-50@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-50@test.dev',
+    );
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+    await approveCancellationRequest(staff, created.body.id).expect(200);
+
+    const refunds = await prismaTestClient.refund.findMany({
+      where: { paymentId },
+    });
+    expect(refunds).toHaveLength(1);
+    expect(Number(refunds[0]!.amount)).toBe(252.5);
+    expect(refunds[0]!.status).toBe('PROCESSED');
+  });
+
+  it('policy 0%: approval less than 24 hours before departure cancels immediately without refund or provider activity', async () => {
+    const staff = await loginStaff('cr-approve-0@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-0@test.dev',
+    );
+    const { flight } = await fixtures();
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 12 * 3_600_000) },
+    });
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+    const approved = await approveCancellationRequest(staff, created.body.id).expect(200);
+    expect(approved.body).toMatchObject({
+      status: 'APPROVED',
+      booking: { status: 'CANCELLED' },
+      refund: null,
+    });
+
+    expect(
+      (await prismaTestClient.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+    ).toBe('CANCELLED');
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(0);
+    expect(
+      (await prismaTestClient.payment.findUniqueOrThrow({ where: { id: paymentId } })).status,
+    ).toBe('SUCCESS');
+  });
+
+  it('policy non-refundable: approval of a fare without a refund policy cancels with no refund', async () => {
+    const staff = await loginStaff('cr-approve-nr@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-nr@test.dev',
+      false, // noRulesFlight — fare has no fareRules configured
+    );
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+    await approveCancellationRequest(staff, created.body.id).expect(200);
+
+    expect(
+      (await prismaTestClient.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+    ).toBe('CANCELLED');
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(0);
+    expect(
+      (await prismaTestClient.payment.findUniqueOrThrow({ where: { id: paymentId } })).status,
+    ).toBe('SUCCESS');
+  });
+
+  it('policy after departure: the cancellation request is rejected and nothing changes', async () => {
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-late@test.dev',
+    );
+    const { flight } = await fixtures();
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() - 3_600_000) },
+    });
+
+    await requestCancellation(customerToken, booking.id).expect(409);
+
+    expect(
+      (await prismaTestClient.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+    ).toBe('CONFIRMED');
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(0);
+    expect(
+      await prismaTestClient.bookingSeat.count({
+        where: { bookingPassenger: { bookingId: booking.id } },
+      }),
+    ).toBe(1);
+  });
+
+  it('request guards: direct paid cancel 409 CANCELLATION_REQUEST_REQUIRED, duplicate request 409 CANCELLATION_REQUEST_PENDING, one refund', async () => {
+    const staff = await loginStaff('cr-twice-bm@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-pol-twice@test.dev',
+    );
+
+    // Direct cancellation of a paid booking now requires staff review.
+    const direct = await request(app.getHttpServer())
+      .post(`/api/bookings/${booking.id}/cancel`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(409);
+    expect(direct.body).toMatchObject({ code: 'CANCELLATION_REQUEST_REQUIRED' });
+
+    const first = await requestCancellation(customerToken, booking.id).expect(201);
+    const duplicate = await requestCancellation(customerToken, booking.id).expect(409);
+    expect(duplicate.body).toMatchObject({ code: 'CANCELLATION_REQUEST_PENDING' });
+
+    await approveCancellationRequest(staff, first.body.id).expect(200);
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(1);
+
+    // After the cancellation both endpoints reject.
+    await requestCancellation(customerToken, booking.id).expect(409);
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${booking.id}/cancel`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(409);
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(1);
+  });
+
+  it('rejected request: booking stays CONFIRMED, no refund, customer sees the rejection; double review 409', async () => {
+    const staff = await loginStaff('cr-reject-bm@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cr-reject@test.dev',
+    );
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+
+    // The customer sees the pending request on the booking view.
+    const during = await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+    expect(during.body.cancellationRequest).toMatchObject({
+      id: created.body.id,
+      status: 'PENDING',
+    });
+
+    const rejected = await rejectCancellationRequest(
+      staff,
+      created.body.id,
+      'Outside the policy window',
+    ).expect(200);
+    expect(rejected.body).toMatchObject({
+      status: 'REJECTED',
+      rejectionReason: 'Outside the policy window',
+      booking: { status: 'CONFIRMED' },
+      refund: null,
+    });
+
+    expect(
+      (await prismaTestClient.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+    ).toBe('CONFIRMED');
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(0);
+
+    // A rejected request cannot be reviewed again either way.
+    await rejectCancellationRequest(staff, created.body.id).expect(409);
+    await approveCancellationRequest(staff, created.body.id).expect(409);
+
+    const after = await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+    expect(after.body.cancellationRequest).toMatchObject({
+      status: 'REJECTED',
+      rejectionReason: 'Outside the policy window',
+    });
+  });
+
+  it('request authorization and scoping: 401 unauthenticated, 404 for another customer, 409 for an unpaid booking, 403 without bookings:manage', async () => {
+    const staff = await loginStaff('cr-authz-bm@test.dev', ['bookings:manage']);
+    const finance = await loginStaff('cr-authz-fin@test.dev', [
+      'payments:read',
+      'payments:refund',
+    ]);
+    const { booking, customerToken } = await paidBooking('cr-authz@test.dev');
+
+    await request(app.getHttpServer())
+      .post(`/api/bookings/${booking.id}/cancellation-request`)
+      .send({})
+      .expect(401);
+    const other = await loginAs('cr-authz-other@test.dev');
+    await requestCancellation(other, booking.id).expect(404);
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+    await request(app.getHttpServer())
+      .get('/api/admin/cancellation-requests')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/admin/cancellation-requests')
+      .set('Authorization', `Bearer ${finance}`)
+      .expect(403);
+    await approveCancellationRequest(finance, created.body.id).expect(403);
+    await request(app.getHttpServer())
+      .get('/api/admin/cancellation-requests')
+      .expect(401);
+
+    // Unpaid bookings cancel directly — no request needed.
+    const { flight, seatsSmall } = await fixtures();
+    const pending = await createPendingBooking(customerToken, flight.id, [
+      seatsSmall[1]!.id,
+    ]);
+    const unpaid = await requestCancellation(customerToken, pending.id).expect(409);
+    expect(unpaid.body.message).toMatch(/cancel the booking directly/);
+    void staff;
+  });
+
+  // ---------- Cancellation preview ----------
+
+  it('preview: server-calculated 100% refund values for the booking owner', async () => {
+    const { booking, customerToken } = await paidBooking('preview-100@test.dev');
+    const { flight } = await fixtures();
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 8 * 86_400_000) },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}/cancellation-preview`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+    expect(res.body).toMatchObject({
+      allowed: true,
+      reason: 'REFUND_100_PERCENT',
+      refundPercentage: 100,
+      refundAmount: 505,
+      paidAmount: 505,
+      retainedAmount: 0,
+      currency: 'EUR',
+    });
+    expect(res.body.departureTime).toBeTruthy();
+  });
+
+  it('preview: 401 unauthenticated, 404 for another customer, and never creates refund activity', async () => {
+    const { booking, paymentId } = await paidBooking('preview-owner@test.dev');
+    const other = await loginAs('preview-other@test.dev');
+
+    await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}/cancellation-preview`)
+      .expect(401);
+    await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}/cancellation-preview`)
+      .set('Authorization', `Bearer ${other}`)
+      .expect(404);
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(0);
+  });
+
+  it('preview: a PENDING booking previews as allowed with zero amounts', async () => {
+    const token = await loginAs('preview-pending@test.dev');
+    const { flight, seatsSmall } = await fixtures();
+    const created = await createPendingBooking(token, flight.id, [
+      seatsSmall[0]!.id,
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/bookings/${created.id}/cancellation-preview`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(res.body).toMatchObject({
+      allowed: true,
+      paidAmount: 0,
+      refundAmount: 0,
+      retainedAmount: 0,
+    });
+  });
+
+  it('the final approval recalculates independently of a stale preview', async () => {
+    const staff = await loginStaff('cr-stale-bm@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'preview-stale@test.dev',
+    );
+    const { flight } = await fixtures();
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 5 * 86_400_000) },
+    });
+
+    const preview = await request(app.getHttpServer())
+      .get(`/api/bookings/${booking.id}/cancellation-preview`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+    expect(preview.body.refundPercentage).toBe(80);
+
+    // Context changes after the preview: departure moves beyond 7 days.
+    await prismaTestClient.flight.update({
+      where: { id: flight.id },
+      data: { departureTime: new Date(Date.now() + 8 * 86_400_000) },
+    });
+
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+    await approveCancellationRequest(staff, created.body.id).expect(200);
+    // The server's final decision wins: 100%, not the previewed 80%.
+    const refunds = await prismaTestClient.refund.findMany({
+      where: { paymentId },
+    });
+    expect(refunds).toHaveLength(1);
+    expect(Number(refunds[0]!.amount)).toBe(505);
+  });
+
+  it('two concurrent approvals converge: one success, one conflict, exactly one refund', async () => {
+    const staff = await loginStaff('cr-race-bm@test.dev', ['bookings:manage']);
+    const { booking, paymentId, customerToken } = await paidBooking(
+      'cancel-race@test.dev',
+    );
+    const created = await requestCancellation(customerToken, booking.id).expect(201);
+
+    const results = await Promise.all([
+      approveCancellationRequest(staff, created.body.id),
+      approveCancellationRequest(staff, created.body.id),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await prismaTestClient.refund.count({ where: { paymentId } })).toBe(
+      1,
+    );
   });
 
   // ---------- Dashboard revenue ----------

@@ -150,11 +150,8 @@
 .search-card__footer {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--na-space-4);
-}
-.search-card__promo {
-  flex: 0 1 260px;
 }
 .search-card__footer na-button {
   flex-shrink: 0;
@@ -274,9 +271,6 @@
   .search-card__footer {
     flex-direction: column;
     align-items: stretch;
-  }
-  .search-card__promo {
-    flex: 1 1 auto;
   }
   .search-card__footer na-button {
     display: contents;

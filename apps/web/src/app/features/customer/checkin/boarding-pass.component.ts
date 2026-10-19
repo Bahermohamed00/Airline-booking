@@ -1,8 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { BookingService } from '../../../core/services/booking.service';
-import { CheckInService } from '../../../core/services/domain-services';
-import type { BoardingPass, Booking, Passenger } from '../../../core/models/domain.model';
+import { CheckInApiService } from '../../../core/services/checkin-api.service';
+import type {
+  BoardingPassItem,
+  BoardingPassResponse,
+  CheckInFlight,
+} from '../../../core/models/checkin.model';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaAlert } from '../../../shared/ui/alert.component';
 import { NaSkeleton } from '../../../shared/ui/skeleton.component';
@@ -10,9 +13,9 @@ import { NaEmptyState } from '../../../shared/ui/empty-state.component';
 import { ToastService } from '../../../shared/ui/toast.service';
 
 interface PassView {
-  booking: Booking;
-  pass: BoardingPass;
-  passenger: Passenger;
+  bookingReference: string;
+  flight: CheckInFlight;
+  item: BoardingPassItem;
 }
 
 @Component({
@@ -37,30 +40,36 @@ interface PassView {
           <h1>Boarding pass</h1>
           <p class="na-text-muted">Present this pass at security and at the gate.</p>
 
-          <article class="pass na-card" aria-label="Boarding pass for {{ v.passenger.firstName }} {{ v.passenger.lastName }}">
+          <article class="pass na-card" aria-label="Boarding pass for {{ v.item.passenger.firstName }} {{ v.item.passenger.lastName }}">
             <div class="pass__main">
               <div class="pass__row pass__route">
                 <div>
-                  <p class="pass__code">{{ v.booking.flight.route.origin.iataCode }}</p>
-                  <p class="na-text-muted na-text-small">{{ v.booking.flight.route.origin.city }}</p>
-                  <p class="pass__time">{{ timeFmt(v.booking.flight.departureTime) }}</p>
+                  <p class="pass__code">{{ v.flight.route.originIata }}</p>
+                  <p class="na-text-muted na-text-small">{{ v.flight.route.originCity }}</p>
+                  <p class="pass__time">{{ timeFmt(v.flight.departureTime) }}</p>
                 </div>
                 <span class="pass__plane" aria-hidden="true">✈</span>
                 <div>
-                  <p class="pass__code">{{ v.booking.flight.route.destination.iataCode }}</p>
-                  <p class="na-text-muted na-text-small">{{ v.booking.flight.route.destination.city }}</p>
-                  <p class="pass__time">{{ timeFmt(v.booking.flight.arrivalTime) }}</p>
+                  <p class="pass__code">{{ v.flight.route.destinationIata }}</p>
+                  <p class="na-text-muted na-text-small">{{ v.flight.route.destinationCity }}</p>
+                  <p class="pass__time">{{ timeFmt(v.flight.arrivalTime) }}</p>
                 </div>
               </div>
               <dl class="pass__grid">
-                <div><dt>Passenger</dt><dd>{{ v.passenger.firstName }} {{ v.passenger.lastName }}</dd></div>
-                <div><dt>Flight</dt><dd>{{ v.booking.flight.flightNumber }}</dd></div>
-                <div><dt>Date</dt><dd>{{ dateFmt(v.booking.flight.departureTime) }}</dd></div>
-                <div><dt>Seat</dt><dd class="pass__seat">{{ v.pass.seatNumber }}</dd></div>
-                <div><dt>Group</dt><dd class="pass__seat">{{ v.pass.boardingGroup }}</dd></div>
-                <div><dt>Gate</dt><dd>{{ v.pass.gate ?? 'TBA' }}</dd></div>
-                <div><dt>Booking ref</dt><dd class="na-text-mono">{{ v.booking.bookingReference }}</dd></div>
-                <div><dt>Issued</dt><dd>{{ fmt(v.pass.issuedAt) }}</dd></div>
+                <div><dt>Passenger</dt><dd>{{ v.item.passenger.firstName }} {{ v.item.passenger.lastName }}</dd></div>
+                <div><dt>Flight</dt><dd>{{ v.flight.flightNumber }}</dd></div>
+                <div><dt>Date</dt><dd>{{ dateFmt(v.flight.departureTime) }}</dd></div>
+                <div><dt>Seat</dt><dd class="pass__seat">{{ v.item.boardingPass.seatNumber }}</dd></div>
+                <div><dt>Group</dt><dd class="pass__seat">{{ v.item.boardingPass.boardingGroup }}</dd></div>
+                <div><dt>Gate</dt><dd>{{ v.item.boardingPass.gate ?? 'TBA' }}</dd></div>
+                <div><dt>Booking ref</dt><dd class="na-text-mono">{{ v.bookingReference }}</dd></div>
+                <div><dt>Issued</dt><dd>{{ fmt(v.item.boardingPass.issuedAt) }}</dd></div>
+                @if (v.item.baggage.length > 0) {
+                  <div class="pass__bags">
+                    <dt>Bag tags</dt>
+                    <dd class="na-text-mono">{{ bagTags(v.item) }}</dd>
+                  </div>
+                }
               </dl>
             </div>
             <div class="pass__stub">
@@ -69,7 +78,7 @@ interface PassView {
                   <span class="qr__cell" [class.qr__cell--on]="cell"></span>
                 }
               </div>
-              <p class="na-text-muted na-text-small pass__ref na-text-mono">{{ v.booking.bookingReference }}</p>
+              <p class="na-text-muted na-text-small pass__ref na-text-mono">{{ v.bookingReference }}</p>
             </div>
           </article>
 
@@ -93,6 +102,7 @@ interface PassView {
     .pass__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--na-space-4); margin: 0; }
     .pass__grid dt { font-size: var(--na-text-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--na-ink-500); }
     .pass__grid dd { margin: 0; font-weight: var(--na-font-medium); }
+    .pass__bags { grid-column: 1 / -1; }
     .pass__seat { font-size: var(--na-text-xl); font-weight: var(--na-font-bold); }
     .pass__stub {
       border-left: 2px dashed var(--na-border-strong); padding: var(--na-space-6);
@@ -115,15 +125,14 @@ interface PassView {
   `,
 })
 export class BoardingPassPage {
-  private readonly bookingService = inject(BookingService);
-  private readonly checkInService = inject(CheckInService);
+  private readonly api = inject(CheckInApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly toast = inject(ToastService);
   readonly router = inject(Router);
 
   readonly loading = signal(true);
   readonly error = signal(false);
-  private readonly booking = signal<Booking | undefined>(undefined);
+  private readonly response = signal<BoardingPassResponse | null>(null);
 
   private readonly dtFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
   private readonly dFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' });
@@ -139,16 +148,11 @@ export class BoardingPassPage {
   });
 
   readonly view = computed<PassView | null>(() => {
-    const b = this.booking();
-    if (!b) return null;
-    const checkIns = this.checkInService
-      .alreadyCheckedIn(b.id)
-      .filter((c) => b.passengers.some((p) => p.id === c.bookingPassengerId) && c.boardingPass);
-    const first = checkIns[0];
-    if (!first?.boardingPass) return null;
-    const passenger = b.passengers.find((p) => p.id === first.bookingPassengerId)?.passenger;
-    if (!passenger) return null;
-    return { booking: b, pass: first.boardingPass, passenger };
+    const res = this.response();
+    if (!res?.flight) return null;
+    const first = res.checkIns.find((c) => c.status === 'COMPLETED' && c.boardingPass);
+    if (!first) return null;
+    return { bookingReference: res.bookingReference, flight: res.flight, item: first };
   });
 
   constructor() {
@@ -159,14 +163,10 @@ export class BoardingPassPage {
     const id = this.route.snapshot.paramMap.get('bookingId') ?? '';
     this.loading.set(true);
     this.error.set(false);
-    this.bookingService.getById(id).subscribe({
-      next: (booking) => {
-        this.booking.set(booking);
+    this.api.boardingPass(id).subscribe({
+      next: (res) => {
+        this.response.set(res);
         this.loading.set(false);
-        if (booking && !this.view()) {
-          this.toast.info('Complete check-in first to view the boarding pass.');
-          this.router.navigate(['/checkin']);
-        }
       },
       error: () => {
         this.loading.set(false);
@@ -181,18 +181,19 @@ export class BoardingPassPage {
 
   downloadIcs(v: PassView): void {
     const stamp = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const pass = v.item.boardingPass;
     const ics = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
       'PRODID:-//NovaAir//Boarding Pass//EN',
       'BEGIN:VEVENT',
-      `UID:${v.pass.id}@novaair.dev`,
-      `DTSTAMP:${stamp(v.pass.issuedAt)}`,
-      `DTSTART:${stamp(v.booking.flight.departureTime)}`,
-      `DTEND:${stamp(v.booking.flight.arrivalTime)}`,
-      `SUMMARY:Flight ${v.booking.flight.flightNumber} ${v.booking.flight.route.origin.iataCode} → ${v.booking.flight.route.destination.iataCode}`,
-      `LOCATION:${v.booking.flight.route.origin.name}`,
-      `DESCRIPTION:Seat ${v.pass.seatNumber}\\, group ${v.pass.boardingGroup}\\, gate ${v.pass.gate ?? 'TBA'}. Booking ${v.booking.bookingReference}.`,
+      `UID:${pass.id}@novaair.dev`,
+      `DTSTAMP:${stamp(pass.issuedAt)}`,
+      `DTSTART:${stamp(v.flight.departureTime)}`,
+      `DTEND:${stamp(v.flight.arrivalTime)}`,
+      `SUMMARY:Flight ${v.flight.flightNumber} ${v.flight.route.originIata} → ${v.flight.route.destinationIata}`,
+      `LOCATION:${v.flight.route.originCity}`,
+      `DESCRIPTION:Seat ${pass.seatNumber}\\, group ${pass.boardingGroup}\\, gate ${pass.gate ?? 'TBA'}. Booking ${v.bookingReference}.`,
       'END:VEVENT',
       'END:VCALENDAR',
     ].join('\r\n');
@@ -200,7 +201,7 @@ export class BoardingPassPage {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `novaair-${v.booking.bookingReference}.ics`;
+    a.download = `novaair-${v.bookingReference}.ics`;
     a.click();
     URL.revokeObjectURL(url);
     this.toast.success('Calendar file downloaded.');
@@ -208,7 +209,7 @@ export class BoardingPassPage {
 
   async share(v: PassView): Promise<void> {
     const url = window.location.href;
-    const text = `NovaAir flight ${v.booking.flight.flightNumber} ${v.booking.flight.route.origin.iataCode} → ${v.booking.flight.route.destination.iataCode}, seat ${v.pass.seatNumber}`;
+    const text = `NovaAir flight ${v.flight.flightNumber} ${v.flight.route.originIata} → ${v.flight.route.destinationIata}, seat ${v.item.boardingPass.seatNumber}`;
     try {
       if (typeof navigator.share === 'function') {
         await navigator.share({ title: 'NovaAir boarding pass', text, url });
@@ -227,6 +228,11 @@ export class BoardingPassPage {
 
   fmt(iso: string): string {
     return this.dtFmt.format(new Date(iso));
+  }
+
+  /** "NV48291037 · NV01736485" — issued bag tags for the pass holder. */
+  bagTags(item: BoardingPassItem): string {
+    return item.baggage.map((b) => b.tagNumber).join(' · ');
   }
 
   dateFmt(iso: string): string {

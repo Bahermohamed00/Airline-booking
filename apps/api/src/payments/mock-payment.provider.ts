@@ -3,6 +3,7 @@ import type {
   ChargeRequest,
   ChargeResult,
   PaymentProvider,
+  ProviderRefundLookup,
   ProviderRefundRequest,
   ProviderRefundResult,
 } from './payment-provider.js';
@@ -38,5 +39,14 @@ export class MockPaymentProvider implements PaymentProvider {
     return {
       providerReference: `mockref_${request.paymentProviderReference}_${request.amount.toFixed(2)}`,
     };
+  }
+
+  /**
+   * The mock is stateless — it records nothing at "the provider", so there is
+   * never anything to discover. Orphan discovery is exercised against scripted
+   * providers in tests instead.
+   */
+  async listRefundsForPayment(): Promise<ProviderRefundLookup[]> {
+    return [];
   }
 }

@@ -61,3 +61,8 @@ prisma/test.db
 .env
 .env.*
 !.env.example
+
+# Local database backup dumps (keep local, never commit)
+backups/*.dump
+backups/*.sql
+

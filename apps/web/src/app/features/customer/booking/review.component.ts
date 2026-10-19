@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { BookingDraftService } from './booking-draft.service';
@@ -7,7 +7,11 @@ import { AuthService } from '../../../core/services/auth.service';
 import { formatMoney } from '../../../core/services/pricing.service';
 import { FLIGHT_STATUS_MAP } from '../../../core/status-maps';
 import type { BookingDraft } from '../../../core/models/booking-flow.model';
-import type { CreateBookingPayload } from '../../../core/models/customer-booking.model';
+import type {
+  CreateBookingPayload,
+  PricePreviewResponse,
+} from '../../../core/models/customer-booking.model';
+import type { ExtraSelectionPayload } from '../../../core/models/extras.model';
 import { NaStepper } from '../../../shared/ui/stepper.component';
 import { NaButton } from '../../../shared/ui/button.component';
 import { NaBadge } from '../../../shared/ui/badge.component';
@@ -91,7 +95,24 @@ import { BOOKING_STEPS } from './passengers.component';
                   + {{ rules.carryOnPieces }}× carry-on per passenger.
                 </p>
               }
-              <p class="na-text-small na-text-muted">No add-on services were available for this booking.</p>
+              @if (d.extras.length > 0) {
+                <ul class="rows extras-rows">
+                  @for (e of d.extras; track e.service.id + ':' + e.passengerIndex) {
+                    <li>
+                      <span>
+                        {{ e.service.name }}{{ e.quantity > 1 ? ' ×' + e.quantity : '' }}
+                        @if (e.passengerIndex !== null) {
+                          <span class="na-text-muted na-text-small"> · {{ passengerName(d, e.passengerIndex) }}</span>
+                        }
+                      </span>
+                      <span class="na-text-small">{{ money(e.service.price * e.quantity) }}</span>
+                    </li>
+                  }
+                </ul>
+                <p class="na-text-small na-text-muted">Extras are priced by the booking service at confirmation.</p>
+              } @else {
+                <p class="na-text-small na-text-muted">No add-on services selected.</p>
+              }
             </section>
 
             @if (d.fare.rules; as rules) {
@@ -110,17 +131,87 @@ import { BOOKING_STEPS } from './passengers.component';
 
           <aside class="na-card side" aria-label="Price and confirmation">
             <h2>Price breakdown</h2>
-            @if (breakdown(); as b) {
+            @if (offerBlocked()) {
+              <na-alert tone="warning" icon="⚠" title="Offer no longer available">
+                This offer is no longer available — the discount cannot be applied. You can
+                continue without it; the standard fare applies.
+                <span class="offer-blocked__action">
+                  <na-button variant="secondary" size="sm" (clicked)="continueWithoutOffer()"
+                    >Continue without this offer</na-button
+                  >
+                </span>
+              </na-alert>
+            }
+            @if (previewError(); as previewMessage) {
+              <na-alert
+                tone="warning"
+                icon="⚠"
+                title="Price could not be confirmed"
+                retryable
+                (retry)="loadPreview()"
+              >
+                {{ previewMessage }}
+              </na-alert>
+            }
+            @if (extrasInvalid()) {
+              <na-alert tone="warning" icon="⚠" title="Some extras need your review">
+                One or more selected extras are no longer available as quoted, so they are excluded
+                from the totals shown here. Review your selection on the
+                <a routerLink="/booking/extras">extras page</a> — nothing extra has been charged.
+              </na-alert>
+            }
+            @if (preview(); as p) {
+              @if (p.offer; as applied) {
+                <p class="offer-applied na-text-small">
+                  Offer applied: <strong>{{ applied.title }}</strong>
+                </p>
+              }
+              <table class="side__table">
+                <tbody>
+                  <tr>
+                    <td>Base fare × {{ p.passengerCount }}</td>
+                    <td>{{ money(p.perPassenger.basePrice * p.passengerCount, p.currency) }}</td>
+                  </tr>
+                  @if (p.perPassenger.discountAmount > 0) {
+                    <tr class="side__discount">
+                      <td>Offer discount × {{ p.passengerCount }}</td>
+                      <td>−{{ money(p.perPassenger.discountAmount * p.passengerCount, p.currency) }}</td>
+                    </tr>
+                  }
+                  <tr>
+                    <td>Taxes × {{ p.passengerCount }}</td>
+                    <td>{{ money(p.perPassenger.taxAmount * p.passengerCount, p.currency) }}</td>
+                  </tr>
+                  <tr>
+                    <td>Fees × {{ p.passengerCount }}</td>
+                    <td>{{ money(p.perPassenger.feeAmount * p.passengerCount, p.currency) }}</td>
+                  </tr>
+                  @for (line of p.extras.lines; track line.serviceId + ':' + line.passengerIndex) {
+                    <tr>
+                      <td>{{ line.name }}{{ line.quantity > 1 ? ' ×' + line.quantity : '' }}{{ passengerSuffix(line.passengerIndex) }}</td>
+                      <td>{{ money(line.totalPrice, p.currency) }}</td>
+                    </tr>
+                  }
+                  <tr class="side__total">
+                    <td>Total</td>
+                    <td>{{ money(p.totalAmount, p.currency) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            } @else if (breakdown(); as b) {
               <table class="side__table">
                 <tbody>
                   <tr><td>Base fare × {{ b.passengerCount }}</td><td>{{ money(b.base) }}</td></tr>
                   <tr><td>Taxes × {{ b.passengerCount }}</td><td>{{ money(b.taxes) }}</td></tr>
                   <tr><td>Fees × {{ b.passengerCount }}</td><td>{{ money(b.fees) }}</td></tr>
-                  <tr class="side__total"><td>Total</td><td>{{ money(b.total) }}</td></tr>
+                  @if (draftExtrasTotal() > 0) {
+                    <tr><td>Extras (indicative)</td><td>{{ money(draftExtrasTotal()) }}</td></tr>
+                  }
+                  <tr class="side__total"><td>Total</td><td>{{ money(b.total + draftExtrasTotal()) }}</td></tr>
                 </tbody>
               </table>
-              <p class="na-hint">Seats are included at no charge.</p>
             }
+            <p class="na-hint">Seats are included at no charge.</p>
 
             <p class="payment-note na-text-small na-text-muted">
               No payment is due now — the booking will be created as <strong>pending</strong> and payment happens later.
@@ -171,6 +262,7 @@ import { BOOKING_STEPS } from './passengers.component';
     .panel__head a { font-weight: var(--na-font-semibold); min-height: 44px; display: inline-flex; align-items: center; }
     .rows { list-style: none; margin: var(--na-space-2) 0 0; padding: 0; display: grid; gap: var(--na-space-2); }
     .rows li { display: flex; justify-content: space-between; gap: var(--na-space-3); }
+    .extras-rows { margin-bottom: var(--na-space-2); }
     .rules summary { cursor: pointer; font-weight: var(--na-font-semibold); min-height: 44px; display: flex; align-items: center; }
     .rules ul { margin: var(--na-space-3) 0 0; padding-left: var(--na-space-5); display: grid; gap: var(--na-space-1); font-size: var(--na-text-sm); }
     .side { padding: var(--na-space-6); position: sticky; top: var(--na-space-4); }
@@ -179,6 +271,9 @@ import { BOOKING_STEPS } from './passengers.component';
     .side__table td { padding: var(--na-space-1) 0; }
     .side__table td:last-child { text-align: right; font-weight: var(--na-font-medium); }
     .side__total td { border-top: 1px solid var(--na-border); padding-top: var(--na-space-2); font-size: var(--na-text-lg); font-weight: var(--na-font-bold); }
+    .side__discount td { color: var(--na-success); font-weight: var(--na-font-medium); }
+    .offer-applied { margin-bottom: var(--na-space-3); }
+    .offer-blocked__action { display: block; margin-top: var(--na-space-3); }
     .payment-note { margin: var(--na-space-4) 0 0; }
     .consent { display: flex; gap: var(--na-space-2); align-items: flex-start; margin: var(--na-space-5) 0 var(--na-space-2); }
     .consent input { width: 22px; height: 22px; flex-shrink: 0; margin-top: var(--na-space-1); }
@@ -204,6 +299,14 @@ export class ReviewPage {
   protected readonly submitting = signal(false);
   protected readonly submitError = signal<string | null>(null);
   protected readonly submitErrorRetryable = signal(false);
+
+  /** BR-16: server-calculated preview; null until the first successful call. */
+  protected readonly preview = signal<PricePreviewResponse | null>(null);
+  protected readonly previewError = signal<string | null>(null);
+  /** Set when the carried offer was rejected (OFFER_NOT_FOUND / OFFER_NOT_AVAILABLE). */
+  protected readonly offerBlocked = signal(false);
+  /** Set when creation rejected the extras selection (EXTRAS_INVALID). */
+  protected readonly extrasInvalid = signal(false);
 
   /**
    * Idempotency key for booking creation, generated once per submit attempt
@@ -233,14 +336,111 @@ export class ReviewPage {
     return !!d && d.seats.length > 0 && this.draftApi.isHoldExpired();
   });
 
+  /**
+   * Indicative extras total from catalog unit prices — used ONLY in the
+   * fallback breakdown when the server preview is unavailable. The
+   * authoritative figure is always the server preview / creation total.
+   */
+  protected readonly draftExtrasTotal = computed(() => {
+    const d = this.draft();
+    if (!d) return 0;
+    return d.extras.reduce((sum, e) => sum + e.service.price * e.quantity, 0);
+  });
+
   constructor() {
     if (!this.draft()) {
       this.router.navigateByUrl('/search');
     }
+    // Re-preview whenever the priced inputs change (flight, cabin, passenger
+    // count, or a cleared offer) — the server stays the pricing authority.
+    effect(() => {
+      const d = this.draft();
+      if (!d || d.passengers.length === 0 || d.confirmedBooking) return;
+      this.loadPreview();
+    });
+  }
+
+  protected loadPreview(): void {
+    const d = this.draft();
+    if (!d || d.passengers.length === 0) return;
+    this.offerBlocked.set(false);
+    this.previewError.set(null);
+    // Never show figures computed for other inputs (flight/cabin/count/offer).
+    this.preview.set(null);
+    this.bookings
+      .pricePreview({
+        flightId: d.outbound.id,
+        cabinClass: d.fare.cabinClass,
+        passengerCount: d.passengers.length,
+        ...(d.offerId ? { offerId: d.offerId } : {}),
+        ...(d.extras.length > 0 ? { extras: this.extrasPayload(d) } : {}),
+      })
+      .subscribe({
+        next: (p) => this.preview.set(p),
+        error: (err: HttpErrorResponse) => this.handlePreviewError(err),
+      });
+  }
+
+  /** Wire format for extras selections — ids, quantities, associations only. */
+  private extrasPayload(d: BookingDraft): ExtraSelectionPayload[] {
+    return d.extras.map((e) => ({
+      serviceId: e.service.id,
+      quantity: e.quantity,
+      ...(e.passengerIndex !== null ? { passengerIndex: e.passengerIndex } : {}),
+    }));
+  }
+
+  private handlePreviewError(err: HttpErrorResponse): void {
+    if (this.isOfferError(err)) {
+      this.offerBlocked.set(true);
+      return;
+    }
+    if (this.isExtrasInvalid(err)) {
+      // The stored extras selection no longer validates against the catalog —
+      // the customer must reconcile it on the extras page.
+      this.extrasInvalid.set(true);
+      return;
+    }
+    this.previewError.set(
+      'The final price could not be confirmed right now — the fare breakdown below is indicative. The exact total is calculated when you confirm.',
+    );
+  }
+
+  private isExtrasInvalid(err: HttpErrorResponse): boolean {
+    return err?.status === 400 && (err?.error as { code?: string } | undefined)?.code === 'EXTRAS_INVALID';
+  }
+
+  private isOfferError(err: HttpErrorResponse): boolean {
+    const code = (err?.error as { code?: string } | undefined)?.code;
+    return (
+      (err?.status === 404 && code === 'OFFER_NOT_FOUND') ||
+      (err?.status === 409 && code === 'OFFER_NOT_AVAILABLE')
+    );
+  }
+
+  /** Explicit recovery from a rejected offer: clear it from the draft (which
+   *  re-runs the preview without it) and let the customer resubmit. The
+   *  discount is never dropped silently. */
+  protected continueWithoutOffer(): void {
+    this.draftApi.clearOffer();
+    this.idempotencyKey = null;
+    this.submitError.set(null);
   }
 
   protected seatNumber(d: BookingDraft, passengerIndex: number): string | null {
     return d.seats.find((s) => s.passengerIndex === passengerIndex)?.seat.seatNumber ?? null;
+  }
+
+  protected passengerName(d: BookingDraft, passengerIndex: number): string {
+    const p = d.passengers[passengerIndex];
+    return p?.firstName || `Passenger ${passengerIndex + 1}`;
+  }
+
+  /** " · Lena" suffix for priced extras lines in the preview table. */
+  protected passengerSuffix(passengerIndex: number | null): string {
+    const d = this.draft();
+    if (passengerIndex === null || !d) return '';
+    return ` · ${this.passengerName(d, passengerIndex)}`;
   }
 
   protected submit(): void {
@@ -282,10 +482,13 @@ export class ReviewPage {
       })),
       ...(d.contactEmail ? { contactEmail: d.contactEmail } : {}),
       ...(d.contactPhone ? { contactPhone: d.contactPhone } : {}),
+      ...(d.offerId ? { offerId: d.offerId } : {}),
+      ...(d.extras.length > 0 ? { extras: this.extrasPayload(d) } : {}),
     };
 
     this.submitting.set(true);
     this.submitError.set(null);
+    this.extrasInvalid.set(false);
     this.bookings.create(payload).subscribe({
       next: (booking) => {
         this.submitting.set(false);
@@ -306,6 +509,12 @@ export class ReviewPage {
       case 400: {
         // The payload itself was rejected — a corrected request needs a new key.
         this.idempotencyKey = null;
+        if (this.isExtrasInvalid(err)) {
+          // Extras became unavailable/ineligible between selection and create —
+          // nothing is charged; the customer reconciles on the extras page.
+          this.extrasInvalid.set(true);
+          return;
+        }
         const message = (err.error as { message?: string | string[] } | undefined)?.message;
         this.submitError.set(
           Array.isArray(message)
@@ -316,11 +525,21 @@ export class ReviewPage {
         return;
       }
       case 404:
+        if (this.isOfferError(err)) {
+          this.idempotencyKey = null;
+          this.offerBlocked.set(true);
+          return;
+        }
         this.idempotencyKey = null;
         this.submitError.set('This flight is no longer available. Please start a new search.');
         this.submitErrorRetryable.set(false);
         return;
       case 409:
+        if (this.isOfferError(err)) {
+          this.idempotencyKey = null;
+          this.offerBlocked.set(true);
+          return;
+        }
         // Seat conflict: drop the local selection so the user re-picks from
         // refreshed availability on the seats page — a changed seat selection
         // is a different request and needs a new key.
@@ -335,9 +554,8 @@ export class ReviewPage {
     }
   }
 
-  protected money(amount: number): string {
-    const currency = this.draft()?.fare.currency ?? 'EUR';
-    return formatMoney(amount, currency);
+  protected money(amount: number, currency?: string): string {
+    return formatMoney(amount, currency ?? this.draft()?.fare.currency ?? 'EUR');
   }
 
   protected time(iso: string): string {

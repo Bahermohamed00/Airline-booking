@@ -1,7 +1,7 @@
 import { UserStatus, Role, Permission, User } from '@prisma/client';
 import { prisma, hash } from './shared.js';
 
-const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>> = [
+export const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>> = [
   { resource: 'users', action: 'read', description: 'View user accounts' },
   { resource: 'users', action: 'create', description: 'Create user accounts' },
   { resource: 'users', action: 'update', description: 'Update user accounts' },
@@ -22,6 +22,7 @@ const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>
   { resource: 'support', action: 'read', description: 'View support tickets' },
   { resource: 'support', action: 'manage', description: 'Handle support tickets (claim/resolve/close/reopen)' },
   { resource: 'loyalty', action: 'manage', description: 'Manage loyalty accounts' },
+  { resource: 'notifications', action: 'read', description: 'View notification records' },
   { resource: 'notifications', action: 'manage', description: 'Manage notifications' },
   { resource: 'reports', action: 'read', description: 'View and export reports' },
   { resource: 'audit', action: 'read', description: 'View audit logs' },
@@ -29,9 +30,11 @@ const PERMISSIONS: Array<Pick<Permission, 'resource' | 'action' | 'description'>
   { resource: 'settings', action: 'manage', description: 'Manage system settings' },
   { resource: 'offers', action: 'read', description: 'View offer catalog' },
   { resource: 'offers', action: 'manage', description: 'Manage offers' },
+  { resource: 'extras', action: 'read', description: 'View bookable extras catalog' },
+  { resource: 'extras', action: 'manage', description: 'Manage bookable extras (create/update/deactivate)' },
 ];
 
-const ROLE_DEFS: Array<{
+export const ROLE_DEFS: Array<{
   name: string;
   description: string;
   permissions: Array<{ resource: string; action: string }>;
@@ -55,6 +58,7 @@ const ROLE_DEFS: Array<{
       { resource: 'bookings', action: 'manage' },
       { resource: 'reports', action: 'read' },
       { resource: 'audit', action: 'read' },
+      { resource: 'notifications', action: 'read' },
       { resource: 'dashboard', action: 'read' },
     ],
   },
@@ -76,6 +80,8 @@ const ROLE_DEFS: Array<{
     permissions: [
       { resource: 'bookings', action: 'read' },
       { resource: 'bookings', action: 'manage' },
+      { resource: 'extras', action: 'read' },
+      { resource: 'extras', action: 'manage' },
       { resource: 'users', action: 'read' },
       { resource: 'dashboard', action: 'read' },
     ],
@@ -96,6 +102,7 @@ const ROLE_DEFS: Array<{
     permissions: [
       { resource: 'support', action: 'read' },
       { resource: 'support', action: 'manage' },
+      { resource: 'notifications', action: 'read' },
     ],
   },
 ];

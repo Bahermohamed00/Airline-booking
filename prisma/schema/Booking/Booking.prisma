@@ -15,8 +15,12 @@ model Booking {
   // impossible, and key reuse with a different payload conflicts.
   idempotencyKey  String?       @map("idempotency_key") @db.VarChar(36)
   idempotencyRequestHash String? @map("idempotency_request_hash") @db.VarChar(64)
+  // Optional bookable Offer applied at creation (BR-16). Offer terms are
+  // snapshotted into fareRulesSnapshot; RESTRICT blocks hard-deleting a used Offer.
+  offerId         String?       @map("offer_id") @db.Uuid
 
   user             User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  offer            Offer?            @relation(fields: [offerId], references: [id], onDelete: Restrict)
   bookingPassengers BookingPassenger[]
   bookingExtras    BookingExtra[]
   payments         Payment[]
@@ -24,9 +28,11 @@ model Booking {
   notifications    Notification[]
   auditLogs        AuditLog[]
   seatHolds        SeatHold[]
+  cancellationRequests CancellationRequest[]
 
   @@unique([userId, idempotencyKey])
   @@index([userId, bookedAt])
+  @@index([offerId])
   @@map("bookings")
 }
 
